@@ -36,7 +36,7 @@ from core.approvals.admin_reads import (
 from core.audit.cursor import KeysetCursor
 from core.db.lifecycle import ActionRequestStatus
 
-# A fixed instant so timing assertions are about the code's arithmetic and not the clock (V87).
+# A fixed instant so timing assertions are about the code's arithmetic and not the clock.
 REQUEST_CREATED_AT = datetime(2026, 9, 9, 10, 0, 0, tzinfo=UTC)
 
 # The keys the gate persists (`core.approvals.context`), spelled here as the fixture a card would

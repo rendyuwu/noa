@@ -1,4 +1,4 @@
-"""What a Proxmox `netN` config line says, and how to flip its link state (T28).
+"""What a Proxmox `netN` config line says, and how to flip its link state.
 
 Ported from `noa-old` branch `MCP` (`proxmox/tools/nic_tools.py`, C13, V69), where these were
 private helpers inside the tool module. They live in the integration layer here for two reasons
@@ -56,12 +56,12 @@ LINK_STATE_DOWN: Final = "down"
 
 @dataclass(frozen=True)
 class NetworkInterface:
-    """One `netN` line, read (T28 — V33, V35).
+    """One `netN` line, read.
 
     `value` is the raw line, kept because a rewrite is a whole-line write and the runner has to
     edit the line it actually read rather than one reassembled from these fields. The rest is what
     an operator recognises a NIC by on the approval card, and what a `choices` list has to carry
-    for them to name one (V18).
+    for them to name one.
     """
 
     key: str
@@ -93,7 +93,7 @@ class NetworkInterface:
         }
 
     def as_choice(self) -> dict[str, str]:
-        """One candidate NIC, as a `choices` entry (V18).
+        """One candidate NIC, as a `choices` entry.
 
         All-`str` because that is `tool_failure`'s shape, and `-` rather than `None` for an absent
         field: this is read by a model and then by an operator, and a literal `None` in a picker

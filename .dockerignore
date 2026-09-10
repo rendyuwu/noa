@@ -7,12 +7,12 @@
 #   * the two web packages — C12 makes them separate deploy artifacts with their own contexts.
 #     Excluding them means the API image physically cannot pick up a file from either one.
 
-# --- Secrets (C11) ---
+# --- Secrets ---
 .env
 .env.*
 !.env.example
 
-# --- Separate deploy artifacts (C12) ---
+# --- Separate deploy artifacts ---
 apps/admin-web/
 apps/web-embed/
 

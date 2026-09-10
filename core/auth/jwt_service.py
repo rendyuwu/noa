@@ -1,4 +1,4 @@
-"""Admin-session JWT + session cookie (T7, V6, V8).
+"""Admin-session JWT + session cookie.
 
 Ported from `noa-old` branch `MCP` (`core/auth/jwt_service.py`, C13). Three
 deliberate departures from the original:
@@ -21,13 +21,13 @@ deliberate departures from the original:
   built, so T8 must build it once during app startup. A request-scoped dependency
   would turn a config error into a 500 on the first login instead of a boot failure.
 
-This is the *admin/embed session* credential (V6) — cookie-borne, LDAP-backed,
+This is the *admin/embed session* credential — cookie-borne, LDAP-backed,
 short-lived. MCP bearer tokens are a different mechanism entirely: opaque, hashed
-at rest, no JWT (C5, V2, T10-T12). Nothing here touches them.
+at rest, no JWT. Nothing here touches them.
 
 Scope of trust: a valid token proves the bearer authenticated as `sub`/`uid` before
 `exp`. It proves nothing about *current* state — `is_active` can flip and roles can
-change after minting, so callers re-read the row (V1, V11). Claims stay minimal for
+change after minting, so callers re-read the row. Claims stay minimal for
 that reason: no roles, no permissions, nothing that goes stale in an attacker's
 favour.
 
@@ -54,7 +54,7 @@ from core.auth.errors import (
 )
 from core.config import Settings
 
-# HMAC only: the signing key is a shared secret (V53). An `RS*`/`ES*` value would
+# HMAC only: the signing key is a shared secret. An `RS*`/`ES*` value would
 # hand that secret to a public-key verifier, and `none` would accept unsigned
 # tokens outright. Each maps to its RFC 7518 §3.2 minimum key length — a key
 # shorter than the hash output weakens the MAC, and PyJWT warns on every single
@@ -76,7 +76,7 @@ CLAIM_EXPIRES_AT: Final = "exp"
 REQUIRED_CLAIMS: Final = (CLAIM_EMAIL, CLAIM_USER_ID, CLAIM_ISSUED_AT, CLAIM_EXPIRES_AT)
 
 # Internal diagnostics for the `detail` slot: logs only, never a response body, and
-# never carrying token bytes (V8).
+# never carrying token bytes.
 DETAIL_BLANK_INPUT = "empty session token; ⊥ verification attempted"
 DETAIL_EXPIRED = "session token past its `exp`"
 DETAIL_MALFORMED = "session token failed signature or claim verification"
@@ -99,7 +99,7 @@ class IssuedToken:
 
 @dataclass(frozen=True)
 class SessionClaims:
-    """Verified claims. Identity only — authorization is re-read per request (V1)."""
+    """Verified claims. Identity only — authorization is re-read per request."""
 
     user_id: UUID
     email: str
@@ -108,7 +108,7 @@ class SessionClaims:
 
 
 class JWTService:
-    """Mint/verify session tokens and own the `noa_session` cookie (V6)."""
+    """Mint/verify session tokens and own the `noa_session` cookie."""
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
@@ -157,21 +157,21 @@ class JWTService:
                 options={"require": list(REQUIRED_CLAIMS)},
             )
         except ExpiredSignatureError:
-            # `from None` on both paths: PyJWT messages can quote token bytes (V8).
+            # `from None` on both paths: PyJWT messages can quote token bytes.
             raise AuthSessionExpiredError(DETAIL_EXPIRED) from None
         except InvalidTokenError:
             raise AuthSessionInvalidError(DETAIL_MALFORMED) from None
 
         return self._to_claims(payload)
 
-    # --- Cookie (V6) ---
+    # --- Cookie ---
 
     def set_session_cookie(self, response: Response, issued: IssuedToken) -> None:
         """Attach the httpOnly session cookie.
 
         Attributes come from `Settings.session_cookie_kwargs()`: httpOnly (⊥ JS
         reach), SameSite=Lax, `Domain=.noa.internal` so the cookie rides to the
-        embed origin where the approval POST happens (V40), `Path=/`.
+        embed origin where the approval POST happens, `Path=/`.
         """
         response.set_cookie(
             value=issued.token,
@@ -188,7 +188,7 @@ class JWTService:
         one kwargs source is what makes that impossible.
 
         Takes no token and reads no request: logout is idempotent and works without
-        authentication (V6).
+        authentication.
         """
         response.delete_cookie(**self._settings.session_cookie_kwargs())
 

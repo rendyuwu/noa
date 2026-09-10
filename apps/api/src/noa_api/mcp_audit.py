@@ -1,4 +1,4 @@
-"""`tool_runs` written from the tool path, once, for every READ (T73 — V20, V45, V47, V83).
+"""`tool_runs` written from the tool path, once, for every READ.
 
 T19 shipped the first tool with its RBAC gate and no audit trail; T19(g) recorded the hole
 and named this task as the fix. This is that fix, and it is a `Middleware` for the same
@@ -24,12 +24,12 @@ happened and may be denied. The map is why this is a decision rather than an acc
 **Fail closed on the opening write.** If the `STARTED` row cannot be committed, the tool
 does not run and the caller gets `tool_audit_unavailable`. V45 says *every* READ writes a
 row; running anyway would leave that invariant asserted by prose and held by nothing, which
-is the shape B2 shipped (V69). The closing write is different: by then the tool has already
+is the shape B2 shipped. The closing write is different: by then the tool has already
 run, so a failure there is logged loudly and the row is left `STARTED` — exactly the state
 T38's reaper exists to sweep. Turning a completed call into an error would be a lie in the
 other direction.
 
-**What "failed" means.** `sanitize_tool_errors` (V19) converts an exception into a
+**What "failed" means.** `sanitize_tool_errors` converts an exception into a
 *returned* `{"ok": False, ...}` payload, so a failure normally arrives as an ordinary
 result, not as a raise. Status is therefore read off `ok`, and `result_summary` gets the
 `error_code` — T35 left out an `error` column precisely because a sanitized code fits here.
@@ -38,7 +38,7 @@ FAILED and re-raised unchanged: this middleware audits, it does not sanitize.
 
 Both of those rules — the status read off `ok`, and the bounded redacted summary — moved to
 `core.audit.summaries` at T38, because the post-approval executor records the same field
-from the same envelope (V66). They are re-exported below so this module stays the one name
+from the same envelope. They are re-exported below so this module stays the one name
 its callers and tests reach for.
 
 **`conversation_ref` is a label, never a scope** (DECISIONS §10.4, old V165). It arrives as
@@ -77,7 +77,7 @@ from noa_api.mcp_tools.context import McpToolContext, build_tool_run_repository
 from noa_api.mcp_tools.results import tool_failure
 
 # Custom headers come back lowercased from `get_http_headers()` and are not on its default
-# exclusion list, so one lowercase spelling serves the read (R5).
+# exclusion list, so one lowercase spelling serves the read.
 CONVERSATION_REF_HEADER: Final = "x-noa-conversation-ref"
 
 # `tool_runs.conversation_ref` is `String(255)`; a longer value would fail the INSERT and
@@ -85,7 +85,7 @@ CONVERSATION_REF_HEADER: Final = "x-noa-conversation-ref"
 MAX_CONVERSATION_REF_LENGTH: Final = 255
 
 # The caller-visible refusal when the audit row cannot be written. One code, like the RBAC
-# gate's: it says "NOA declined", not why NOA's database is unhappy (V8).
+# gate's: it says "NOA declined", not why NOA's database is unhappy.
 ERROR_AUDIT_UNAVAILABLE: Final = "tool_audit_unavailable"
 
 MESSAGE_AUDIT_UNAVAILABLE: Final = (
@@ -107,7 +107,7 @@ logger = structlog.get_logger(__name__)
 
 
 def read_conversation_ref() -> str | None:
-    """The grouping label on the current request, or `None` (V47).
+    """The grouping label on the current request, or `None`.
 
     Sanitized, not echoed: the value is written to `tool_runs` and to structured log output,
     so it is accepted only bounded and on the character allowlist V73 established. A
@@ -122,7 +122,7 @@ def read_conversation_ref() -> str | None:
 
 
 def redacted_args(arguments: Mapping[str, Any] | None) -> dict[str, Any]:
-    """Tool arguments as they may be stored (V8, V45).
+    """Tool arguments as they may be stored.
 
     `{}` for a call with no arguments rather than `None`, matching the column's server
     default: "no arguments" and "arguments not recorded" must not read the same in an audit
@@ -144,11 +144,11 @@ class ToolRunAuditMiddleware(Middleware):
         context: MiddlewareContext[mt.CallToolRequestParams],
         call_next: CallNext[mt.CallToolRequestParams, ToolResult],
     ) -> ToolResult:
-        """Record the call around its execution, or refuse it (V45)."""
+        """Record the call around its execution, or refuse it."""
         tool_name = context.message.name
         if self._tool_risks.get(tool_name) is not ToolRisk.READ:
             # A CHANGE tool's `tools/call` opens the approval gate and executes nothing
-            # (T33); its row belongs to the post-approval executor (T38, V46). An unmapped
+            #; its row belongs to the post-approval executor. An unmapped
             # name cannot reach here — the RBAC gate outside refuses anything unregistered —
             # so this is also the fail-closed answer if that ever stops being true.
             return await call_next(context)
@@ -176,7 +176,7 @@ class ToolRunAuditMiddleware(Middleware):
         except BaseException as exc:
             # Includes `ToolError` raised above `sanitize_tool_errors` (argument validation),
             # and cancellation. Recorded, then re-raised untouched: shaping the error is
-            # V19's job and it belongs to the decorator on the tool (R25), not here.
+            # V19's job and it belongs to the decorator on the tool, not here.
             await self._finish_run(started, ToolRunStatus.FAILED, type(exc).__name__)
             raise
 
@@ -207,7 +207,7 @@ class ToolRunAuditMiddleware(Middleware):
         user_id: UUID,
         arguments: Mapping[str, Any] | None,
     ) -> UUID | None:
-        """Commit the `STARTED` row, or `None` if it could not be written (V45).
+        """Commit the `STARTED` row, or `None` if it could not be written.
 
         Committed before the tool runs, in its own session, so the evidence survives a
         process that dies mid-call. `Exception` rather than a driver-specific error: every
@@ -240,7 +240,7 @@ class ToolRunAuditMiddleware(Middleware):
         status: ToolRunStatus,
         summary: str | None,
     ) -> None:
-        """Move the row to its terminal state (V20, V47).
+        """Move the row to its terminal state.
 
         Swallows its own failure, unlike `_start_run`. The tool has already run by now, so
         refusing the caller would misreport a call that happened; the row stays `STARTED`,

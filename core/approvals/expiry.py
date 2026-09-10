@@ -1,4 +1,4 @@
-"""Making a stale PENDING request terminal (T39 — V20, V23, V28, V30, V32).
+"""Making a stale PENDING request terminal.
 
 V32 wants two things, and T37 built one of them. The decision door already checks on read:
 an operator who reaches a card past its deadline gets the row written `EXPIRED` under the
@@ -13,14 +13,14 @@ card is the second (`core.approvals.card`).
 **Both render paths run this *after* their requester-matched read** (`core.approvals.reads`).
 `expire_if_due` takes an id and no requester, so running it first would let an identifier the
 caller cannot see be written to — and the ids reach an operator through a tool result that
-persists in LibreChat's MongoDB (V26), so "the caller supplied it" is not the same as "the
+persists in LibreChat's MongoDB, so "the caller supplied it" is not the same as "the
 caller may see it". V32 allows a surface that resolves the row itself to call this first; T41's
 card declined, and reading first costs only one poll of freshness (see `apply_due_expiry`).
 
 **A third writer, and the reason is the same one that split the first two.**
-`SQLActionRequestRepository` (T33) writes `PENDING` and nothing else, because the MCP tool
-path holds it. `SQLActionDecisionRepository` (T37) writes `APPROVED`/`DENIED` and is reached
-only by a cookie POST from a NOA-origin document (V22). Both the sweeper and a render path
+`SQLActionRequestRepository` writes `PENDING` and nothing else, because the MCP tool
+path holds it. `SQLActionDecisionRepository` writes `APPROVED`/`DENIED` and is reached
+only by a cookie POST from a NOA-origin document. Both the sweeper and a render path
 need a terminal write too, and neither may hold a writer that can set `APPROVED` — a loop
 with no operator behind it, and a GET, are the last two places an authorization should be
 grantable from. So this repository's only reachable terminal status is `EXPIRED`: the status
@@ -48,10 +48,10 @@ inside that window, with the negative control V89 requires.
 **The loop must outlive its own failures.** `PendingExpirySweeper` catches per pass, because
 a guarantee that ends the first time Postgres blinks is not a guarantee. It sleeps *before*
 its first pass so that starting the app touches no database: `/health` has to answer with
-Postgres down (V51), and one interval of delay against an hour-long TTL costs nothing. Both
+Postgres down, and one interval of delay against an hour-long TTL costs nothing. Both
 of those, and the two rules about stopping, now live in `core.tasks.periodic.PeriodicTask`
 — hoisted at T38, whose reaper is the second component on the same loop, so the four
-properties are proven once and inherited twice rather than copied (V66).
+properties are proven once and inherited twice rather than copied.
 """
 
 from __future__ import annotations
@@ -91,7 +91,7 @@ logger = structlog.get_logger(__name__)
 
 
 class ActionRequestExpiryRepository(Protocol):
-    """The one write this path may make, and the commit that makes it true (V32)."""
+    """The one write this path may make, and the commit that makes it true."""
 
     async def expire_due(
         self,
@@ -121,7 +121,7 @@ class SQLActionRequestExpiryRepository:
         now: datetime,
         action_request_id: UUID | None = None,
     ) -> tuple[UUID, ...]:
-        """Move every due `PENDING` row to `EXPIRED`, and say which (V32).
+        """Move every due `PENDING` row to `EXPIRED`, and say which.
 
         `action_request_id` narrows the same statement to one row — that is the check-on-read
         the render path makes, and it is deliberately not a second query with a second
@@ -164,7 +164,7 @@ class SQLActionRequestExpiryRepository:
 
 
 class ActionRequestExpiryService:
-    """Expire what is due — as a sweep, or for one request being read (V32).
+    """Expire what is due — as a sweep, or for one request being read.
 
     Two entry points over one repository call, because they are the same event seen from
     different sides: nobody answered in time. Neither can take a status, so neither is a way
@@ -230,7 +230,7 @@ class PendingExpirySweeper:
     process pins a connection to it and would answer every later sweep through whatever state
     that connection was left in.
 
-    The loop is `core.tasks.periodic.PeriodicTask`, held rather than reimplemented (V66, T38).
+    The loop is `core.tasks.periodic.PeriodicTask`, held rather than reimplemented.
     This class stays the thing the lifespan starts and stops, and `run_once` stays here for
     the reason it always was: the loop is what swallows a failure, so a caller driving a
     single pass sees it.

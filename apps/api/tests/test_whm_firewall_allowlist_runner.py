@@ -8,7 +8,7 @@ path, and it is driven here with a `ChangeExecutionRequest` built the way the ex
 
 Four claims carry the weight.
 
-**Both allow lists are asked, in `noa-old`'s order** (C13, V69). `csf -tra` drops a temporary
+**Both allow lists are asked, in `noa-old`'s order**. `csf -tra` drops a temporary
 allow and `csf -ar` the `csf.allow` entry; an address lives in one of them, so the other always
 reports "not in that list" and that is the ordinary answer rather than a failure.
 
@@ -92,7 +92,7 @@ from support.whm_firewall_change import (
 async def test_the_runner_clears_both_allow_lists_then_re_reads(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Both lists, in `noa-old`'s order, and the confirming read last (C13, V69).
+    """Both lists, in `noa-old`'s order, and the confirming read last.
 
     Both commands are sent because NOA does not know which list holds the entry: T25 writes
     temporary allows, an operator's own hand-added ones are permanent. Asserted as a sequence,
@@ -175,7 +175,7 @@ async def test_a_removal_that_did_not_take_is_a_failure(
 async def test_a_surviving_allow_entry_is_caught_even_when_a_block_outranks_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The case the combined verdict cannot answer, and the reason `allow_entry` exists (T26).
+    """The case the combined verdict cannot answer, and the reason `allow_entry` exists.
 
     Both backends resolve a conflict block-first, so this postflight reads `blocked` — and the
     `csf.allow` line it also matched is exactly what the removal was supposed to delete. A
@@ -198,7 +198,7 @@ async def test_a_surviving_allow_entry_is_caught_even_when_a_block_outranks_it(
 async def test_a_blocked_address_with_no_allow_entry_is_a_clean_removal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The negative control for the case above (V87).
+    """The negative control for the case above.
 
     Without it, "a blocked postflight fails the removal" would pass just as well against a
     runner that treated every `blocked` verdict as a surviving allow entry — which would fail
@@ -251,7 +251,7 @@ async def test_a_backend_that_did_not_answer_leaves_the_change_unverified(
 async def test_a_backend_that_answered_alone_is_still_verified(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The negative control for the case above (V87), and V86's own bound.
+    """The negative control for the case above, and V86's own bound.
 
     One backend *installed* is not one backend silent: a box without Imunify is answered in full
     by CSF, and refusing to verify there would make the unverified branch fire for every
@@ -397,7 +397,7 @@ async def test_a_non_root_user_escalates_every_firewall_command(
 
 
 async def test_a_root_user_escalates_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The other half of the biconditional (V87): root running under `sudo` is the same bug."""
+    """The other half of the biconditional: root running under `sudo` is the same bug."""
     fixture, fake = release_context(monkeypatch, box=removed_box())
     runner = payload_runner(build_whm_firewall_allowlist_remove_runner(context=fixture.context))
 
@@ -437,7 +437,7 @@ async def test_the_runner_payload_never_carries_the_reason_back(
     the summary to a model.
 
     The reason is on the `ChangeExecutionRequest` — the executor reads it off the row for every
-    approved change (V43) — so it is in front of this runner throughout, and the entry it just
+    approved change — so it is in front of this runner throughout, and the entry it just
     deleted carried it too. Asserted on the derived summary as well as on the payload, because
     the summary is the thing a model actually reads (V96's own "on the serialized result ∧ on
     the derived summary").
@@ -456,7 +456,7 @@ async def test_the_runner_payload_never_carries_the_reason_back(
 async def test_the_postflight_evidence_never_reaches_the_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The door this tool opens widest (V96).
+    """The door this tool opens widest.
 
     The confirming read is `csf -g`, and on a failed removal its output is the allow entry T25
     wrote — marker, reason and all. Those lines are read for a verdict and go no further: the
@@ -530,7 +530,7 @@ async def test_the_receipt_keeps_the_before_and_after_apart(
 
     `before` is the gate's own preflight — the allow entry the operator decided against, read
     with its own comment intact, because a receipt is behind the operator's cookie and is one of
-    the two surfaces V96 deliberately does *not* cut (V27, V76). `after` is what the change
+    the two surfaces V96 deliberately does *not* cut. `after` is what the change
     answered.
     """
     fixture, _ = release_context(monkeypatch, box=removed_box())

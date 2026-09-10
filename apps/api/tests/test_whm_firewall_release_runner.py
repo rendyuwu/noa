@@ -147,7 +147,7 @@ async def test_the_after_state_carries_the_resolved_expiry_timestamp(
 
     Asserted as a property rather than against a literal, because the value is clock-stamped and
     an equality on it would either be impossible or would have to freeze the clock and stop
-    testing the arithmetic (V87, B4). The window either side is generous on purpose — what is
+    testing the arithmetic. The window either side is generous on purpose — what is
     being separated is 137 minutes from a default, not one second from another.
     """
     fixture, _ = release_context(monkeypatch, box=released_box())
@@ -277,7 +277,7 @@ async def test_a_backend_that_did_not_answer_leaves_the_change_unverified(
 async def test_a_backend_that_answered_alone_is_still_verified(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The negative control for the case above (V87), and V86's own bound.
+    """The negative control for the case above, and V86's own bound.
 
     One backend *installed* is not one backend silent: a box without Imunify is answered in full
     by CSF, and refusing to verify there would make the unverified branch fire for every
@@ -441,7 +441,7 @@ async def test_a_non_root_user_escalates_every_firewall_command(
 
 
 async def test_a_root_user_escalates_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The other half of the biconditional (V87): root running under `sudo` is the same bug."""
+    """The other half of the biconditional: root running under `sudo` is the same bug."""
     fixture, fake = release_context(monkeypatch, box=released_box())
     runner = payload_runner(build_whm_firewall_release_runner(context=fixture.context))
 
@@ -487,7 +487,7 @@ async def test_the_runner_payload_never_carries_the_reason_back(
     the summary to a model.
 
     The reason is on the `ChangeExecutionRequest` — the executor reads it off the row for every
-    approved change (V43) — so it is in front of this runner throughout. Asserted on the derived
+    approved change — so it is in front of this runner throughout. Asserted on the derived
     summary as well as on the payload, because the summary is the thing a model actually reads
     (V96's own "on the serialized result ∧ on the derived summary").
     """

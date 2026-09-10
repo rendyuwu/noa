@@ -1,9 +1,9 @@
-"""Proxmox VE client — exact request contracts (T17, V69).
+"""Proxmox VE client — exact request contracts.
 
 Ported from `noa-old` branch `MCP` (`test_proxmox_client_endpoints.py`), minus the C22 methods.
 
 These assert literal HTTP verbs, full URLs and form bodies on purpose. The port's whole claim is
-that the endpoint surface came across unchanged (V69), and Proxmox's API is unforgiving about the
+that the endpoint surface came across unchanged, and Proxmox's API is unforgiving about the
 details: a config write is `POST` with a form body while a cloud-init regeneration is `PUT` with
 an empty one, `cloudinit/dump` needs `?type=user`, and a `netN` value carries `=` and `,`
 characters that must arrive percent-encoded. Endpoint drift should fail a test, ⊥ a live host.
@@ -95,7 +95,7 @@ async def test_get_qemu_cloudinit_uses_the_cloudinit_path() -> None:
 
 async def test_get_qemu_cloudinit_dump_user_sends_the_type_query_param() -> None:
     """`?type=user` selects the rendered user-data document — without it Proxmox answers the
-    wrong section, and T27 verifies the new password against this one (V62)."""
+    wrong section, and T27 verifies the new password against this one."""
     seen: dict[str, object] = {}
 
     result = await build_client(
@@ -173,7 +173,7 @@ async def test_update_qemu_config_posts_the_digest_beside_the_net_line() -> None
 
 
 async def test_regenerate_qemu_cloudinit_puts_an_empty_body() -> None:
-    """`PUT`, no body. Ported as-is (V69): the UPID comes back as `data`, ⊥ as `upid`, because
+    """`PUT`, no body. Ported as-is: the UPID comes back as `data`, ⊥ as `upid`, because
     this call does not go through the task wrapper — see the method docstring."""
     seen: dict[str, object] = {}
 

@@ -1,4 +1,4 @@
-"""Run `imunify360-agent` over SSH and parse its JSON (T16, V55, V56, V57, V69).
+"""Run `imunify360-agent` over SSH and parse its JSON.
 
 Copied from `noa-old` branch `MCP` (`whm/integrations/imunify_cli.py`), less the binary-probe
 half, which moved to `core.integrations.whm.availability` (T16 deviation (d)) — on `MCP` the
@@ -17,7 +17,7 @@ different prefixes across CloudLinux versions, and it is on `PATH` (and on sudoe
 output is the primary path. When that fails, `_json_object_via_raw_decode` scans forward to the
 first `{`/`[` and retries with `JSONDecoder.raw_decode`, so a leading non-JSON prefix does not
 lose the document. That prefix was the CloudLinux LVE/PAM login banner (`noa-old` GH #83). The
-real fix is `core.remote_exec.banner_strip`, which removes it at the SSH boundary (V56) — this
+real fix is `core.remote_exec.banner_strip`, which removes it at the SSH boundary — this
 is a belt-and-braces guard for a banner variant the signature gate does not recognise, and it
 is deliberately kept: a banner change should degrade to a parsed result, ⊥ to a failed CHANGE.
 The same pattern exists in `noa-old`'s `pmg/integrations/pmgsh_cli.py`.
@@ -31,7 +31,7 @@ Failure codes, all distinct because their remedies are:
 - `imunify_json_parse_error`— not JSON, and the raw-decode recovery also failed.
 
 A resolved `SSHConnectionConfig` comes in rather than a `whm_servers` row, for the reasons
-`csf_cli` states at length (T24): the caller resolves once, inside its database session, and
+`csf_cli` states at length: the caller resolves once, inside its database session, and
 does the SSH hop after closing it.
 """
 
@@ -55,7 +55,7 @@ IMUNIFY_BINARY = "imunify360-agent"
 
 
 def build_imunify_command(args: list[str], *, config: SSHConnectionConfig) -> str:
-    """Compose one shell-safe agent command, escalating iff the SSH user is not root (V55)."""
+    """Compose one shell-safe agent command, escalating iff the SSH user is not root."""
     return build_remote_command([IMUNIFY_BINARY, *args], config=config)
 
 
@@ -64,7 +64,7 @@ def _json_object_via_raw_decode(output: str) -> dict[str, Any] | None:
 
     Scans to the first `{`/`[` and uses `JSONDecoder.raw_decode`, so a surviving banner
     fragment does not corrupt parsing. Returns `None` when nothing decodes to an object.
-    Fallback only — the primary fix strips banners at the SSH boundary (V56).
+    Fallback only — the primary fix strips banners at the SSH boundary.
     """
     decoder = json.JSONDecoder()
     for index, char in enumerate(output):

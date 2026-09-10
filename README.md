@@ -9,7 +9,7 @@ constraint referenced below lives there.
 
 ## Layout
 
-Single repo, three deploy artifacts, one shared core (C12).
+Single repo, three deploy artifacts, one shared core.
 
 ```
 noa/
@@ -57,12 +57,12 @@ break token verification for no gain.
 
 Re-open when LibreChat ships SDK v2 — and note that a bump *inside* 1.x moves the negotiated era
 with no error and no config change, which is why no digit above is load-bearing. `ARCHITECTURE.md`
-carries the full rationale, the re-open triggers, and the tests that hold them (C23, T70).
+carries the full rationale, the re-open triggers, and the tests that hold them.
 
 ## Prerequisites
 
 - Python `>=3.11,<3.13`. The upper bound is load-bearing: `pgpy` 0.6.0 imports the stdlib `imghdr`
-  module, removed in 3.13, at import time (C1).
+  module, removed in 3.13, at import time.
 - `uv` for Python dependency management.
 - Node.js **22** and `pnpm` for the two web apps. `engines.node` allows 20 and the built apps run
   there, but the pinned pnpm 11.x needs `>=22.13` and `pnpm install` fails outright on 20 (§T.60).
@@ -88,7 +88,7 @@ Web apps use `pnpm install` and `pnpm dev` in their own directories.
 
 ## Deployment
 
-One image per deployable (C12), and the build contexts differ: the API builds from the repo root
+One image per deployable, and the build contexts differ: the API builds from the repo root
 because it is a uv workspace member, each web app builds from its own directory because the two
 share no source.
 
@@ -104,7 +104,7 @@ API runs as a single replica, and why there is no readiness probe. Two things to
 first build — the admin panel image only builds inside the Biznet Gio network (`@gio/*` is on an
 internal-only registry), and the embed image takes `NOA_LIBRECHAT_ORIGIN` as a **build argument**,
 because `frame-ancestors` is compiled into the standalone output and no runtime variable can move
-it (V41).
+it.
 
 ## Checks
 
@@ -127,7 +127,7 @@ minutes.
 ## Conventions
 
 - Conventional commits. No secrets in git — `.env*` is ignored except `.env.example`.
-- File size limits: `.py` <= 900 lines, `.ts` <= 300, `.tsx` <= 450 (C14).
+- File size limits: `.py` <= 900 lines, `.ts` <= 300, `.tsx` <= 450.
 - Type hints on new Python, TypeScript types on new frontend code, tests alongside.
 - Env vars holding lists use JSON arrays, e.g. `AUTH_BOOTSTRAP_ADMIN_EMAILS=["a@b.com"]`.
 - `NOA_SECRET_ENCRYPTION_KEY` encrypts server credentials, not the database. The name says so on
@@ -142,7 +142,7 @@ minutes.
 `noa-old` is a pattern source, not a fork base. Port from branch `MCP` — `core/secrets/yopass.py`,
 `core/secrets/password.py`, and the yopass doc exist only there. Mature integration layers (WHM,
 Proxmox, PMG, `remote_exec`, `secrets`) get copied rather than rewritten; SSH banner stripping and
-`sudo -n` escalation are already hardened in them (C13, V69).
+`sudo -n` escalation are already hardened in them.
 
 Host-key pinning and TOFU refresh are **not**, despite what this section used to say. Upstream
 passes `known_hosts=None`, which is asyncssh's documented off switch, so the port inherited a pin

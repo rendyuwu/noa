@@ -1,6 +1,6 @@
-"""Remote command execution over SSH (T14).
+"""Remote command execution over SSH.
 
-Copied from `noa-old` branch `MCP` rather than rewritten (C13, V69): banner stripping,
+Copied from `noa-old` branch `MCP` rather than rewritten: banner stripping,
 `sudo -n` escalation, host-key pinning and TOFU refresh were each paid for in a production
 incident, and the false-positive guards are the expensive part of all four.
 
@@ -8,16 +8,16 @@ Four modules, one job each:
 
 - `types`        — `SSHConnectionConfig` (host + credentials + the pin), `CommandResult`
                    (parsed *and* raw streams, V56).
-- `errors`       — `SSHExecutionError`, a `NoaError` so the one shared handler shapes it (V73).
-- `banner_strip` — signature-gated removal of CloudLinux LVE/PAM banners (V56).
+- `errors`       — `SSHExecutionError`, a `NoaError` so the one shared handler shapes it.
+- `banner_strip` — signature-gated removal of CloudLinux LVE/PAM banners.
 - `ssh`          — pinned `ssh_exec`, TOFU `ssh_get_host_fingerprint`, `command_from_argv`.
-- `sudo`         — `sudo -n` iff the resolved user is not root (V55), and the
+- `sudo`         — `sudo -n` iff the resolved user is not root, and the
                    rights-failure classifier that makes `ssh_sudo_required` distinct.
 - `output`       — `command_output_text`, the both-streams view every CLI wrapper needs.
                    Added with T16, which is where the third copy of it would have landed.
 
-Consumers: WHM csf/imunify (T16), Proxmox (T17), PMG `pmgsh` (T18), and the admin
-server-validate endpoints (T54), which is where `ssh_get_host_fingerprint` earns its place.
+Consumers: WHM csf/imunify, Proxmox, PMG `pmgsh`, and the admin
+server-validate endpoints, which is where `ssh_get_host_fingerprint` earns its place.
 """
 
 from core.remote_exec.banner_strip import strip_ssh_banners

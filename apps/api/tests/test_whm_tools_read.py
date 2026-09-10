@@ -1,20 +1,20 @@
-"""WHM READ tools and the error boundary in front of the model (T19 — V8, V18, V19).
+"""WHM READ tools and the error boundary in front of the model.
 
 Two properties, and the second is the one with teeth.
 
-**Nothing a tool emits carries credential material** (V2, V8). The rows in `support.servers`
+**Nothing a tool emits carries credential material**. The rows in `support.servers`
 always have an API token, an SSH password and a private key, so "no secrets leaked" is a
-claim about a row that had some. The result also lands in LibreChat's MongoDB (V26), which
+claim about a row that had some. The result also lands in LibreChat's MongoDB, which
 is why the assertion is against the ciphertext literals rather than against a plaintext
 password nobody stores anyway.
 
-**No raw exception reaches the caller** (V19). `sanitize_tool_errors` is exercised by making
+**No raw exception reaches the caller**. `sanitize_tool_errors` is exercised by making
 the repository raise, because that is where a real failure comes from: a dropped connection,
 a timeout, a bug. The two mappings V19 names are asserted by code, and a `NoaError` is
 asserted to keep its own code — collapsing `ssh_host_key_mismatch` into
 `tool_execution_failed` would strip the one string that says what to fix.
 
-**The listing answers `describe()`, never `to_safe_dict()`** (V110), and a
+**The listing answers `describe()`, never `to_safe_dict()`**, and a
 `is_reseller_credential = true` row is left out of it — visibility only, not authorization
 (V109(a)): the same row still resolves through `resolve_whm_server_ref`, which is what keeps
 the account CHANGE path V106 depends on reachable.
@@ -185,7 +185,7 @@ async def test_a_reseller_credential_row_still_resolves_by_id_name_and_hostname(
 
     Named `name == api_username` (V109(b)), same as the sibling test above: the row this
     proves reachable is a row the admin write can actually create, not a shape that is only
-    ever hidden and never held. `server_ref = owner` (V106) resolves by exactly this pairing.
+    ever hidden and never held. `server_ref = owner` resolves by exactly this pairing.
     """
     reseller_row = whm_server(
         "web08cpnpool01",
@@ -231,7 +231,7 @@ async def test_an_exception_reaches_the_caller_as_a_named_failure(
     """V19's two named mappings, and the text of the original never travels.
 
     The exception messages carry an internal host and a port on purpose: those are exactly
-    the strings that must not end up in a transcript (V8, V26).
+    the strings that must not end up in a transcript.
     """
     result = await whm_list_servers(context=context_that_raises(error))
 
@@ -266,5 +266,5 @@ async def test_cancellation_is_not_swallowed() -> None:
 
 
 def test_the_tool_name_matches_the_catalog() -> None:
-    """The registered name is the one RBAC grants are written against (V10)."""
+    """The registered name is the one RBAC grants are written against."""
     assert TOOL_WHM_LIST_SERVERS in TOOL_CATALOG

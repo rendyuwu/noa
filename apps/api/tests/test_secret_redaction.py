@@ -1,6 +1,6 @@
-"""One-way redaction of anything persisted or logged (T73 — V8, V45).
+"""One-way redaction of anything persisted or logged.
 
-Ported with `core/secrets/redaction.py` from `noa-old` branch `MCP` (C13). The tests are
+Ported with `core/secrets/redaction.py` from `noa-old` branch `MCP`. The tests are
 not ported: the source had none for this module, which is part of why T15 left it out until
 something called it (V69 — a control lands with a test against the real mechanism).
 
@@ -52,7 +52,7 @@ def test_matching_ignores_case_and_surrounding_space() -> None:
 
 
 def test_ordinary_fields_survive_untouched() -> None:
-    """The audit trail has to still say what was asked for (V45, T55).
+    """The audit trail has to still say what was asked for.
 
     A redactor that flattened everything would satisfy V8 and make the audit surface
     useless, so the passthrough is as much the contract as the replacement is.
@@ -107,7 +107,7 @@ def test_the_locator_walks_exactly_where_the_redactor_replaces() -> None:
 
     T38's executor will not run a change whose arguments came back `[redacted]`, and the two
     walks disagreeing is the failure that matters: a shallower locator passes a nested
-    credential through to a runner as the literal placeholder (V66).
+    credential through to a runner as the literal placeholder.
     """
     payload = {
         "server": {"name": "alpha", "ssh_password": SECRET},
@@ -122,7 +122,7 @@ def test_the_locator_walks_exactly_where_the_redactor_replaces() -> None:
 
 
 def test_the_locator_finds_nothing_in_an_unredacted_payload() -> None:
-    """The negative control (V87): an ordinary argument set is not a refusal, and a value that
+    """The negative control: an ordinary argument set is not a refusal, and a value that
     merely *looks* like the placeholder is not one either — the rule is key names."""
     assert sensitive_key_paths({"server_ref": "whm-1", "target": REDACTED}) == []
     assert sensitive_key_paths({}) == []

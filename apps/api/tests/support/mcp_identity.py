@@ -1,4 +1,4 @@
-"""Doubles for MCP identity resolution (T11).
+"""Doubles for MCP identity resolution.
 
 Same split as `support.mcp_tokens`: these cover policy, and `SQLMcpIdentityRepository` gets
 its own coverage against a live scratch database in `test_mcp_identity_repository.py`. The
@@ -19,7 +19,7 @@ surface for invariants a value-only double could not express:
 split V4 rests on. It records the emails it was asked about so a test can prove the call
 did not happen rather than inferring it from the result.
 
-`build_auth_context` (T12) is the same doubles behind an `McpAuthContext`, so the verifier
+`build_auth_context` is the same doubles behind an `McpAuthContext`, so the verifier
 and the HTTP request path are exercised over one set of fakes. Its session is a stub that
 nothing touches: both repository doubles ignore it, which is what lets the R4 header check
 run in the suite that always runs rather than only where Postgres is up.
@@ -100,12 +100,12 @@ class FakeMcpIdentityRepository:
 
     def __init__(self) -> None:
         self.tokens: dict[UUID, StoredAuthToken] = {}
-        # Write counters — see the module docstring (V4).
+        # Write counters — see the module docstring.
         self.commits = 0
         self.binds = 0
         self.ldap_touches = 0
         self.used_touches = 0
-        # Set by a test to simulate losing the TOFU bind race (C20).
+        # Set by a test to simulate losing the TOFU bind race.
         self.bind_race_winner: str | None = None
 
     # --- Protocol ---
@@ -132,7 +132,7 @@ class FakeMcpIdentityRepository:
         if stored is None:
             return ""
         if self.bind_race_winner is not None:
-            # Someone else bound between the read and this write (C20).
+            # Someone else bound between the read and this write.
             stored.librechat_user_id = self.bind_race_winner
         elif stored.librechat_user_id is None:
             stored.librechat_user_id = librechat_user_id
@@ -247,7 +247,7 @@ def build_resolver(
 
 
 def stale_check(*, seconds: int = REVALIDATE_SECONDS) -> datetime:
-    """A `last_ldap_check_at` exactly `seconds` old — the staleness boundary (V4)."""
+    """A `last_ldap_check_at` exactly `seconds` old — the staleness boundary."""
     return NOW - timedelta(seconds=seconds)
 
 
@@ -256,7 +256,7 @@ class StubSession:
 
 
 def authenticated_caller(user_id: UUID | None = None) -> tuple[AuthenticatedUser, UUID]:
-    """An accepted caller, shaped exactly as `NoaTokenVerifier` shapes one (R5).
+    """An accepted caller, shaped exactly as `NoaTokenVerifier` shapes one.
 
     `scope["user"]` is where `get_access_token()` looks first, so this is what lets a test
     drive a tool function through the *production* `current_mcp_identity` rather than a
@@ -266,7 +266,7 @@ def authenticated_caller(user_id: UUID | None = None) -> tuple[AuthenticatedUser
     `current_mcp_identity` reads stay one set of constants: a hand-written claims dict would
     let a test pass against an identity production never produces.
 
-    Shared by T33's gate tests and T63's result tool (V66) — both need a caller whose id they
+    Shared by T33's gate tests and T63's result tool — both need a caller whose id they
     then assert a row against, and two copies of this construction would be two chances for a
     test to agree with itself.
     """
@@ -296,7 +296,7 @@ def http_request_context(
     path: str = "/mcp",
     user: Any = None,
 ) -> Iterator[Request]:
-    """Run a block inside the request contextvar `RequestContextMiddleware` sets (R4).
+    """Run a block inside the request contextvar `RequestContextMiddleware` sets.
 
     Built from a raw ASGI scope rather than a `TestClient` round trip so a unit test can
     name the exact headers on the wire, including their absence. The `Request` is yielded so
@@ -334,7 +334,7 @@ def build_auth_context(
     ldap_revalidate_seconds: int = REVALIDATE_SECONDS,
     max_attempts: int = RATE_LIMIT_MAX_ATTEMPTS,
 ) -> McpAuthContext:
-    """An `McpAuthContext` over in-memory doubles (T12).
+    """An `McpAuthContext` over in-memory doubles.
 
     The context is the production value object and `resolve_mcp_identity` is the production
     function; only the session, the two repositories and the directory are faked.

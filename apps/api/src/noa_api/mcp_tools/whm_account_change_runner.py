@@ -1,4 +1,4 @@
-"""The halves of `whm_suspend_account` and `whm_unsuspend_account` that change WHM (T22, T23).
+"""The halves of `whm_suspend_account` and `whm_unsuspend_account` that change WHM.
 
 Beside `whm_account_change.py` rather than inside it, and the reason is the same one that split
 the Proxmox and PMG tools from their runners: a CHANGE tool is two halves on opposite sides of
@@ -14,7 +14,7 @@ it was, so a reader following a name from a receipt still lands on the module th
 
 **Two runners, one implementation, and the difference is one value.** Suspend and unsuspend are
 separate names on purpose — opposite risk directions, and RBAC can grant them apart — but
-everything between the two names is shared (V66): `_resolve_change_target` turns an approved
+everything between the two names is shared: `_resolve_change_target` turns an approved
 request into the client that performs it and re-proves the credential's ownership,
 `_verify_account_state` is the postflight, and `_AccountChangeDirection` carries the only thing
 that differs, which is the value `suspended` must hold once the change took.
@@ -32,7 +32,7 @@ is two named strings rather than the summary.
 
 **The delta states a field change, and the `old` side comes off the evidence.** What moved is one
 boolean, `suspended`, and the value it moved from is the reading the operator authorised against
-rather than a second reading taken later (V33). Where the evidence cannot say, no field change is
+rather than a second reading taken later. Where the evidence cannot say, no field change is
 stated at all: an `old` side nobody recorded is not an `old` side of `false`, and a delta whose
 before-value was invented is the fabrication V86 refuses one surface over.
 """
@@ -87,7 +87,7 @@ from noa_api.mcp_tools.whm_read import MESSAGE_LIST_ACCOUNTS_FAILED
 
 # The one field an account change moves, and the name it is stated under in every delta this
 # module publishes. A constant because a receipt outlives the call and a renamed field reads to a
-# reader as a different fact (V66).
+# reader as a different fact.
 DELTA_FIELD_SUSPENDED: Final = "suspended"
 
 logger = structlog.get_logger(__name__)
@@ -98,7 +98,7 @@ class _AccountChangeDirection:
     """What "the change took" means for one direction of the suspend/unsuspend pair.
 
     The two tools are mirror images, and this is what makes that a fact of construction rather
-    than a claim in a docstring (V66): one postflight reads both, and the only thing it needs
+    than a claim in a docstring: one postflight reads both, and the only thing it needs
     from its caller is which value `suspended` must hold afterwards. Flipping `target_suspended`
     is what a mutation test flips, and it turns "the change took" into its opposite in one place
     — in the payload and in the delta at once, since the delta's `new` side is read from here.
@@ -157,7 +157,7 @@ class _ChangeTarget:
 
 
 def build_whm_suspend_runner(*, context: McpToolContext) -> ChangeRunner:
-    """The half that suspends, reachable only after an operator approved (T22, T38 — V22, V46).
+    """The half that suspends, reachable only after an operator approved.
 
     A closure over the tool context rather than a class: what it needs is the same session
     factory, cipher and client factory the tool used, and holding them by reference is what makes
@@ -169,14 +169,14 @@ def build_whm_suspend_runner(*, context: McpToolContext) -> ChangeRunner:
 
         Answers the ordinary tool envelope (`noa_api.mcp_tools.results`), because the executor
         classifies the run and bounds the summary off it. It does not raise, for the reason a
-        tool does not (V19): the executor catches, but what it can record then is coarser than
+        tool does not: the executor catches, but what it can record then is coarser than
         what this knew.
 
         The server and the account both come from the **evidence**, never from the arguments —
-        `_resolve_change_target` is where that rule lives, shared with T23's runner (V33, V66).
+        `_resolve_change_target` is where that rule lives, shared with T23's runner.
 
         The resolution refusal carries **no delta**: nothing was asked of WHM, so nothing was
-        measured and nothing is stated (V86). WHM's own refusal of the mutation does carry one,
+        measured and nothing is stated. WHM's own refusal of the mutation does carry one,
         because by then the identity is resolved and the credential is proven.
         """
         target = await _resolve_change_target(request, context=context)
@@ -198,11 +198,11 @@ def build_whm_suspend_runner(*, context: McpToolContext) -> ChangeRunner:
 
 
 def build_whm_unsuspend_runner(*, context: McpToolContext) -> ChangeRunner:
-    """The half that lifts a suspension, reachable only after an operator approved (T23, T38).
+    """The half that lifts a suspension, reachable only after an operator approved.
 
     The suspend runner one direction over, and deliberately narrower in one respect:
     `unsuspendacct` takes only a username. `request.reason` is on the request — the executor
-    reads it off the row for every approved change (V43) — and this runner does not touch it,
+    reads it off the row for every approved change — and this runner does not touch it,
     because there is no field on the target system it belongs in. Nothing to write out means
     none of V96's return paths open here.
     """
@@ -226,7 +226,7 @@ def build_whm_unsuspend_runner(*, context: McpToolContext) -> ChangeRunner:
 
 
 def build_whm_account_change_runners(*, context: McpToolContext) -> dict[str, ChangeRunner]:
-    """Tool name → the thing that performs that change once approved (T22, T23)."""
+    """Tool name → the thing that performs that change once approved."""
     return {
         TOOL_WHM_SUSPEND_ACCOUNT: build_whm_suspend_runner(context=context),
         TOOL_WHM_UNSUSPEND_ACCOUNT: build_whm_unsuspend_runner(context=context),
@@ -239,7 +239,7 @@ def build_whm_account_change_runners(*, context: McpToolContext) -> dict[str, Ch
 async def _resolve_change_target(
     request: ChangeExecutionRequest, *, context: McpToolContext
 ) -> _ChangeTarget | ToolPayload:
-    """The client and username an approved account change runs against, or the refusal (V33).
+    """The client and username an approved account change runs against, or the refusal.
 
     **From the evidence, never from the arguments.** `server_ref` is a string the model supplied
     and inventory can be edited between a request and its approval; `evidence["server_id"]` is
@@ -254,7 +254,7 @@ async def _resolve_change_target(
 
     **A third refuses on the identity of the credential** (§V106). The row's `api_username` is
     read here, now, and compared against the `owner` the card was built from: a row is editable
-    between a request and its decision (V33), so the credential this change would run as need
+    between a request and its decision, so the credential this change would run as need
     not be the one the operator authorised — repointing `api_username` at another reseller after
     the card was rendered would otherwise be a silent substitution of the acting identity. The
     live value is the one that can be wrong, so the live value is the one that is checked.
@@ -262,7 +262,7 @@ async def _resolve_change_target(
     It refuses on an **unproven** verdict too, including a row whose evidence carries no `owner`
     — one opened before this key existed. An approval authorises a change to *this* account by
     *that* credential, and evidence that cannot say whether the pair holds does not carry the
-    authorisation forward (V86).
+    authorisation forward.
 
     The gate-time `suspended` reading is lifted off the same summary the username came from, and
     it is read as a strict `True` rather than for truthiness: this becomes the `old` side of a
@@ -298,7 +298,7 @@ async def _resolve_change_target(
             username=username,
             owner=owner,
             api_username=api_username,
-            # What the model asked for, as the gate recorded it (T33). The resolved row's name
+            # What the model asked for, as the gate recorded it. The resolved row's name
             # is a reseller's `api_username` by V109(b) and stays out of the answer; it goes to
             # the log instead.
             server_ref=request.arguments.get("server_ref"),
@@ -327,7 +327,7 @@ def _account_delta(
     The identity is two named strings — the server and the account — and deliberately not the
     account summary the postflight just read. That summary carries WHM's `suspendreason`, which
     as of T22 is the operator's own words coming back off the target system, and a delta is a
-    receipt key a model can reach through the audit trail (C8, V15, V43). `ChangeDelta` would
+    receipt key a model can reach through the audit trail. `ChangeDelta` would
     refuse it, and the point of building the identity by hand is that the refusal never has to
     fire.
 
@@ -360,7 +360,7 @@ def _suspension_change(
     - `None` — the evidence carried no usable `old` side, so no comparison happened. An empty
       tuple here would tell an operator NOA compared and found the account where it left it,
       about a change the postflight has just confirmed moved it. An `old` side nobody recorded is
-      not an `old` side of `false` (V86).
+      not an `old` side of `false`.
     - `()` — both sides were read and they match. Reachable without being a bug: the tool answers
       `no_op` instead of gating when the account is already in the state the change would
       produce, so the only way here is a row whose account moved and moved back while the request
@@ -391,7 +391,7 @@ async def _verify_account_state(
       as a failure would send an operator to repeat a change that may already have taken;
       reporting it as a plain success would claim a confirmation nobody has.
 
-    One function for both directions (V66): `direction.target_suspended` is the only thing that
+    One function for both directions: `direction.target_suspended` is the only thing that
     differs, and a second copy of these three branches is a second place the third one can be
     dropped.
 
@@ -467,7 +467,7 @@ def _passthrough_failure(
     The delta beside it states **no** field change. WHM refusing a call is not the same as WHM
     reporting that nothing happened: a timeout or a dropped connection arrives here too, and the
     mutation behind it may have landed. `()` would claim a re-read that never happened, and
-    `false` in a rendered diff would read as one (V86).
+    `false` in a rendered diff would read as one.
     """
     message = result.get("message")
     spoken = message if isinstance(message, str) and message.strip() else None

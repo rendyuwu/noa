@@ -531,7 +531,7 @@ async def test_the_gate_answer_is_the_text_block_then_the_ui_resource() -> None:
     """§V.24's "two branches ship together", asserted on the count and the order.
 
     The text carries the address plainly because the frame can fail to load and then the URL is
-    the only door (§V.25), and the resource is what LibreChat renders (T32, R29).
+    the only door (§V.25), and the resource is what LibreChat renders.
     """
     fixture, _ = nic_context()
 

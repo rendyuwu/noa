@@ -22,7 +22,7 @@ left for a reader to notice:
   either spelling and emit the new one — which is more machinery than the defect earns. Two
   consequences a reader should expect: decoding a token by hand shows `toolRunId` for an
   action-request position, and a cursor minted on one list decodes cleanly on the other and pages
-  from a meaningless position. Both surfaces are admin-only (V13), so neither is a disclosure.
+  from a meaningless position. Both surfaces are admin-only, so neither is a disclosure.
 
 **Why keyset and not `OFFSET`.** The audit trail is written while it is read: every MCP call
 appends a row, so an offset page re-reads rows that shifted under it — an operator paging back
@@ -31,7 +31,7 @@ last page ended on, so the next page continues from a position rather than from 
 
 The token is **opaque, not signed**. It carries a timestamp and a UUID that the caller already
 saw in the page it came from, and it authorises nothing: `require_admin` is the access control
-on both audit routes (V13). A signature here would protect a value that is not a secret.
+on both audit routes. A signature here would protect a value that is not a secret.
 """
 
 from __future__ import annotations

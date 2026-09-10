@@ -1,4 +1,4 @@
-"""`/auth` route guards (T8, V6, V7, V8, V9, V79).
+"""`/auth` route guards.
 
 No Postgres: `support.auth.auth_harness` swaps the repository and the rate-limit store
 for in-memory doubles and leaves everything else — router, error handler, `JWTService`,
@@ -82,14 +82,14 @@ def encode_session(**claim_overrides: object) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
 
 
-# --- Login: success + cookie (V6) ---
+# --- Login: success + cookie ---
 
 
 def test_login_sets_httponly_session_cookie_with_v6_attributes() -> None:
     """V6: httpOnly, SameSite=Lax, `Path=/`, Max-Age matching the token TTL.
 
     `Domain` is not asserted here — the harness unsets it so `TestClient` will store the
-    cookie at all. The `.noa.internal` scope (V40) is covered in `test_jwt_service.py`,
+    cookie at all. The `.noa.internal` scope is covered in `test_jwt_service.py`,
     which reads the header without a client in the way.
     """
     repository = FakeAuthRepository()
@@ -123,7 +123,7 @@ def test_login_returns_the_user_and_their_roles() -> None:
 
 
 def test_login_refreshes_directory_attributes_on_the_existing_row() -> None:
-    """LDAP is the source of truth for the display name and DN (C4)."""
+    """LDAP is the source of truth for the display name and DN."""
     repository = FakeAuthRepository()
     user = repository.add_active_user(OPERATOR_EMAIL)
     user.display_name = "Stale Name"
@@ -177,7 +177,7 @@ def test_first_login_provisions_inactive_user_and_returns_403_pending_approval()
 
 
 def test_pending_approval_still_commits_the_provisioned_row() -> None:
-    """The row an admin has to enable must survive the 403 (V7).
+    """The row an admin has to enable must survive the 403.
 
     `noa-old` needed its session dependency to sniff the exception type for this;
     `AuthService` commits before the activation gate instead. Asserting on the
@@ -296,7 +296,7 @@ def test_blank_credentials_rejected_without_touching_the_directory(payload: dict
 def test_login_error_response_carries_no_password_and_no_detail() -> None:
     """V8: body is `error_code` + `message` + `request_id`. `detail` names internals.
 
-    `request_id` joined the set with T64 (V73). It is the one addition V8 admits: a
+    `request_id` joined the set with T64. It is the one addition V8 admits: a
     per-request opaque id, minted by NOA, that names the log line rather than anything in it.
     """
     repository = FakeAuthRepository()
@@ -652,7 +652,7 @@ def test_me_rejects_session_with_future_dated_iat(monkeypatch: pytest.MonkeyPatc
     assert issued_now.status_code == 200
 
 
-# --- Logout (V6) ---
+# --- Logout ---
 
 
 def test_logout_clears_cookie_without_authentication() -> None:
@@ -671,7 +671,7 @@ def test_logout_is_idempotent() -> None:
 
     Compared through `cookie_shape`, not the raw header: `delete_cookie` stamps `Expires`
     from the clock, so two POSTs that straddle a second boundary emit different header
-    strings while clearing the very same cookie (B4).
+    strings while clearing the very same cookie.
     """
     with auth_harness() as harness:
         first = harness.client.post("/auth/logout")

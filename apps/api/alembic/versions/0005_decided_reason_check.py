@@ -4,7 +4,7 @@ Revision ID: 0005_decided_reason_check
 Revises: 0004_action_requests
 Create Date: 2026-08-08
 
-T37 (C8, V15), closing the item T34 flagged open by name. T34 argued that "a decided row
+T37, closing the item T34 flagged open by name. T34 argued that "a decided row
 carries a non-blank reason" is machine-readable, so V84c says bind it at the mechanism rather
 than trust prose — but left the constraint's exact shape to T37 and T39, because V15 names
 the approve *endpoint* as the gate and because an expired row is terminal with nobody to have
@@ -13,7 +13,7 @@ typed anything. This is that shape, now that both callers exist.
 "Contains a non-whitespace character" rather than `reason IS NOT NULL`: whitespace is not an
 answer to "why is this change being made", and the field that authorises a change is the last
 one to accept a placeholder. The endpoint refuses a blank reason with 409
-`change_reason_required` (V15); this is the same rule at the mechanism, so a *second*
+`change_reason_required`; this is the same rule at the mechanism, so a *second*
 writer — T38's executor, T39's sweep, an admin script — cannot record a decision nobody
 justified.
 

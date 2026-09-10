@@ -1,10 +1,10 @@
-"""Scratch-database helpers for tests that need real SQL (T8).
+"""Scratch-database helpers for tests that need real SQL.
 
 Every DB-backed test file creates its own database, migrates it to `head`, and drops it,
 skipping rather than failing when Postgres is unreachable so the suite still runs without
-Docker — **unless `NOA_REQUIRE_POSTGRES` is set, and CI sets it** (V102): the same skip that
+Docker — **unless `NOA_REQUIRE_POSTGRES` is set, and CI sets it**: the same skip that
 keeps a laptop useful is what lets a pipeline read green over the 23 files that need SQL.
-Shared here because two files needed the same forty lines (V66) and because the skip
+Shared here because two files needed the same forty lines and because the skip
 behaviour must be identical — one file failing where another skips reads as a real
 regression.
 
@@ -33,7 +33,7 @@ from core.config import get_settings
 # Alembic's runner lives with the API app (C12: one history for the monorepo).
 API_DIR = Path(__file__).resolve().parents[2]
 
-# Same URL resolution the app and Alembic use (T5).
+# Same URL resolution the app and Alembic use.
 DEV_URL = get_settings().postgres_url_str
 
 # V102: the skip below is what lets a laptop without Docker still run 92 of the 115 test files,
@@ -53,16 +53,16 @@ _NEGATIVE = frozenset({"", "0", "false", "no", "off"})
 
 
 def postgres_required() -> bool:
-    """Whether an unreachable Postgres is a failure rather than a skip (V102)."""
+    """Whether an unreachable Postgres is a failure rather than a skip."""
     return os.environ.get(REQUIRE_POSTGRES_ENV_VAR, "").strip().lower() not in _NEGATIVE
 
 
 def unreachable_postgres(exc: BaseException) -> NoReturn:
-    """Skip, or fail when the environment says the service was supposed to be there (V102).
+    """Skip, or fail when the environment says the service was supposed to be there.
 
     One function rather than a check at each call site, for the reason this module's docstring
     already gives: the skip behaviour must be identical everywhere, because one file failing where
-    another skips reads as a real regression (V66).
+    another skips reads as a real regression.
     """
     message = f"Postgres unavailable: {exc}"
     if postgres_required():
@@ -129,7 +129,7 @@ async def run_statements(url: str, *statements: str) -> None:
 
 
 def run_alembic(*args: str, url: str) -> subprocess.CompletedProcess[str]:
-    """Invoke Alembic against `url` via `-x url=`, never a file or env var (C11)."""
+    """Invoke Alembic against `url` via `-x url=`, never a file or env var."""
     return subprocess.run(  # noqa: S603  (fixed argv, no shell)
         [sys.executable, "-m", "alembic", "-x", f"url={url}", *args],
         cwd=API_DIR,
@@ -193,7 +193,7 @@ async def session_factory(database_url: str) -> AsyncIterator[async_sessionmaker
     A *factory*, not a session: a concurrency case needs two independent connections, and a
     single shared session would serialise them in Python before Postgres ever saw a lock.
 
-    This is the body of the `factory` fixture the live files declare, held in one place (V66).
+    This is the body of the `factory` fixture the live files declare, held in one place.
     The fixture itself stays in each test module rather than being imported from here: it has
     to bind the name `factory` in that module, and an imported fixture collides with the
     parameter of every test that requests it. What is worth sharing is this — a second copy is

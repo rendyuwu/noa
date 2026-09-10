@@ -74,7 +74,7 @@ async function mounted(scope: TokenScope = SELF) {
 }
 
 // The detector is `./token-plaintext`, shared with the dialog lane, and its own
-// specs prove it still separates a plaintext from a `token_prefix` (V87). What
+// specs prove it still separates a plaintext from a `token_prefix`. What
 // stays here is the reachability control §V103 demands: this file's `false`
 // assertions only mean something if the same call is shown answering `true` for
 // the value that was actually minted.
@@ -116,7 +116,7 @@ describe('useTokens loading', () => {
 // V89: two callers have to genuinely OVERLAP, the assertion is on ORDER, and a
 // negative control shows the forbidden interleaving is deliverable. Resolving
 // two promises with `Promise.all` would pass with every guard deleted.
-describe('stale load (V89)', () => {
+describe('stale load', () => {
   it('drops the older load when it lands after the newer one', async () => {
     const older = deferred<McpToken[]>()
     const newer = deferred<McpToken[]>()
@@ -163,7 +163,7 @@ describe('stale load (V89)', () => {
   })
 })
 
-describe('mutation versus refresh (V89)', () => {
+describe('mutation versus refresh', () => {
   it('a refresh in flight cannot undo a mutation that settled during it', async () => {
     const { result } = await mounted()
     const slowLoad = deferred<McpToken[]>()

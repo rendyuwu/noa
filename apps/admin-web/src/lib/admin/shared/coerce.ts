@@ -7,7 +7,7 @@
 // `coerceString`/`coerceRecord` arrived with the receipt parser (§T.48), which
 // had its own copies in the old repo's chat lib. One home for the coercers keeps
 // the audit receipt and the server verticals agreeing on what counts as a string
-// and what counts as a record (V66).
+// and what counts as a record.
 
 // Narrow an unknown to a string, or to undefined when it is anything else.
 export function coerceString(value: unknown): string | undefined {

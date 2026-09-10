@@ -12,7 +12,7 @@ import {
  * Parsing the API's card body (§T.41).
  *
  * The two properties worth separating here are opposites, and both are deliberate: parsing is
- * permissive so a missing field renders as unknown rather than as a blank iframe (V38), while
+ * permissive so a missing field renders as unknown rather than as a blank iframe, while
  * `canDecide` is fail-closed so anything unrecognised renders read-only.
  */
 
@@ -68,7 +68,7 @@ describe('parseApprovalCard', () => {
     expect(card.csrf).toBe(BODY.csrf)
   })
 
-  it('carries the evidence the card exists to show (C9, V17, V35)', () => {
+  it('carries the evidence the card exists to show', () => {
     // Asserted on a value, not on a key: the before-state is the one thing on this row the model
     // is never told, and the card is the only surface that renders it.
     expect(parsed({ evidence: { before_state: 'suspended=false' } }).evidence).toEqual({
@@ -76,7 +76,7 @@ describe('parseApprovalCard', () => {
     })
   })
 
-  it('maps a run when there is one (V29, V47)', () => {
+  it('maps a run when there is one', () => {
     const card = parsed({
       status: 'APPROVED',
       decided_at: '2026-08-08T09:30:00+00:00',
@@ -107,7 +107,7 @@ describe('parseApprovalCard', () => {
   it('keeps the receipt as two halves (§T.42(b), V46, DECISIONS §6.5)', () => {
     // The requirement is that before and after stay separable all the way to the render. A parser
     // that merged them, or kept only the one it thought was the outcome, goes red here — and the
-    // two payloads share no value, so this cannot pass by carrying one of them twice (V87).
+    // two payloads share no value, so this cannot pass by carrying one of them twice.
     const card = parsed({ receipt: RECEIPT })
 
     expect(card.receipt).toEqual({
@@ -132,7 +132,7 @@ describe('parseApprovalCard', () => {
 
   it.each([null, undefined, 'done', 42, []])('reads %o as no receipt', (receipt: unknown) => {
     // `null` is what the API sends until something records an outcome, and anything else is a body
-    // it cannot send — both render as no outcome section rather than an empty one (V38).
+    // it cannot send — both render as no outcome section rather than an empty one.
     expect(parsed({ receipt }).receipt).toBeNull()
   })
 
@@ -173,7 +173,7 @@ describe('parseApprovalCard', () => {
     },
   )
 
-  it('never produces a reason field (C8, V15, V43)', () => {
+  it('never produces a reason field', () => {
     // The API sends none. This asserts the parser does not invent one either — a `reason` key
     // here would be the first place a render path could read the operator's own words back.
     const card = parsed({ reason: 'smuggled in by a body that should not carry one' })
@@ -192,12 +192,12 @@ describe('canDecide', () => {
     'is false for status %s',
     (status: string) => {
       // Including a status this build has never heard of: fail-closed is the only safe direction
-      // for "may this operator act" (V38).
+      // for "may this operator act".
       expect(canDecide(parsed({ status }))).toBe(false)
     },
   )
 
-  it.each([null, undefined, ''])('is false when the token is %o (V39)', (csrf: unknown) => {
+  it.each([null, undefined, ''])('is false when the token is %o', (csrf: unknown) => {
     // The API sends `null` once nothing may be decided. A card without a live token must not show
     // live buttons — the POST would only ever be refused.
     expect(canDecide(parsed({ csrf }))).toBe(false)

@@ -30,8 +30,8 @@ describe('resolveProxyTarget — allows exactly the embed’s four calls', () =>
     // V41: the admin surface is reachable from the admin origin, which is not frameable.
     ['GET', ['admin', 'users'], 'the admin surface'],
     ['POST', ['admin', 'users', '1', 'tokens'], 'token minting'],
-    ['GET', ['me', 'mcp-tokens'], 'the caller’s own MCP tokens (C5)'],
-    // The MCP endpoint authenticates with a bearer token, never a cookie (C5, V3).
+    ['GET', ['me', 'mcp-tokens'], 'the caller’s own MCP tokens'],
+    // The MCP endpoint authenticates with a bearer token, never a cookie.
     ['POST', ['mcp'], 'the MCP transport'],
     ['GET', ['health'], 'the API liveness probe — this app has its own'],
     // Right path, wrong method: the shape is matched with the method, not after it.

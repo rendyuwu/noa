@@ -1,4 +1,4 @@
-"""Shared persistence layer (C3, C12).
+"""Shared persistence layer.
 
 One DB, one schema, one Alembic history. Importing this package pulls in every
 schema-v1 model so `Base.metadata` is complete for migration autogenerate.

@@ -1,4 +1,4 @@
-# LibreChat config for the embed render gate run (T59).
+# LibreChat config for the embed render gate run.
 #
 # `mcpServers.noa` is the shape T57 will ship, minus one deviation noted below: the bearer
 # token is written literally here instead of coming from `customUserVars.NOA_MCP_TOKEN`,
@@ -10,7 +10,7 @@
 # probe tools are uncatalogued on purpose (V10, V83a); see `noa_embed_probe_server.py`.
 #
 # Trailing slash is deliberate: Starlette answers the mounted app at `/mcp-embed-probe/` and
-# 307s the bare path, so the slash saves a redirect on every call (T13).
+# 307s the bare path, so the slash saves a redirect on every call.
 
 version: 1.3.0
 

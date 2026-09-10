@@ -1,4 +1,4 @@
-"""Deciding a pending CHANGE request (T37 — V15, V27, V28, V29, V32).
+"""Deciding a pending CHANGE request.
 
 T33 opens the question and T34's row *is* the authorization. This is the only thing that
 answers it, and it is deliberately a different module from `core.approvals.repository`.
@@ -18,7 +18,7 @@ check outside the thing that makes it hold: two concurrent approvals both read `
 both proceed, and the second overwrites the first's decision.
 
 **One transaction covers the decision and the run it starts.** An approval writes a
-`tool_runs` row (V46) and links it from `action_requests.tool_run_id`, and both land in the
+`tool_runs` row and links it from `action_requests.tool_run_id`, and both land in the
 same commit — `start_change_run` is on this repository rather than taken as a caller-supplied
 collaborator precisely so "same session" is a fact of construction and not an obligation a
 caller can get wrong. What that buys: `APPROVED` with no run, and a run with no approval,
@@ -30,7 +30,7 @@ a `STARTED` run, which is exactly the pair T38's reaper is specified to sweep �
 handing off first could start a change whose authorization then rolled back.
 
 `ApprovedChangeExecutor` is the seam T38 filled: `AsyncioApprovedChangeExecutor`
-(`core.approvals.execution_host`) schedules an in-process task per approved change (V30). The
+(`core.approvals.execution_host`) schedules an in-process task per approved change. The
 `DeferredApprovedChangeExecutor` placeholder this module carried between T37 and T38 is gone —
 production no longer wires it, and a placeholder nothing uses is dead code that reads as a
 supported mode.
@@ -91,7 +91,7 @@ LOG_REQUEST_EXPIRED_ON_READ: Final = "action_request_expired_on_read"
 LOG_EXECUTION_HANDOFF_FAILED: Final = "approved_change_execution_handoff_failed"
 
 # An approval was refused because the operator already has their allowance of changes running
-# (V31). Logged because "my approve button returns 409" is otherwise indistinguishable, to the
+#. Logged because "my approve button returns 409" is otherwise indistinguishable, to the
 # operator, from a request that expired.
 LOG_INFLIGHT_LIMIT_REACHED: Final = "approved_change_inflight_limit_reached"
 
@@ -105,13 +105,13 @@ logger = structlog.get_logger(__name__)
 
 @dataclass(frozen=True)
 class LockedActionRequest:
-    """A pending request, read under `FOR UPDATE` (V28).
+    """A pending request, read under `FOR UPDATE`.
 
     A value object rather than the ORM row, for the reason `support.tool_runs` gives one
     layer down: the service is what decides, and handing it a live ORM instance would let it
     write columns this design does not permit it to write. It carries exactly the fields the
-    decision needs — who may decide (V27), whether it still may be decided (V28, V32), and
-    what an approved run has to record (V46, V47).
+    decision needs — who may decide, whether it still may be decided, and
+    what an approved run has to record.
     """
 
     action_request_id: UUID
@@ -124,14 +124,14 @@ class LockedActionRequest:
 
     @property
     def redacted_arguments(self) -> dict[str, Any]:
-        """The tool arguments as the gate redacted them at request time (V8, V33).
+        """The tool arguments as the gate redacted them at request time.
 
         `core.approvals.context` owns the key and the extraction rule, because T63 reads the
         same payload for `noa_get_action_result` and two readers of one JSONB column with two
-        spellings of its key is one spelling too many (V66).
+        spellings of its key is one spelling too many.
 
         Unchanged by §V108, deliberately: this is the value a **model** can reach, through
-        `ActionResultView.arguments` (V76), so the credential the change acts as is added to the
+        `ActionResultView.arguments`, so the credential the change acts as is added to the
         audit row next door rather than merged in here.
         """
         return arguments_from_context(self.approval_context)
@@ -158,7 +158,7 @@ class LockedActionRequest:
 
 @dataclass(frozen=True)
 class ApprovalOutcome:
-    """An approval that committed, and the run it started (V29)."""
+    """An approval that committed, and the run it started."""
 
     action_request_id: UUID
     tool_run_id: UUID
@@ -183,7 +183,7 @@ class ApprovedChangeExecutor(Protocol):
 
 
 class ActionDecisionRepository(Protocol):
-    """What a decision needs: a lock, a count, a run, a write, and a commit (V28, V29, V31)."""
+    """What a decision needs: a lock, a count, a run, a write, and a commit."""
 
     async def lock_for_decision(self, *, action_request_id: UUID) -> LockedActionRequest | None: ...
 
@@ -224,7 +224,7 @@ class SQLActionDecisionRepository:
         self._session = session
 
     async def lock_for_decision(self, *, action_request_id: UUID) -> LockedActionRequest | None:
-        """Take the row lock and read the row through it (V28).
+        """Take the row lock and read the row through it.
 
         `populate_existing=True` because the session may already hold this row from an
         earlier read in the same request: without it SQLAlchemy would hand back the
@@ -254,7 +254,7 @@ class SQLActionDecisionRepository:
         )
 
     async def inflight_changes_under_user_lock(self, *, requested_by_user_id: UUID) -> int:
-        """Lock this operator's change slots, then count what is running (V31).
+        """Lock this operator's change slots, then count what is running.
 
         **One method for both halves on purpose.** A bare count is not the invariant: two
         approvals in flight for one operator each read the other's `tool_runs` insert as absent
@@ -296,9 +296,9 @@ class SQLActionDecisionRepository:
         conversation_ref: str | None,
         args: dict[str, Any],
     ) -> UUID:
-        """Insert the `STARTED` run this approval authorises (V46, V47).
+        """Insert the `STARTED` run this approval authorises.
 
-        `SQLToolRunRepository` reused rather than a second insert written here (V66) — the
+        `SQLToolRunRepository` reused rather than a second insert written here — the
         audit trail has one writer per table — and constructed on *this* session, which is
         what makes the run and the decision one transaction.
 
@@ -323,7 +323,7 @@ class SQLActionDecisionRepository:
         decided_at: datetime,
         tool_run_id: UUID | None,
     ) -> None:
-        """Move the locked row to its terminal state (V28).
+        """Move the locked row to its terminal state.
 
         A bare `UPDATE` rather than load-mutate-save, matching `SQLToolRunRepository`:
         `lock_for_decision` already read the row moments ago in this transaction and holds
@@ -351,7 +351,7 @@ class SQLActionDecisionRepository:
 
 
 class ActionDecisionService:
-    """Approve or deny one pending request (T37 — V15, V27, V28, V29, V32).
+    """Approve or deny one pending request.
 
     The ordering lives here, in one place, rather than in the two routes: every guard runs
     inside the lock, and a caller cannot separate taking the lock from writing the answer.
@@ -366,7 +366,7 @@ class ActionDecisionService:
     ) -> None:
         self._repository = repository
         self._executor = executor
-        # `APPROVAL_MAX_INFLIGHT_PER_USER` (V31). Required rather than defaulted, for T33(e)'s
+        # `APPROVAL_MAX_INFLIGHT_PER_USER`. Required rather than defaulted, for T33(e)'s
         # reason one setting over: a default here would be a second answer to "how many changes
         # may one operator have running", and the copy that drifts is always the one nobody
         # edits.
@@ -380,7 +380,7 @@ class ActionDecisionService:
         reason: str,
         now: datetime | None = None,
     ) -> ApprovalOutcome:
-        """Authorise the change, start its run, hand it off (V15, V28, V29, V31, V46)."""
+        """Authorise the change, start its run, hand it off."""
         decided_at = now_utc(now)
         locked = await self._locked_pending(
             action_request_id=action_request_id,
@@ -392,7 +392,7 @@ class ActionDecisionService:
         tool_run_id = await self._repository.start_change_run(
             tool_name=locked.tool_name,
             # The caller, not `locked.requested_by_user_id` — they are the same value, and
-            # `_locked_pending` 404s unless they are (V27). Written this way because it is
+            # `_locked_pending` 404s unless they are. Written this way because it is
             # also the narrower type, and because it says the thing T34 says by *dropping*
             # `decided_by_user_id`: the decider is the requester, one identity, not two.
             requested_by_user_id=caller_user_id,
@@ -432,7 +432,7 @@ class ActionDecisionService:
         reason: str,
         now: datetime | None = None,
     ) -> DenialOutcome:
-        """Refuse the change (V15, V28).
+        """Refuse the change.
 
         `tool_run_id` stays NULL and there is no branch here that could set it: a denied
         change did not run, and an audit row saying otherwise would be worse than none.
@@ -472,15 +472,15 @@ class ActionDecisionService:
     ) -> LockedActionRequest:
         """Every guard a decision must pass, in the order it must pass them.
 
-        1. **Reason first**, before any I/O (V15). A decision with nothing in the box is
+        1. **Reason first**, before any I/O. A decision with nothing in the box is
            refused whatever the row says, and refusing before the lock means a blank submit
            does not queue behind someone else's transaction.
-        2. **Lock, then read** (V28). Everything below is evaluated through the lock.
-        3. **Absent or not the caller's → 404** (V27), one refusal for both, so the response
+        2. **Lock, then read**. Everything below is evaluated through the lock.
+        3. **Absent or not the caller's → 404**, one refusal for both, so the response
            is not an oracle for which requests exist. A NULL requester (the FK is `SET NULL`,
            T34) matches nobody and lands here too, which is the fail-closed direction.
-        4. **Not PENDING → 409** (V28). The one permitted transition already happened.
-        5. **Past its deadline → terminal EXPIRED, then 409** (V32). This is V32's
+        4. **Not PENDING → 409**. The one permitted transition already happened.
+        5. **Past its deadline → terminal EXPIRED, then 409**. This is V32's
            check-on-read, and it *writes*: refusing without the write would leave a row that
            still reads PENDING, so the next reader would have to make the same discovery
            again. The write happens under the lock already held, and the reason stays NULL —
@@ -488,30 +488,30 @@ class ActionDecisionService:
         """
         if not reason.strip():
             raise ChangeReasonRequiredError(
-                f"decision on `{action_request_id}` carried a blank reason (C8, V15)"
+                f"decision on `{action_request_id}` carried a blank reason"
             )
 
         locked = await self._repository.lock_for_decision(action_request_id=action_request_id)
         if locked is None or locked.requested_by_user_id != caller_user_id:
             raise ActionRequestNotFoundError(
-                f"`{action_request_id}` is absent or not requested by `{caller_user_id}` (V27)"
+                f"`{action_request_id}` is absent or not requested by `{caller_user_id}`"
             )
 
         if locked.status is not ActionRequestStatus.PENDING:
             raise ActionRequestAlreadyDecidedError(
-                f"`{action_request_id}` is already `{locked.status.value}` (V28)"
+                f"`{action_request_id}` is already `{locked.status.value}`"
             )
 
         if locked.expires_at <= decided_at:
             await self._expire(locked, decided_at=decided_at)
             raise ActionRequestExpiredError(
-                f"`{action_request_id}` expired at {locked.expires_at.isoformat()} (V32)"
+                f"`{action_request_id}` expired at {locked.expires_at.isoformat()}"
             )
 
         return locked
 
     async def _assert_below_inflight_cap(self, caller_user_id: UUID) -> None:
-        """Refuse a change this operator has no room to run (V31).
+        """Refuse a change this operator has no room to run.
 
         **Last of the guards, and that ordering is deliberate.** It runs after the row is
         locked and after the request has been found live, so an operator at their limit learns
@@ -539,11 +539,11 @@ class ActionDecisionService:
         )
         raise ChangeExecutionLimitReachedError(
             f"`{caller_user_id}` already has {inflight} CHANGE run(s) in flight, "
-            f"limit {self._max_inflight_per_user} (V31)"
+            f"limit {self._max_inflight_per_user}"
         )
 
     async def _expire(self, locked: LockedActionRequest, *, decided_at: datetime) -> None:
-        """Make a stale PENDING terminal, under the lock already held (V32)."""
+        """Make a stale PENDING terminal, under the lock already held."""
         await self._repository.write_decision(
             action_request_id=locked.action_request_id,
             status=ActionRequestStatus.EXPIRED,
@@ -560,7 +560,7 @@ class ActionDecisionService:
         )
 
     async def _hand_off(self, *, tool_run_id: UUID, action_request_id: UUID) -> None:
-        """Start the execution, and never fail the approval over it (V29, V30).
+        """Start the execution, and never fail the approval over it.
 
         The decision is committed by the time this runs. Raising here would answer 500 for a
         change that *is* approved and recorded, and the operator's only move would be to

@@ -55,7 +55,7 @@ test('a document on the LibreChat origin may frame the embed', async ({ page }) 
 
 test('a document on any other origin is refused by the browser', async ({ page }) => {
   // The separating case. Without it the spec above passes just as well with no header at all
-  // (V87) — and the frame that does *not* load is the whole point of the header.
+  // — and the frame that does *not* load is the whole point of the header.
   const refusals: string[] = []
   page.on('console', (message) => {
     if (message.text().includes('frame-ancestors')) refusals.push(message.text())

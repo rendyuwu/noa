@@ -2,7 +2,7 @@
 (T18, V55, V56, V58, V66, V69, V73).
 
 V58 is the whole point of the module and most of this file: **argv-only, ⊥ shell string.** A
-whitelist target arrives from an LLM tool argument (T29), so a `;` or `$(…)` in it must stay one
+whitelist target arrives from an LLM tool argument, so a `;` or `$(…)` in it must stay one
 argument to `pmgsh`. `shlex.split` round-trips are how that is asserted rather than eyeballing a
 string.
 
@@ -272,7 +272,7 @@ def test_parse_pmgsh_json_output_tolerates_status_noise(output: str, expected: o
 
 
 def test_parse_pmgsh_json_output_recovers_from_a_leading_banner() -> None:
-    """`core.remote_exec.banner_strip` is the real fix (V56); scanning to the first `[`/`{` is
+    """`core.remote_exec.banner_strip` is the real fix; scanning to the first `[`/`{` is
     what keeps a banner variant it did not recognise from failing a successful command."""
     assert parse_pmgsh_json_output(f'{_LVE_BANNER}\n{{"version":"8.1"}}') == {"version": "8.1"}
 
@@ -302,7 +302,7 @@ async def test_run_pmgsh_command_converts_an_ssh_failure_into_the_pmg_tree(monke
     """One exception tree out of the module, so a caller does not catch two.
 
     The transport raises here rather than a row being malformed: since T31 the row never
-    reaches this module, and a mismatched host key is what the pin (V82) actually produces.
+    reaches this module, and a mismatched host key is what the pin actually produces.
     """
 
     def refuse(_command: str):  # type: ignore[no-untyped-def]
@@ -317,7 +317,7 @@ async def test_run_pmgsh_command_converts_an_ssh_failure_into_the_pmg_tree(monke
 
 
 async def test_run_pmgsh_command_sends_the_composed_command_over_ssh(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """The command is built from the config that opens the connection (V55).
+    """The command is built from the config that opens the connection.
 
     Asserted together: a `noa-ops` config both escalates and is the config the transport saw.
     Composing against one config and connecting with another is the failure a boolean
@@ -370,7 +370,7 @@ async def test_run_pmg_mynetworks_probe_returns_the_endpoint_with_its_output(mon
 
 
 async def test_run_pmg_mynetworks_list_returns_raw_output_for_the_tool_layer(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """Entry parsing and CIDR normalisation live in `core.integrations.pmg.mynetworks` (V59) —
+    """Entry parsing and CIDR normalisation live in `core.integrations.pmg.mynetworks` —
     this returns text."""
     install_fake_ssh_exec(
         monkeypatch, pmgsh_cli_mod, lambda _cmd: command_result(stdout="1 10.10.10.0/24")

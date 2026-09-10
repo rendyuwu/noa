@@ -1,4 +1,4 @@
-"""The approval card's GET (T41 — V6, V27, V32, V34, V35, V39, V43, V73).
+"""The approval card's GET.
 
 No Postgres: `support.approval_cards.card_harness` swaps the card repository and the expiry
 writer for in-memory doubles and leaves the router, the error handler, `JWTService`, the real
@@ -16,7 +16,7 @@ Three things this file is careful about, and all three are the design:
   matters about it is what `verify_decision_csrf_token` accepts, so that is what is asked.
 - **Order is asserted, not inferred.** The doubles share one journal, so a foreign id
   producing `["read"]` and nothing else is what pins "the requester-match runs before anything
-  that writes" (V27, V32).
+  that writes".
 """
 
 from __future__ import annotations
@@ -61,7 +61,7 @@ def body(response: Response) -> dict:
 
 
 # --------------------------------------------------------------------------------------
-# What the card says (V34, V35)
+# What the card says
 # --------------------------------------------------------------------------------------
 
 
@@ -71,7 +71,7 @@ def test_the_card_carries_the_provenance_v35_names(harness: CardHarness) -> None
     All four in one response, because the operator authorising a change is being asked to
     recognise it: which tool, asked for by whom, from which conversation, when. The requester
     and the LibreChat account come off `approval_context`, persisted at gate time — the FK is
-    `SET NULL` (T34), so a join at render time would lose the identity the moment the operator
+    `SET NULL`, so a join at render time would lose the identity the moment the operator
     was deleted.
     """
     card = harness.add_card()
@@ -92,7 +92,7 @@ def test_the_card_carries_the_provenance_v35_names(harness: CardHarness) -> None
 def test_the_card_carries_the_gate_time_before_state(harness: CardHarness) -> None:
     """V17, V33, V35: the in-process preflight is what the card describes the change with.
 
-    Built once at gate time and persisted, never rebuilt from a transcript (V33) — and shown
+    Built once at gate time and persisted, never rebuilt from a transcript — and shown
     here and nowhere else: `noa_get_action_result` has no field for it
     (`test_noa_tools_action_result.py`), which is what keeps it out of the model's context.
     """
@@ -174,7 +174,7 @@ def test_the_card_body_carries_the_receipts_two_halves(harness: CardHarness) -> 
     The two halves are asserted as two keys with two different payloads, which is the property
     the requirement is about — a body that answered `{"outcome": "done"}` would satisfy "the
     card reports the receipt" and none of what that was for. The fixture's halves share no
-    value, so a response that sent one of them twice separates from this (V87).
+    value, so a response that sent one of them twice separates from this.
 
     Five keys, and the fifth is what the runner said the change moved. It is asserted in the
     same equality as the other four because the two are one contract: the body enumerated here
@@ -284,7 +284,7 @@ def test_the_card_answers_for_every_status(
 
 
 # --------------------------------------------------------------------------------------
-# Who may read it (V6, V27)
+# Who may read it
 # --------------------------------------------------------------------------------------
 
 
@@ -315,7 +315,7 @@ def test_another_operators_request_and_an_unknown_id_answer_identically(
 def test_a_request_whose_requester_was_deleted_belongs_to_nobody(
     harness: CardHarness,
 ) -> None:
-    """T34's FK is `SET NULL`, so a deleted operator leaves a NULL requester behind (V27).
+    """T34's FK is `SET NULL`, so a deleted operator leaves a NULL requester behind.
 
     It matches nobody, which is the fail-closed direction — the alternative is a row anyone
     can read because it belongs to no one.
@@ -328,7 +328,7 @@ def test_a_request_whose_requester_was_deleted_belongs_to_nobody(
 def test_the_read_asks_about_the_cookies_operator_never_the_url(
     harness: CardHarness,
 ) -> None:
-    """The requester compared against is the session's identity (V27).
+    """The requester compared against is the session's identity.
 
     Asserted on what the repository was *asked*, not only on the answer: a route that passed
     something else and still 404'd for the wrong reason would look identical from outside.
@@ -370,7 +370,7 @@ def test_a_disabled_operator_loses_the_card_on_the_next_request(harness: CardHar
 
 
 # --------------------------------------------------------------------------------------
-# The deadline (V32)
+# The deadline
 # --------------------------------------------------------------------------------------
 
 
@@ -396,7 +396,7 @@ def test_a_card_past_its_deadline_reads_expired_and_is_written_expired(
 
 
 def test_a_live_card_is_not_expired_by_being_read(harness: CardHarness) -> None:
-    """The separating case: the check runs, and on a live row it changes nothing (V87).
+    """The separating case: the check runs, and on a live row it changes nothing.
 
     Without this, the assertion above passes just as well against a path that expires
     everything it reads.
@@ -416,7 +416,7 @@ def test_a_foreign_id_never_reaches_the_expiry_writer(harness: CardHarness) -> N
     """V27 before V32, and this is the whole reason for that order.
 
     `expire_if_due` takes an id and no requester, and the id in this URL reaches an operator
-    through a tool result that persists in LibreChat's MongoDB (V26) — so an expiry-first card
+    through a tool result that persists in LibreChat's MongoDB — so an expiry-first card
     would let a prompt-injected id make NOA write to a row its reader cannot see. Reading first
     makes that a pure no-op: one read, no write.
     """
@@ -431,7 +431,7 @@ def test_a_foreign_id_never_reaches_the_expiry_writer(harness: CardHarness) -> N
 
 
 # --------------------------------------------------------------------------------------
-# The CSRF token (V39, T46)
+# The CSRF token
 # --------------------------------------------------------------------------------------
 
 
@@ -507,7 +507,7 @@ def test_a_terminal_card_carries_no_token(
 ) -> None:
     """V39: no live token for a card nobody may decide.
 
-    The decision door would refuse the POST anyway (V28, V32), so this is not the guard — it is
+    The decision door would refuse the POST anyway, so this is not the guard — it is
     the absence of a key with no door, and what the renderer reads to decide whether to draw
     live buttons at all (V38's family: never a live Approve button on something inert).
     """
@@ -518,7 +518,7 @@ def test_a_terminal_card_carries_no_token(
 
 def test_an_expired_on_read_card_carries_no_token(harness: CardHarness) -> None:
     """The status the token is minted against is the one the expiry just wrote, not the one
-    the row had a moment ago (V32, V39)."""
+    the row had a moment ago."""
     card = harness.add_card(expires_in_seconds=-1)
 
     payload = body(harness.get_card(card.action_request_id))
@@ -528,7 +528,7 @@ def test_an_expired_on_read_card_carries_no_token(harness: CardHarness) -> None:
 
 
 # --------------------------------------------------------------------------------------
-# Failure shape (V73)
+# Failure shape
 # --------------------------------------------------------------------------------------
 
 
@@ -549,8 +549,8 @@ def test_a_malformed_id_does_not_reach_the_repository(harness: CardHarness) -> N
     """A non-UUID path segment is a 422 from the path parameter, before any read.
 
     Unlike T63's tool, where a malformed id had to answer with the *same* shape as an unknown
-    one (V76) because a model would otherwise learn which ids are well-formed, this is a
-    browser on NOA's own origin reaching a URL NOA itself built (V26). The 422 says the URL is
+    one because a model would otherwise learn which ids are well-formed, this is a
+    browser on NOA's own origin reaching a URL NOA itself built. The 422 says the URL is
     wrong, which is the truth and the useful thing to say.
     """
     response = harness.client.get("/action-requests/not-a-uuid")

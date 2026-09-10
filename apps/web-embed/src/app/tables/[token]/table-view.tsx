@@ -18,7 +18,7 @@ import styles from './table.module.css'
  * because there is nothing here to authorise. The approval card is the surface that decides; a
  * table is the surface that shows.
  *
- * **The bound is rendered, not merely stored** (V85). `describeBound` says how many rows matched and
+ * **The bound is rendered, not merely stored**. `describeBound` says how many rows matched and
  * how many this page holds, on every table — a sentence that only appeared when something was
  * dropped would be one a reader learns to skip, and the whole point is that a capped page can never
  * be mistaken for a complete one.
@@ -38,7 +38,7 @@ import styles from './table.module.css'
  * The first read is the server's (`page.tsx` → `lib/tables/detail.ts`), so the HTML that reaches the
  * frame is already the authenticated page. What ships to the browser is the retry, and it is a
  * `fetch` — nothing here navigates the frame and nothing submits a form, because the sandbox
- * LibreChat applies omits `allow-forms` (V80, R13, R29).
+ * LibreChat applies omits `allow-forms`.
  *
  * The retry goes through the app's own route rather than the API: this page is server-rendered, so
  * re-reading means re-rendering it, and `location.reload()` is the one navigation a framed document
@@ -181,7 +181,7 @@ export function TableView({
 
   if (load.kind === 'not-found') {
     // One sentence for all four causes the API answers alike: unknown, another operator's, one
-    // whose requester was deleted, and one past its deadline (V27).
+    // whose requester was deleted, and one past its deadline.
     return (
       <Notice
         title="Table not available"

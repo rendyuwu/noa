@@ -1,4 +1,4 @@
-"""`notifications/tools/list_changed` on a permission change (T66 — V1, V14, V74, C23, R30).
+"""`notifications/tools/list_changed` on a permission change.
 
 **What this file may and may not assert.** R30 measured, at LibreChat pin `45cc53c4`, that the
 client ignores this notification: zero handlers for `ToolListChangedNotificationSchema` in the
@@ -21,7 +21,7 @@ What is left is NOA's own behaviour, and it splits three ways:
 And one assertion that is about the *consequence* rather than the mechanism: T66's own V1
 backstop, at the bottom, where a grant revoked through the production write path is refused at
 execution while the client's captured catalog still names it. That is the property that makes a
-stale catalog safe (V74), and it is the only behavioural claim §T.66 permits here.
+stale catalog safe, and it is the only behavioural claim §T.66 permits here.
 """
 
 from __future__ import annotations
@@ -71,7 +71,7 @@ OTHER_EMAIL = "colleague@example.com"
 ADMIN_EMAIL = "admin@example.com"
 
 
-# --- 1. Who gets told, and when (V74) ---
+# --- 1. Who gets told, and when ---
 
 
 async def test_setting_role_tools_notifies_every_holder_of_that_role() -> None:
@@ -154,7 +154,7 @@ async def test_deleting_a_user_notifies_them() -> None:
 
 
 async def test_creating_a_role_notifies_nobody() -> None:
-    """A new role has zero grants and zero holders, so no catalog moved (V74).
+    """A new role has zero grants and zero holders, so no catalog moved.
 
     The negative control for every test above: without it, "notifies on every write" would pass
     just as well, and a client that honoured the notification would refetch for nothing every
@@ -208,7 +208,7 @@ async def test_a_refused_write_notifies_nobody(call: Any, expected_error: type[E
 
 
 async def test_the_notification_follows_the_commit() -> None:
-    """Ordering, on the log the repository and the notifier share (V14, V74).
+    """Ordering, on the log the repository and the notifier share.
 
     Asserted as an order rather than as two facts, because two counters cannot express it. A
     notification sent first would invite a client to read a catalog assembled from rows the
@@ -254,7 +254,7 @@ async def test_a_role_nobody_holds_reaches_the_notifier_not_at_all() -> None:
 
 
 async def test_a_service_built_without_a_notifier_still_writes() -> None:
-    """`NullToolListChangedNotifier` is a real target, not a stub (T66).
+    """`NullToolListChangedNotifier` is a real target, not a stub.
 
     The MCP tool path's own service instance takes it, and so would a CLI or a migration script.
     Built without the argument on purpose — that is the code path the default exists for, and it
@@ -273,7 +273,7 @@ async def test_a_service_built_without_a_notifier_still_writes() -> None:
     assert repository.commits == 1
 
 
-# --- 2. How the emit reaches a session (V74) ---
+# --- 2. How the emit reaches a session ---
 
 
 class FakeServerSession:
@@ -320,7 +320,7 @@ async def test_a_registered_session_receives_tool_list_changed() -> None:
 
 
 async def test_a_session_belonging_to_another_user_receives_nothing() -> None:
-    """The negative control for the whole notifier (V74).
+    """The negative control for the whole notifier.
 
     Without it, an implementation that emitted to every registered session would pass every
     other test in this section — and would tell a client its catalog moved when it had not.
@@ -371,7 +371,7 @@ async def test_notifying_nobody_touches_no_session() -> None:
 
 @pytest.mark.parametrize("error", [anyio.ClosedResourceError(), anyio.BrokenResourceError()])
 async def test_a_closed_session_is_dropped_and_nothing_propagates(error: Exception) -> None:
-    """An ended session is ordinary, not an error (V74).
+    """An ended session is ordinary, not an error.
 
     Dropped from the register as well as survived, and the drop is the point: re-attempting an
     emit on a shut stream every time an admin writes would cost a timeout per write. Asserted
@@ -485,7 +485,7 @@ async def test_the_middleware_registers_nothing_without_a_request_context() -> N
     assert registry.user_ids() == []
 
 
-# --- 3. The register, over the real mount (V74) ---
+# --- 3. The register, over the real mount ---
 
 
 @pytest.fixture
@@ -504,7 +504,7 @@ def mount(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_the_real_mount_registers_the_callers_session(mount) -> None:
-    """The middleware is reached, and it resolves the caller's `users.id` (V74).
+    """The middleware is reached, and it resolves the caller's `users.id`.
 
     The gap this closes is the one the rest of this file cannot: every notifier test above passes
     against a register nothing ever writes, and V74's best-effort emit means an unwritten
@@ -521,7 +521,7 @@ def test_the_real_mount_registers_the_callers_session(mount) -> None:
 
 
 def test_a_session_registers_without_ever_calling_a_tool(mount) -> None:
-    """The negative control on the hook choice (V74).
+    """The negative control on the hook choice.
 
     An idle client holding a catalog from `tools/list` is the exact case this notification is
     for. Registration hung off `on_call_tool` would leave those sessions unregistered while every
@@ -616,13 +616,13 @@ def test_an_unauthenticated_request_registers_nothing(mount) -> None:
     assert registry.user_ids() == []
 
 
-# --- T66's own assertion: the V1 backstop behind a production write (V1, V74) ---
+# --- T66's own assertion: the V1 backstop behind a production write ---
 
 
 def test_a_grant_revoked_through_the_service_is_refused_while_the_cached_catalog_names_it(
     mount,
 ) -> None:
-    """The one behavioural claim §T.66 permits, and the one that matters (V1, V74).
+    """The one behavioural claim §T.66 permits, and the one that matters.
 
     `test_mcp_tool_rbac.py` asserts the backstop by mutating the repository directly. This asserts
     it behind the *production write* — `AuthorizationService.set_role_tools`, the same call

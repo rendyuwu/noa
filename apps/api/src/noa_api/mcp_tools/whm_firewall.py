@@ -1,15 +1,15 @@
 """WHM firewall tools (T24 — `whm_preflight_firewall_entries`).
 
 **This preflight is exposed, and it is the only one that is** (DECISIONS §6.5, owner-confirmed
-2026-08-04). §3's "a preflight runs in-process inside its workflow" rule (C9, V17) is about
+2026-08-04). §3's "a preflight runs in-process inside its workflow" rule is about
 evidence a CHANGE tool gathers for its own approval card; this one is step 1 of the operator's
 actual working pattern — *check whether an IP is denied → release it → allowlist it* — and the
 decision it feeds is the operator's, not a gate's. They read the verdict and decide whether to
 call T25 at all.
 
-Both backends are asked, in parallel, and only the ones that are usable (V57) — through
+Both backends are asked, in parallel, and only the ones that are usable — through
 `core.integrations.whm.firewall_gate.run_on_usable_backends`, which is where zero usable
-backends becomes `no_firewall_backend` rather than a success that read nothing (T68). This tool
+backends becomes `no_firewall_backend` rather than a success that read nothing. This tool
 holds no copy of that check: one lives at the door every firewall tool goes through, so T25/T26
 cannot ship without it. CSF answers in human-facing text and Imunify in JSON;
 `core.integrations.whm.csf` and `.imunify` turn each into a verdict, and this module is where the
@@ -20,7 +20,7 @@ Three things the result does that `noa-old`'s did not:
 - **No raw output.** `noa-old` returned csf's whole `-g` dump and Imunify's whole JSON document
   alongside the parsed verdict. DECISIONS §6.5 (old V75) says the before-state shows the
   `csf.deny`/`csf.allow` log line and never a raw iptables table, and the result persists in
-  LibreChat's MongoDB (V26). The bounded `matches` list is the evidence.
+  LibreChat's MongoDB. The bounded `matches` list is the evidence.
 - **A backend that did not answer is named, and never reads as clean** (V86, generalised out of
   this tool). `noa-old` computed the combined verdict from whichever backend succeeded and
   otherwise fell through to `not_found`, so a broken CSF plus a clean Imunify reported "this IP
@@ -44,7 +44,7 @@ The tool holds no session while it talks to the server. The row is resolved and 
 holding a pooled Postgres connection across four SSH handshakes is how a slow WHM host becomes a
 database outage, and an ORM row cannot be read once its session is gone.
 
-Registration declares `ToolRisk.READ` (T73, V20). Nothing here records anything: the `tool_runs`
+Registration declares `ToolRisk.READ`. Nothing here records anything: the `tool_runs`
 row is the audit middleware's, beside the RBAC gate (V83b).
 """
 
@@ -111,7 +111,7 @@ MESSAGE_CSF_GREP_FAILED = "CSF did not return the firewall entries for this targ
 MESSAGE_CSF_EMPTY = "CSF returned an empty response for this target."
 
 # The prefix NOA stamps onto every firewall comment it writes, and the thing that makes the
-# operator's reason findable again in text nobody else formats (T25, V96). It is not decoration:
+# operator's reason findable again in text nobody else formats. It is not decoration:
 # csf stores a comment as free text at the tail of an entry and echoes it back through `csf -g`,
 # so a cut with no marker to aim at would either miss NOA's own comments or take LFD's evidence
 # with them.
@@ -142,11 +142,11 @@ class BackendLookup:
     recognise", which is not evidence that the address is clean (see
     `core.integrations.whm.csf`).
 
-    `allow_entry` is the one fact the verdict cannot carry (T26). Both backends resolve a
+    `allow_entry` is the one fact the verdict cannot carry. Both backends resolve a
     conflict block-first, so an address on a deny list *and* an allow list reports as blocked
     and the allow entry disappears from the answer. An allowlist removal's postflight asks about
     that entry and nothing else, and it is only meaningful where `answered` is true — a backend
-    that said nothing has not said there is no allow entry (V86).
+    that said nothing has not said there is no allow entry.
     """
 
     ok: bool
@@ -174,7 +174,7 @@ def _backend_failure(error_code: str, message: str) -> BackendLookup:
 
 
 def noa_firewall_comment(action_request_id: UUID, *, reason: str) -> str:
-    """The comment NOA writes onto a firewall entry it creates (T25 — C8, V43, V96).
+    """The comment NOA writes onto a firewall entry it creates.
 
     The operator's own words, behind a marker that says NOA wrote them. V43 permits the one
     reason field to *leave* NOA — a firewall allow entry has a comment field whose only honest
@@ -190,13 +190,13 @@ def noa_firewall_comment(action_request_id: UUID, *, reason: str) -> str:
 
     The id travels with it for the human on the server: `noa:<id>` is what survives the cut, and
     it is the address of the approval row where the reason is readable behind the operator's own
-    cookie (V27) rather than in a transcript (V26).
+    cookie rather than in a transcript.
     """
     return f"{NOA_COMMENT_MARKER}{action_request_id} {reason}"
 
 
 def without_noa_comment_text(line: str) -> str:
-    """One evidence line with NOA's own comment text cut back to its marker (V96).
+    """One evidence line with NOA's own comment text cut back to its marker.
 
     From the marker to the end of the line, because csf gives a comment **no closing boundary**:
     it is free text at the tail of an entry, and a reason containing a bracket or a quote would
@@ -221,7 +221,7 @@ def without_noa_comment_text(line: str) -> str:
 
 
 async def csf_firewall_entries(config: SSHConnectionConfig, *, target: str) -> BackendLookup:
-    """What CSF holds for `target`. Internal — ⊥ an MCP tool (C9, V17).
+    """What CSF holds for `target`. Internal — ⊥ an MCP tool.
 
     `NoaError` is caught rather than raised on: it is the tree both `CSFCLIError` and
     `SSHExecutionError` sit in, and one dead backend must not take the other's answer with it
@@ -249,7 +249,7 @@ async def csf_firewall_entries(config: SSHConnectionConfig, *, target: str) -> B
 
 
 async def imunify_firewall_entries(config: SSHConnectionConfig, *, target: str) -> BackendLookup:
-    """What Imunify360 holds for `target`. Internal — ⊥ an MCP tool (C9, V17).
+    """What Imunify360 holds for `target`. Internal — ⊥ an MCP tool.
 
     `--by-ip` filters server-side and `parse_imunify_ip_list_response` filters again against
     the target, because the flag has been observed returning neighbours and a verdict read off
@@ -283,7 +283,7 @@ def combine_firewall_verdict(lookups: Sequence[BackendLookup]) -> str:
     releases *and* allows in one action so that intermediate state is real.
 
     `not_found` requires a backend to have said so. Everything else — no usable backend answer
-    at all — is `unknown`, never a clean bill (V86): that distinction is the whole reason this
+    at all — is `unknown`, never a clean bill: that distinction is the whole reason this
     function exists rather than a default.
     """
     verdicts = [lookup.verdict for lookup in lookups if lookup.answered]
@@ -302,7 +302,7 @@ async def gather_firewall_entries(
     target: str,
     availability: FirewallAvailability,
 ) -> dict[str, BackendLookup]:
-    """Ask every usable backend at once, through the one door that refuses none (T68, V57).
+    """Ask every usable backend at once, through the one door that refuses none.
 
     The zero-backend refusal is `run_on_usable_backends`', not this function's: a check written
     here is a check the next firewall tool can forget, and a CHANGE tool that forgets it reports
@@ -324,11 +324,11 @@ async def whm_preflight_firewall_entries(
     target: str,
     context: McpToolContext,
 ) -> ToolPayload:
-    """Is this address blocked on this WHM server, and on the strength of what? (T24)
+    """Is this address blocked on this WHM server, and on the strength of what?
 
     Two guards run before any I/O, so a malformed call costs no round trip:
 
-    - a blank or whitespace-only `target` is refused (V21) — `csf -g ""` greps for everything;
+    - a blank or whitespace-only `target` is refused — `csf -g ""` greps for everything;
     - a target that classifies as `unknown` is refused. Every *other* kind is accepted, and that
       is V54 read correctly: the CHANGE tools reject anything but IPv4 because they write
       firewall rules, while "you asked about an IPv6 address and here is what CSF says" is a
@@ -360,7 +360,7 @@ async def whm_preflight_firewall_entries(
             return tool_failure(
                 # `ERROR_UNKNOWN` lives in `results` rather than beside one system's tools:
                 # the same fallback for the same resolver shape, and two copies is how one of
-                # them drifts (V66, T31).
+                # them drifts.
                 resolution.error_code or ERROR_UNKNOWN,
                 resolution.message,
                 choices=resolution.choices,
@@ -381,9 +381,9 @@ async def whm_preflight_firewall_entries(
     # lines are already ordered by the system that produced them (see `csf.total_matches`).
     #
     # Cut, because this list goes to a model and T25 writes the operator's approval reason into
-    # the comment of every allow entry it creates (V96). The count below is deliberately taken
+    # the comment of every allow entry it creates. The count below is deliberately taken
     # from the parsers rather than from this list: the cut shortens lines, it never drops one, so
-    # `total_matches` still answers "how many entries mention this address" (V85).
+    # `total_matches` still answers "how many entries mention this address".
     matches = [
         without_noa_comment_text(line)
         for name in (BACKEND_CSF, BACKEND_IMUNIFY)
@@ -394,7 +394,7 @@ async def whm_preflight_firewall_entries(
     payload: ToolPayload = {
         "server_id": server_id,
         "target": normalized_target,
-        # Which CHANGE tools could act on it at all (V54), answered here so the model does not
+        # Which CHANGE tools could act on it at all, answered here so the model does not
         # have to classify an address itself.
         "target_kind": parsed_target.kind,
         "available_backends": availability.as_tools_dict(),
@@ -437,7 +437,7 @@ def register_whm_firewall_tools(server: FastMCP, *, context: McpToolContext) -> 
         name=TOOL_WHM_PREFLIGHT_FIREWALL_ENTRIES,
         description=DESCRIPTION_WHM_PREFLIGHT_FIREWALL_ENTRIES,
         # Standard MCP hint, and nothing NOA relies on — the READ/CHANGE split that matters is
-        # enforced by the approval gate (V16), not by an annotation a client may ignore.
+        # enforced by the approval gate, not by an annotation a client may ignore.
         annotations={"readOnlyHint": True},
     )
     async def whm_preflight_firewall_entries_tool(

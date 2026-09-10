@@ -165,7 +165,7 @@ def config_problems(config: Any) -> list[str]:
     headers = entry.get("headers") or {}
     authorization = headers.get("Authorization")
     if not isinstance(authorization, str) or "Bearer " not in authorization:
-        problems.append(f"Authorization header is {authorization!r}, not a bearer token (C5)")
+        problems.append(f"Authorization header is {authorization!r}, not a bearer token")
     for name, placeholder in REQUIRED_HEADERS.items():
         if headers.get(name) != placeholder:
             problems.append(f"header {name} is {headers.get(name)!r}, not {placeholder!r}")
@@ -295,7 +295,7 @@ def test_example_prompt_never_names_a_reason_field() -> None:
     named = sorted(key for key in FORBIDDEN_REASON_KEYS if key in prompt)
     assert named == [], (
         f"the example prompt names {named} — a model told the field exists is a model that can "
-        "be argued into filling it (C8)"
+        "be argued into filling it"
     )
 
 

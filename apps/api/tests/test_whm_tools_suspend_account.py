@@ -1,4 +1,4 @@
-"""`whm_suspend_account` — the first CHANGE tool, and the first end-to-end gate run (T22).
+"""`whm_suspend_account` — the first CHANGE tool, and the first end-to-end gate run.
 
 Every other tool test in this suite asserts what a call *answers*. This one has to assert what a
 call **does not do**: a CHANGE `tools/call` reads an account, writes a PENDING row and stops
@@ -16,7 +16,7 @@ mount is a third claim again:
 - **the mount** — `tools/call` over `create_app()`. `test_mcp_change_gate.py` recorded that the
   gate had never run over the real mount and named this task as the fix; this is that lane, and
   it is also where "a CHANGE writes no `tool_runs` row" stops being asserted against a synthetic
-  risk map (T73).
+  risk map.
 
 Seams are T21's, unchanged: the real `WHMClient` over a doubled socket (`support.whm_api`),
 because WHM reports a refusal as **HTTP 200** with `metadata.result: 0` and a doubled client
@@ -121,7 +121,7 @@ WHM_API_TOKEN = "whm-api-token-plaintext"
 
 # What WHM echoes back in `suspendreason` once NOA has written the operator's reason there.
 # Planted on the *already suspended* row, so a payload that carried the field would be carrying
-# an operator's words back to the model (C8).
+# an operator's words back to the model.
 SUSPEND_NOTE_ECHO = "operator words WHM would echo back"
 
 
@@ -190,7 +190,7 @@ async def suspend(
     """Call the tool inside a real request context; return its answer and the caller's id.
 
     The context is not decoration: `open_change_request` reads the requester from the
-    authenticated identity rather than from an argument (V23, V27), so a call outside it would
+    authenticated identity rather than from an argument, so a call outside it would
     be asserting against an identity the test planted.
     """
     user, resolved = authenticated_caller(user_id)
@@ -371,7 +371,7 @@ async def test_an_already_suspended_account_opens_no_request() -> None:
 
 
 async def test_the_no_op_answer_does_not_carry_whms_suspension_note() -> None:
-    """C8: the note is the operator's reason, and this payload is transcript (V26).
+    """C8: the note is the operator's reason, and this payload is transcript.
 
     The account summary the preflight built holds `suspendreason`; this answer is built from the
     username and the server instead of from that summary, which is the difference between an
@@ -498,7 +498,7 @@ async def test_no_credential_reaches_the_result() -> None:
 
 
 async def test_the_runner_sends_the_operator_reason_as_whms_suspension_note() -> None:
-    """C8's single field, written where WHM keeps a suspension note (T22).
+    """C8's single field, written where WHM keeps a suspension note.
 
     The reason is the operator's own words, typed on the card after the model was done. This is
     the one place it leaves NOA, and it leaves as `suspendacct`'s `reason` parameter — asserted
@@ -669,7 +669,7 @@ async def test_the_mounted_call_opens_a_request_and_writes_no_tool_runs_row(
         )
 
     assert result.get("isError") is not True
-    # Both blocks survive the transport, in order (V24, V25).
+    # Both blocks survive the transport, in order.
     assert [block["type"] for block in result["content"]] == ["text", "resource"]
 
     request = tools.action_requests.only
@@ -686,15 +686,15 @@ def whm_endpoint_listing_suspended() -> FakeWHMApi:
 
 
 # --------------------------------------------------------------------------------------
-# The delta the runner publishes beside its envelope (V85, V86)
+# The delta the runner publishes beside its envelope
 # --------------------------------------------------------------------------------------
 
 
 async def test_the_suspend_delta_names_the_one_field_it_moved() -> None:
-    """One field, both sides measured somewhere real (V86).
+    """One field, both sides measured somewhere real.
 
     The `old` side is the gate-time reading off the evidence — the state the operator authorised
-    against (V33) — and the `new` side is the direction's own target, confirmed by the postflight
+    against — and the `new` side is the direction's own target, confirmed by the postflight
     before this branch is reached. Re-reading the `old` side in the runner would be a second
     reading, and a delta about a decision nobody made.
     """
@@ -711,7 +711,7 @@ async def test_the_suspend_delta_names_the_one_field_it_moved() -> None:
 
 
 async def test_evidence_that_never_recorded_the_field_states_no_field_change() -> None:
-    """One side of the comparison is missing, so no comparison is stated (V86).
+    """One side of the comparison is missing, so no comparison is stated.
 
     The account summary on the evidence carries no `suspended` key — a row opened before the key
     existed, or one whose summary did not survive its JSONB round trip as WHM wrote it. The change
@@ -722,7 +722,7 @@ async def test_evidence_that_never_recorded_the_field_states_no_field_change() -
 
     Paired with the control below, which is the same runner on the same endpoint with the evidence
     carrying a before-value that matches. Without the pair, a builder answering `()` for both would
-    pass whichever of the two was written alone (V87).
+    pass whichever of the two was written alone.
     """
     fixture, _ = suspend_context(whm_endpoint(listings=[[suspended_account()]]))
     runner = build_whm_suspend_runner(context=fixture.context)
@@ -800,12 +800,12 @@ async def test_a_change_that_did_not_take_publishes_a_measured_empty_diff() -> N
 
 
 async def test_a_mutation_whm_refused_claims_no_diff_at_all() -> None:
-    """The other spelling (V87), and it is the safe direction rather than the tidy one.
+    """The other spelling, and it is the safe direction rather than the tidy one.
 
     WHM refusing a call is not WHM reporting that nothing happened: a timeout or a dropped
     connection arrives on this branch too, and the mutation behind it may have landed. So the
     facet is absent, the cause names WHM's own code, and nothing claims a re-read that never
-    happened (V86).
+    happened.
     """
     fixture, _ = suspend_context(
         whm_endpoint(suspend_body=whm_api_failure_body("Account is locked"))
@@ -822,7 +822,7 @@ async def test_a_mutation_whm_refused_claims_no_diff_at_all() -> None:
 
 
 async def test_a_server_that_vanished_after_approval_publishes_no_delta() -> None:
-    """Nothing was asked of WHM, so nothing is stated (V86).
+    """Nothing was asked of WHM, so nothing is stated.
 
     The refusal above the mutation is where a delta is absent rather than empty, and it is the
     same shape the executor's own three refusals take: no identity was resolved, no credential

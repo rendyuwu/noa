@@ -1,4 +1,4 @@
-"""`whm_firewall_release_and_allow` — the call that opens a question (T25).
+"""`whm_firewall_release_and_allow` — the call that opens a question.
 
 The tool half: the guards, the in-process preflight, the gate response and the mount. Its runner
 lives on the far side of V22's boundary and is asserted in `test_whm_firewall_release_runner.py`;
@@ -191,7 +191,7 @@ async def test_the_recorded_arguments_are_the_three_the_schema_declares(
 async def test_an_address_no_backend_has_heard_of_still_opens_a_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """There is no no-op here, and this is that claim as a case (T25).
+    """There is no no-op here, and this is that claim as a case.
 
     T22 and T23 answer instead of gating when the account is already in the state the change
     would produce. A clean address is not that state: the release finds nothing, and the allow —
@@ -373,7 +373,7 @@ async def test_only_an_ipv4_address_is_accepted(
 
 
 async def test_an_ipv4_address_is_not_refused(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The V54 guard's negative control (V87).
+    """The V54 guard's negative control.
 
     Without it, "every non-IPv4 target is refused" passes just as well against a tool that
     refuses every target.
@@ -570,7 +570,7 @@ async def test_the_mounted_call_opens_a_request_and_writes_no_tool_runs_row(
         )
 
     assert result.get("isError") is not True
-    # Both blocks survive the transport, in order (V24, V25).
+    # Both blocks survive the transport, in order.
     assert [block["type"] for block in result["content"]] == ["text", "resource"]
 
     request = tools.action_requests.only

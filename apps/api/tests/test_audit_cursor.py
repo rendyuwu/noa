@@ -1,7 +1,7 @@
-"""Audit page tokens: encode, decode, refuse (T55 — V8, V73).
+"""Audit page tokens: encode, decode, refuse.
 
-Ported alongside `core.audit.cursor` from `noa-old` (C13), and tested here rather than trusted:
-upstream provenance is not evidence that a control works (V69), and the two things this module gets
+Ported alongside `core.audit.cursor` from `noa-old`, and tested here rather than trusted:
+upstream provenance is not evidence that a control works, and the two things this module gets
 wrong quietly are both here — a naive timestamp silently shifting a page boundary, and a malformed
 token answering with something other than one refusal.
 
@@ -112,7 +112,7 @@ def test_every_malformed_cursor_answers_one_refusal(cursor: str, why: str) -> No
 
     A `NoaError` rather than FastAPI's `RequestValidationError`, which is what upstream raised: the
     body is the shared envelope, so the diagnostic string below stays in `detail` and out of the
-    response (V8, V73).
+    response.
     """
     with pytest.raises(InvalidAuditCursorError) as raised:
         decode_cursor(cursor)

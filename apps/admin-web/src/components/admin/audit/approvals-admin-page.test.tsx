@@ -322,7 +322,7 @@ describe('ApprovalsAdminPage relocation checklist', () => {
 
 describe('ApprovalsAdminPage receipt rendering', () => {
   it('renders a yopass URL as text and never as a link', () => {
-    // The secret behind that URL is consumed once (C15, V49). A hover preview, a
+    // The secret behind that URL is consumed once. A hover preview, a
     // prefetch or a mis-click spends the operator's own delivery and nobody can
     // read the password afterwards — so the criterion is the absence of an
     // anchor, and it is asserted as absence rather than inferred from the

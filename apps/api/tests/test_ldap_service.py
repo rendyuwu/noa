@@ -1,4 +1,4 @@
-"""LDAP service guards (T6, C4, V4, V7, V8).
+"""LDAP service guards.
 
 No directory needed: `LDAPService` takes an injectable `connect` factory, so these
 drive bind/search/error paths against a fake `LDAPObject`. `ldap.*` exception
@@ -471,7 +471,7 @@ async def test_configured_filter_is_wrapped_not_replaced() -> None:
     assert directory.service.searches[0][2] == expected
 
 
-# --- user_exists_and_enabled (C4, V4) ---
+# --- user_exists_and_enabled ---
 
 
 async def test_user_exists_and_enabled_true_for_present_account() -> None:
@@ -498,7 +498,7 @@ async def test_user_exists_and_enabled_false_when_absent() -> None:
 
 
 async def test_user_exists_and_enabled_false_for_disabled_ad_account() -> None:
-    """AD keeps disabled accounts in the directory; the flag is the signal (C4)."""
+    """AD keeps disabled accounts in the directory; the flag is the signal."""
     service, _ = service_with(
         {"results": [entry(account_control=str(AD_ACCOUNTDISABLE_FLAG | 0x200).encode())]}
     )
@@ -658,7 +658,7 @@ async def test_disabled_account_message_reaches_the_caller() -> None:
 
 
 async def test_unreachable_directory_message_invites_a_retry() -> None:
-    """Unlike the other denials, this one usually clears on its own (V4)."""
+    """Unlike the other denials, this one usually clears on its own."""
     service, _ = service_with({"bind_error": ldap.SERVER_DOWN("no route")})
 
     with pytest.raises(LdapUnavailableError) as raised:
@@ -679,7 +679,7 @@ async def test_service_bind_detail_points_at_the_config_without_leaking_it() -> 
     assert "LDAP_BIND_DN" not in raised.value.message
 
 
-# --- Disabled directory accounts (C4) ---
+# --- Disabled directory accounts ---
 
 
 async def test_authenticate_rejects_directory_disabled_account() -> None:
@@ -718,7 +718,7 @@ async def test_wrong_password_on_disabled_account_reports_invalid_credentials() 
 
 
 async def test_disabled_is_distinct_from_pending_approval() -> None:
-    """Two different gates: directory employment (C4) vs NOA activation (V7).
+    """Two different gates: directory employment vs NOA activation.
 
     Neither may be caught by a handler meaning the other — an admin enabling a NOA
     row must never resurrect an ex-employee's access.
@@ -738,7 +738,7 @@ async def test_ldap_service_never_raises_pending_approval() -> None:
     assert user.is_enabled is True
 
 
-# --- Dev bypass (C4) ---
+# --- Dev bypass ---
 
 
 def build_bypass_service() -> tuple[LDAPService, FakeDirectory]:

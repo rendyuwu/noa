@@ -1,4 +1,4 @@
-"""Doubles for reading an approval request back (T63).
+"""Doubles for reading an approval request back.
 
 `test_action_results_live.py` runs `SQLActionResultRepository` against a real Postgres,
 because the states a requester-match has to fail closed on are the database's: a NULL
@@ -12,7 +12,7 @@ and the tool's own shape over `build_tool_context`. Neither needs a database.
 The repository appends `"read"` and `support.action_expiry.FakeActionRequestExpiryRepository`
 appends `"expire"`/`"commit"` to the same list, so a test can assert that a request which is
 not the caller's produces `["read"]` and nothing else — the property that keeps a
-prompt-injected id from making NOA write to a stranger's row (V27, V76).
+prompt-injected id from making NOA write to a stranger's row.
 
 The stored value is an `ActionResultView`, not an `ActionRequest`: an ORM instance would carry
 its server-defaulted columns as `None` until a flush, so an assertion on `status` would be
@@ -29,13 +29,13 @@ from uuid import UUID, uuid4
 from core.approvals.results import ActionResultView, ActionRunView
 from core.db.lifecycle import ActionRequestStatus, ToolRunStatus
 
-# A CHANGE tool (T22). Named rather than built: these tests are about the read path.
+# A CHANGE tool. Named rather than built: these tests are about the read path.
 CHANGE_TOOL = "whm_suspend_account"
 
 # The gate's `approval_context` shape (T33's `build_approval_context`), already redacted.
 ARGUMENTS: dict[str, Any] = {"server_ref": "alpha", "account": "acmeco"}
 
-# What an operator typed on the card (C8, V15) and what the preflight found (V17). Neither may
+# What an operator typed on the card and what the preflight found. Neither may
 # reach the model, and both are here so a test can assert their absence against a real value
 # rather than against nothing.
 REASON = "Customer confirmed the account is compromised; suspending per ticket NOC-4471."
@@ -89,7 +89,7 @@ def result_view(
     """One request as the reader returns it. `expires_in_seconds` may be negative.
 
     `created_at` is the fixed stamp — nothing judges it, so pinning it keeps equality
-    assertions on the payload exact (V87). The **deadline** is offset from the real clock,
+    assertions on the payload exact. The **deadline** is offset from the real clock,
     because that is the one field something compares: a fixed `expires_at` would be in the
     past by the time the suite runs and every PENDING request would read `EXPIRED`. Same
     construction as `support.action_expiry.pending_row`.
@@ -126,7 +126,7 @@ class FakeActionResultRepository:
         self.rows: dict[UUID, StoredResult] = {}
         self.journal = journal if journal is not None else []
         # One entry per call, so a test can assert *which* requester was asked about — the
-        # token's caller, never an argument (V76).
+        # token's caller, never an argument.
         self.lookups: list[tuple[UUID, UUID]] = []
         self.fail: BaseException | None = None
 
@@ -155,7 +155,7 @@ class FakeActionResultRepository:
         stored = self.rows.get(action_request_id)
         if stored is None or stored.requester_user_id != requester_user_id:
             # Absent, foreign, or its requester was deleted — one answer for all three, the
-            # way the production `WHERE` gives one (V27). Whether a real row behaves this way
+            # way the production `WHERE` gives one. Whether a real row behaves this way
             # is `test_action_results_live.py`'s claim, not this double's.
             return None
         return stored.view

@@ -1,23 +1,23 @@
-"""Reading one approval request back, for whoever asked for it (T41, T63 — V27, V32).
+"""Reading one approval request back, for whoever asked for it.
 
 Two surfaces read an `action_requests` row for someone rather than deciding it: T63's
 `noa_get_action_result` answers a model (`core.approvals.results`) and T41's approval card
 answers the operator in front of it (`core.approvals.card`). They must render *different*
-things — the model may not be shown the preflight evidence (V17) and the card exists to show
-it (V33, V35) — but they must **guard the row identically**, and that is what lives here.
+things — the model may not be shown the preflight evidence and the card exists to show
+it — but they must **guard the row identically**, and that is what lives here.
 
 That difference is why the receipt join is a parameter and not the default. `action_receipts`
-carries the same before-state one table over (T36, T38), so fetching it on the model's path
+carries the same before-state one table over, so fetching it on the model's path
 would put V17's evidence in that process holding nothing but a projection between it and the
-transcript. The card asks for it; `core.approvals.results` does not (V76).
+transcript. The card asks for it; `core.approvals.results` does not.
 
 **The access control is one statement.** `select_requester_matched` carries
 `requested_by_user_id = :caller` in the `WHERE`, so a row that is not the caller's is never
 fetched by either surface and there is no later branch that could forget to drop it. A NULL
-requester — the FK is `SET NULL` (T34), so a deleted operator leaves one behind — matches
+requester — the FK is `SET NULL`, so a deleted operator leaves one behind — matches
 nobody under SQL's NULL semantics, which is the fail-closed direction V27 names. Two copies of
 that clause would be two places for it to be got wrong, and only one of them would be the one
-someone reads (V66).
+someone reads.
 
 **The expiry ordering is one function.** `apply_due_expiry` runs V32's check-on-read *after*
 the requester-matched read, because `expire_if_due` takes an id and no requester: calling it
@@ -27,7 +27,7 @@ callers here decline, on purpose — reading first makes a foreign id a pure no-
 write, one refusal. What it costs is one poll of freshness (see `apply_due_expiry`).
 
 Nothing here reads `reason`. It is a column of its own, NULL until an operator types one into
-the card (C8, V15, V43), and a helper here would be the first place someone reached for it
+the card, and a helper here would be the first place someone reached for it
 from a path that must never see it.
 """
 
@@ -49,7 +49,7 @@ from core.db.models import ActionReceipt, ActionRequest, ToolRun
 
 @dataclass(frozen=True)
 class ActionRunView:
-    """The execution an approval started, as far as it has got (V29, V46, V47).
+    """The execution an approval started, as far as it has got.
 
     `result_summary` is already truncated and already redacted by whoever wrote it
     (`noa_api.mcp_audit` for a READ, `core.approvals.execution` for a change, and
@@ -99,7 +99,7 @@ async def select_requester_matched(
     requester_user_id: UUID,
     include_receipt: bool = False,
 ) -> tuple[ActionRequest, ToolRun | None, ActionReceipt | None] | None:
-    """The caller's request, the run it started and its receipt, or `None` (V27, V46, V47).
+    """The caller's request, the run it started and its receipt, or `None`.
 
     One statement with outer joins rather than two or three reads: the request, its run and
     what that run did are one answer to one question, and separate round trips could straddle
@@ -117,13 +117,13 @@ async def select_requester_matched(
     dropped by a refactor — defence in depth, said here rather than in a test name that would
     imply otherwise (V69: a control asserted by prose is worth what the prose is worth).
 
-    **`include_receipt` defaults to off, and that is the model path's guard** (V17, V76). A
+    **`include_receipt` defaults to off, and that is the model path's guard**. A
     receipt's `before` half is the gate's in-process preflight evidence, which V17 keeps out of
     the transcript — so `core.approvals.results` leaves this false and the receipt is never
     *fetched* rather than fetched and then dropped by a projection somebody could widen. The
     join itself is bound by the same `WHERE` as everything else here: a receipt hangs off an
     `action_requests` row that was already requester-matched, so there is no second access
-    control to get right (V66). T36's `UNIQUE (action_request_id)` is what keeps this join from
+    control to get right. T36's `UNIQUE (action_request_id)` is what keeps this join from
     multiplying the row.
     """
     # Both joins hang off `ActionRequest`, so their order in the chain does not change the SQL.
@@ -175,7 +175,7 @@ async def apply_due_expiry(
     expiry: ActionRequestExpiryService,
     now: datetime | None = None,
 ) -> ViewT:
-    """Make a read view terminal if its deadline has passed (V32).
+    """Make a read view terminal if its deadline has passed.
 
     Called *after* the requester-matched read, never before — the module docstring says why.
 

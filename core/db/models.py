@@ -1,22 +1,22 @@
-"""Schema v1 ORM models (T4, C3).
+"""Schema v1 ORM models.
 
 Eight tables, three groups:
 
-- Identity + RBAC: `users`, `roles`, `user_roles`, `role_tool_permissions` (V1, V11)
-- MCP auth: `mcp_tokens` (C5, V2, V3)
-- Managed infrastructure: `whm_servers`, `proxmox_servers`, `pmg_servers` (C7, V48)
+- Identity + RBAC: `users`, `roles`, `user_roles`, `role_tool_permissions`
+- MCP auth: `mcp_tokens`
+- Managed infrastructure: `whm_servers`, `proxmox_servers`, `pmg_servers`
 
-Plus `login_rate_limits` from T8 (V9), `tool_runs` from T35 (V20, V45-V47),
-`action_requests` from T34 (V20, V32, V33, V43), `action_receipts` from T36 (V46) and
-`tool_result_tables` from T56 (V64, V85).
+Plus `login_rate_limits` from T8, `tool_runs` from T35,
+`action_requests` from T34, `action_receipts` from T36 and
+`tool_result_tables` from T56.
 
-Later tasks add their own tables and migrations: `audit_log` (T14). Ported from `noa-old`
+Later tasks add their own tables and migrations: `audit_log`. Ported from `noa-old`
 branch `MCP` per C13, minus the chat-presentation tables
 (threads/messages/assistant_runs/workflow_todos) that die with C16.
 
-Credential columns hold Fernet ciphertext, never plaintext (C7, V48). Each server
+Credential columns hold Fernet ciphertext, never plaintext. Each server
 model exposes `to_safe_dict()` returning presence booleans instead of secret
-values so an admin response cannot leak one (V2, V8).
+values so an admin response cannot leak one.
 """
 
 from __future__ import annotations
@@ -54,26 +54,26 @@ from core.db.columns import (
 from core.db.lifecycle import ActionRequestStatus, ToolRisk, ToolRunStatus
 
 # `admin` is reserved: it bypasses per-tool permission checks for known tools and
-# cannot be edited or deleted through the API (V10, V13).
+# cannot be edited or deleted through the API.
 ADMIN_ROLE_NAME = "admin"
 
 # Roles prefixed `user:` are internal — assigned by NOA itself, never through the
-# admin API, and preserved across role replacement (V13, V75).
+# admin API, and preserved across role replacement.
 INTERNAL_ROLE_PREFIX = "user:"
 
 
 def is_internal_role(name: str) -> bool:
-    """True when `name` is an internal role (V13, V75)."""
+    """True when `name` is an internal role."""
     return name.startswith(INTERNAL_ROLE_PREFIX)
 
 
 class User(Base, TimestampMixin):
     """A NOA operator, mirrored from LDAP.
 
-    LDAP stays the source of truth for employment (C4); this row carries NOA-local
+    LDAP stays the source of truth for employment; this row carries NOA-local
     state. New LDAP users are auto-provisioned `is_active=False` and an admin
-    activates them (V7). `is_active=False` means zero permissions regardless of
-    roles (V11), re-checked on every MCP request (V1).
+    activates them. `is_active=False` means zero permissions regardless of
+    roles, re-checked on every MCP request.
     """
 
     __tablename__ = "users"
@@ -87,7 +87,7 @@ class User(Base, TimestampMixin):
 
 
 class Role(Base):
-    """A named permission bundle. Permissions flow role → user only (V75)."""
+    """A named permission bundle. Permissions flow role → user only."""
 
     __tablename__ = "roles"
 
@@ -113,11 +113,11 @@ class UserRole(Base):
 
 
 class RoleToolPermission(Base):
-    """role → tool grant. Sole source of tool permission (V75).
+    """role → tool grant. Sole source of tool permission.
 
     `tool_name` is a plain string, not an FK: the tool catalog lives in code, and a
     grant for a tool that is not registered must resolve to "no permission" rather
-    than a dangling reference. Admin bypass is for *known* tools only (V10).
+    than a dangling reference. Admin bypass is for *known* tools only.
     """
 
     __tablename__ = "role_tool_permissions"
@@ -135,21 +135,21 @@ class RoleToolPermission(Base):
 
 
 class McpToken(Base):
-    """Per-user MCP bearer token (C5, V2, T10).
+    """Per-user MCP bearer token.
 
     Only the SHA-256 hash is stored; plaintext is shown once at mint and never
-    logged (V2, V8). `token_prefix` is a short non-secret display fragment so the
+    logged. `token_prefix` is a short non-secret display fragment so the
     admin UI can identify a token in a list without holding the secret.
 
-    `librechat_user_id` drives TOFU binding (C20, V3): NULL until the first MCP
+    `librechat_user_id` drives TOFU binding: NULL until the first MCP
     call carrying `X-Noa-LibreChat-User`, then pinned; later calls must present a
     matching header or get 401. `last_ldap_check_at` drives revalidation staleness,
-    where LDAP being unreachable fails closed (V4).
+    where LDAP being unreachable fails closed.
 
     No `to_safe_dict()` here, unlike the server models below: T10's `McpTokenView`
     (`core.auth.mcp_token_service`) is the read shape for this table, and it omits
     `token_hash` by not having a field for it. Two safe views of one table is one too
-    many — a route could pick the weaker (V66).
+    many — a route could pick the weaker.
     """
 
     __tablename__ = "mcp_tokens"
@@ -161,7 +161,7 @@ class McpToken(Base):
         nullable=False,
         index=True,
     )
-    # SHA-256 hex digest — lookup key for every MCP request (V2).
+    # SHA-256 hex digest — lookup key for every MCP request.
     token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
     token_prefix: Mapped[str] = mapped_column(String(16), nullable=False)
     label: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -170,19 +170,19 @@ class McpToken(Base):
     last_ldap_check_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    # NULL = no expiry; revocation is a row delete (V2).
+    # NULL = no expiry; revocation is a row delete.
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = created_at()
 
 
 class LoginRateLimit(Base):
-    """One rate-limit bucket for any auth surface (V9, T8, T12).
+    """One rate-limit bucket for any auth surface.
 
     Named for the login path it was built for, and now shared: `scope` says which surface
-    a row belongs to. Login writes `ip` and `email` (T8); failed MCP authentication writes
+    a row belongs to. Login writes `ip` and `email`; failed MCP authentication writes
     `mcp_client` and `mcp_token` (T12, `core.auth.mcp_auth_rate_limiter`). One generic
     (scope, key) counter rather than a second identical table plus a second SQL repository
-    (V66) — the name is the cost of that, and renaming it would be a migration for
+    — the name is the cost of that, and renaming it would be a migration for
     cosmetics.
 
     Two rows accumulate per failed attempt, on both surfaces, because either key alone
@@ -218,14 +218,14 @@ class LoginRateLimit(Base):
 
 
 class ToolRun(Base):
-    """One MCP tool execution, READ or CHANGE (T35, V45-V47).
+    """One MCP tool execution, READ or CHANGE.
 
     Written for *every* tool call, not only the interesting ones: V45 covers READs, V46
     covers approved CHANGEs, and V47 fixes the field list. This table is the answer to
-    "what did NOA actually do", so it is queried by the admin audit surface (T55) and
+    "what did NOA actually do", so it is queried by the admin audit surface and
     never by the tool path itself.
 
-    `risk` and `status` are separate columns on purpose (V20). Folding them into one
+    `risk` and `status` are separate columns on purpose. Folding them into one
     lifecycle set would make `FAILED` and `READ` compete for the same cell, and a failed
     READ is exactly the row an audit trail must be able to hold. `noa-old` kept `risk`
     only on `action_requests`, so its `tool_runs` could not say whether a run was a
@@ -236,7 +236,7 @@ class ToolRun(Base):
 
     Nothing on the tool path reads this table, and nothing in a tool writes it:
     `noa_api.mcp_audit.ToolRunAuditMiddleware` does, beside the RBAC gate, so no individual
-    tool can forget it (T73, V83b). It also redacts `args` before they land (C7, V8) — the
+    tool can forget it (T73, V83b). It also redacts `args` before they land — the
     column below only guarantees somewhere to put the redacted form. READ rows are written
     by that middleware. An approved CHANGE's row is opened by the decision that authorised
     it (`core.approvals.decisions`, T37, V46) — in the same transaction, so `APPROVED` with
@@ -260,7 +260,7 @@ class ToolRun(Base):
         nullable=True,
         index=True,
     )
-    # Classification, fixed before the call runs (V20).
+    # Classification, fixed before the call runs.
     risk: Mapped[ToolRisk] = lifecycle_enum(ToolRisk, name="tool_run_risk")
     # Execution state. Defaults to STARTED so a row inserted before the tool body runs is
     # already correct, and a process that dies mid-call leaves evidence (T38's reaper).
@@ -280,8 +280,8 @@ class ToolRun(Base):
     args: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
-    # Truncated (V45, V47). Bounded so a large READ result cannot bloat the audit table —
-    # the full body lives behind the table surface (V64) — `tool_result_tables` (T56) — not here.
+    # Truncated. Bounded so a large READ result cannot bloat the audit table —
+    # the full body lives behind the table surface — `tool_result_tables` — not here.
     result_summary: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     # Timing, half one: when the run started. Indexed — the audit list sorts and pages on it.
     created_at: Mapped[datetime] = created_at(index=True)
@@ -290,20 +290,20 @@ class ToolRun(Base):
 
 
 class ActionRequest(Base):
-    """One "may this CHANGE run?" question and its answer (T34, V20, V32, V33, V43).
+    """One "may this CHANGE run?" question and its answer.
 
     This row *is* the authorization. V23 says the question is answered from
     `action_requests.status` every time — never from an LLM claim and never from a tool
-    argument — so the gate (T33) writes PENDING here and the tool executes only once this
+    argument — so the gate writes PENDING here and the tool executes only once this
     column says APPROVED. A held bearer token can create one of these; what it cannot do
     is decide one (V22: the decision arrives as a cookie POST from a NOA-origin document).
 
     Five columns `noa-old` had here are deliberately absent, and one it lacked is present:
 
-    - `proposed_reason` — forbidden outright (C8, V43). `noa-old` had no such column
+    - `proposed_reason` — forbidden outright. `noa-old` had no such column
       either, but it did something worse: the reason travelled inside `args` JSONB, so the
       LLM authored it. Here `reason` is a column of its own, NULL until an operator types
-      one into the approval card (V15), and there is exactly one of them.
+      one into the approval card, and there is exactly one of them.
     - `args` — folded into `approval_context`. V33 wants the gate-time payload persisted
       as one object rather than rebuilt at render time; splitting the arguments out would
       make two records of one moment that can disagree.
@@ -316,7 +316,7 @@ class ActionRequest(Base):
       timestamp invites reading the wrong one (`LoginRateLimit` above records the same
       call for the same reason).
     - `expires_at` — present, and `noa-old` had nothing like it. Without a deadline a
-      request nobody answers stays PENDING forever (V32, T39).
+      request nobody answers stays PENDING forever.
     """
 
     __tablename__ = "action_requests"
@@ -325,7 +325,7 @@ class ActionRequest(Base):
         # two indexes; `status` leads, so status-only lookups use it too. (`<=`, not `<`:
         # the sweep and the decision door judge a deadline the same way — `core.approvals.expiry`.)
         Index("ix_action_requests_status_expires_at", "status", "expires_at"),
-        # T37 (C8, V15), closing what T34 left open by name. A row that says an operator
+        # T37, closing what T34 left open by name. A row that says an operator
         # decided must carry what they typed, at the mechanism rather than in the endpoint
         # alone (V84c) — so a second writer cannot record a decision nobody justified.
         # `~ '[^[:space:]]'` — "holds a non-whitespace character" — rather than `btrim(...)
@@ -345,7 +345,7 @@ class ActionRequest(Base):
     id: Mapped[UUID] = uuid_pk()
     tool_name: Mapped[str] = mapped_column(String(200), nullable=False)
     # SET NULL, like `tool_runs` and unlike every schema-v1 user FK, which cascades. An
-    # approved CHANGE is an audit artifact (V46) and T36's receipts hang off this row, so
+    # approved CHANGE is an audit artifact and T36's receipts hang off this row, so
     # cascading would let one user deletion erase both. Fails closed against V27: NULL
     # matches no caller, so a requester-match lookup 404s.
     requested_by_user_id: Mapped[UUID | None] = mapped_column(
@@ -354,9 +354,9 @@ class ActionRequest(Base):
         nullable=True,
         index=True,
     )
-    # The answer to "may this run?" (V23). Defaults to PENDING because the gate inserts
+    # The answer to "may this run?". Defaults to PENDING because the gate inserts
     # before anyone has decided anything; the three terminal states are reached exactly
-    # once, under a row lock (V28).
+    # once, under a row lock.
     status: Mapped[ActionRequestStatus] = lifecycle_enum(
         ActionRequestStatus,
         name="action_request_status",
@@ -367,11 +367,11 @@ class ActionRequest(Base):
     conversation_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # V33: built at gate time and persisted here, never rebuilt from a transcript when the
     # card renders. Holds what V35 shows an operator — provenance, tool arguments, and the
-    # in-process preflight evidence (V17). No server default, unlike `tool_runs.args`: an
+    # in-process preflight evidence. No server default, unlike `tool_runs.args`: an
     # empty context is never a legitimate state here, so an insert that omits it should
     # fail rather than quietly record a card with nothing on it.
     approval_context: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    # The one reason that exists (C8, V15, V43). NULL until decided, and still NULL after
+    # The one reason that exists. NULL until decided, and still NULL after
     # an expiry — nobody typed one. Unbounded `Text` because no machine writes it: a cap
     # would silently truncate the operator's own words, and truncating the field that
     # authorises a change is worse than storing a long one. T37 bounds the input at the
@@ -390,13 +390,13 @@ class ActionRequest(Base):
     # the state V32 exists to remove. Kept after a decision as the historical fact it is.
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = created_at()
-    # NULL while PENDING. Set by whichever terminal transition wins the lock (V28),
+    # NULL while PENDING. Set by whichever terminal transition wins the lock,
     # including the expiry sweep — an expiry is a decision the clock made.
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ActionReceipt(Base):
-    """What an approved CHANGE actually did (T36, V46).
+    """What an approved CHANGE actually did.
 
     V46 names three artifacts for an approved change: the `tool_runs` row (what ran),
     this receipt (what it did), and the audit log. The run says a change completed; the
@@ -409,7 +409,7 @@ class ActionReceipt(Base):
     T63's `noa_get_action_result` read it beside the run. What T36 owed was a shape those
     cannot quietly reshape, and the `UNIQUE` below is the load-bearing part of it.
 
-    Ported from `noa-old` `MCP:.../0006_action_receipts.py` (C13) with three departures,
+    Ported from `noa-old` `MCP:.../0006_action_receipts.py` with three departures,
     each named because a port carries the code and not the defect (T21(b)):
 
     - `receipt_data`, not `payload` — §T.36's name.
@@ -431,7 +431,7 @@ class ActionReceipt(Base):
 
     __tablename__ = "action_receipts"
     __table_args__ = (
-        # One decision, one outcome (V28, V34). Also the lookup index — every reader
+        # One decision, one outcome. Also the lookup index — every reader
         # arrives holding an `action_request_id` — so there is no second index for it.
         UniqueConstraint("action_request_id", name="uq_action_receipts_action_request_id"),
     )
@@ -466,7 +466,7 @@ class ActionReceipt(Base):
 
 
 class ToolResultTable(Base):
-    """One large READ result, parked so it never enters the transcript (T56, V64, V85).
+    """One large READ result, parked so it never enters the transcript.
 
     V64's whole point is that a listing of thousands of accounts costs zero tokens: the tool
     answers with a short summary and a URL, and the rows live here until an operator opens
@@ -474,16 +474,16 @@ class ToolResultTable(Base):
     truncated `tool_runs.result_summary` one table over is the audit record of the same call;
     this is the body it deliberately does not hold.
 
-    **The requester is the access control, and the token is not** (V26, V27). A row is read
+    **The requester is the access control, and the token is not**. A row is read
     back only by the operator whose call produced it — `requested_by_user_id` sits in the
     reader's `WHERE` (`core.results.tables`), so a table that is not the caller's is never
     fetched, and the FK is `SET NULL` like every other user FK since T35, so a deleted
     operator's table matches nobody rather than everybody. The token is unguessable because
     it is cheap to make it so, not because unguessability is what authorises the read: the
-    URL persists in LibreChat's MongoDB (V26), and a URL that were a key would be one an
+    URL persists in LibreChat's MongoDB, and a URL that were a key would be one an
     operator could paste into a chat.
 
-    **The bound is stored, not recomputed** (V85). `rows` is capped when the row is written;
+    **The bound is stored, not recomputed**. `rows` is capped when the row is written;
     `total_rows` is the count before that cut and `truncated` says whether one happened. A
     surface that rendered `len(rows)` as the total would be the fabrication V85 exists to
     stop — "there are five thousand accounts" on a box with nine — and it would be authored
@@ -516,18 +516,18 @@ class ToolResultTable(Base):
     )
     # Which READ produced this, for the page's heading and for an operator reading two open
     # tabs. Not a join to `tool_runs`: the audit row is written by other code at another
-    # moment (T73), and a link between them would be a second record of one call.
+    # moment, and a link between them would be a second record of one call.
     tool_name: Mapped[str] = mapped_column(String(200), nullable=False)
     # Ordered column list, `[{"key": ..., "label": ...}]`. Ordered because a table's column
     # order is part of what was rendered, and a mapping would lose it.
     column_labels: Mapped[list[Any]] = mapped_column(JSONB, nullable=False)
-    # The rows themselves, redacted by the writer (V8) and already capped.
+    # The rows themselves, redacted by the writer and already capped.
     rows: Mapped[list[Any]] = mapped_column(JSONB, nullable=False)
     # No server default on either payload column, exactly like `approval_context` and
     # `receipt_data`: a table with no columns and no rows is not a legitimate state, so an
     # insert omitting one fails rather than parking an empty page.
     #
-    # Matches before the cut (V85). Equal to `len(rows)` when nothing was dropped, which is
+    # Matches before the cut. Equal to `len(rows)` when nothing was dropped, which is
     # what makes `truncated` checkable against it rather than a flag on its own.
     total_rows: Mapped[int] = mapped_column(Integer, nullable=False)
     truncated: Mapped[bool] = mapped_column(Boolean, nullable=False)
@@ -538,10 +538,10 @@ class ToolResultTable(Base):
 
 
 class SSHCredentialsMixin:
-    """SSH connection fields shared by WHM and PMG servers (V66).
+    """SSH connection fields shared by WHM and PMG servers.
 
     `ssh_username` NULL means connect as `root`; any other user gets `sudo -n`
-    prefixing at command-build time (V55). `ssh_host_key_fingerprint` is the pinned
+    prefixing at command-build time. `ssh_host_key_fingerprint` is the pinned
     host key — absent means not yet validated, and the integration refuses to
     connect until an admin runs validate (TOFU capture, V69).
     """
@@ -575,19 +575,19 @@ class WHMServer(Base, SSHCredentialsMixin, TimestampMixin):
     api_username: Mapped[str] = mapped_column(String(255), nullable=False)
     api_token: Mapped[str] = encrypted_secret()
     verify_ssl: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
-    # A reseller token instead of the root one (V109). Two readers, neither of them an
+    # A reseller token instead of the root one. Two readers, neither of them an
     # authorization check: `whm_list_servers` filters its output by it, and the admin write
     # refuses a `true` row whose `name` is not its `api_username` — that equality is what
     # makes an account CHANGE addressable by its owner, because `resolve_whm_server_ref`
     # matches id, `name` and hostname and never `api_username`. Whether a credential may
-    # write an account is decided by comparing that account's `owner` at preflight (V106),
+    # write an account is decided by comparing that account's `owner` at preflight,
     # not here.
     is_reseller_credential: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
 
     def to_safe_dict(self) -> dict[str, Any]:
-        """Admin view. No `api_token`, no SSH credentials (V2, V8)."""
+        """Admin view. No `api_token`, no SSH credentials."""
         return {
             "id": str(self.id),
             "name": self.name,
@@ -596,7 +596,7 @@ class WHMServer(Base, SSHCredentialsMixin, TimestampMixin):
             "has_api_token": bool(self.api_token),
             "verify_ssl": self.verify_ssl,
             # Published, unlike a credential: the admin form draws the checkbox from it, and
-            # an operator who cannot see the flag cannot tell why a save was refused (V109).
+            # an operator who cannot see the flag cannot tell why a save was refused.
             "is_reseller_credential": self.is_reseller_credential,
             **self._ssh_safe_fields(),
             "created_at": self.created_at,
@@ -618,7 +618,7 @@ class ProxmoxServer(Base, TimestampMixin):
     verify_ssl: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
 
     def to_safe_dict(self) -> dict[str, Any]:
-        """Admin view. No `api_token_secret` (V2, V8)."""
+        """Admin view. No `api_token_secret`."""
         return {
             "id": str(self.id),
             "name": self.name,
@@ -646,7 +646,7 @@ class PMGServer(Base, SSHCredentialsMixin, TimestampMixin):
     ssh_host: Mapped[str] = mapped_column(String(255), nullable=False)
 
     def to_safe_dict(self) -> dict[str, Any]:
-        """Admin view. No SSH credentials (V2, V8)."""
+        """Admin view. No SSH credentials."""
         return {
             "id": str(self.id),
             "name": self.name,

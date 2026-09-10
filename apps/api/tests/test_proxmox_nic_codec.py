@@ -1,4 +1,4 @@
-"""The `netN` codec — what a NIC line says, and what a rewrite of it must not lose (T28).
+"""The `netN` codec — what a NIC line says, and what a rewrite of it must not lose.
 
 `core.integrations.proxmox.nic` has no tool context, no client and no session, so it is tested
 here directly: the grammar is the whole subject, and the two halves of `proxmox_vm_nic` are two

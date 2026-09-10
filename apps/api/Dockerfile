@@ -86,7 +86,7 @@ USER noa
 
 EXPOSE 8000
 
-# `/health` is liveness (V51): it answers with Postgres down on purpose, so a database outage is
+# `/health` is liveness: it answers with Postgres down on purpose, so a database outage is
 # never reported as this process being dead. Readiness is deliberately not probed here — see
 # `docs/deployment.md`.
 HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=3 \

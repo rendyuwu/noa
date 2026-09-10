@@ -1,8 +1,8 @@
-"""One home per test double (V66).
+"""One home per test double.
 
-The SSH transport doubles and `build_cipher` were born in `support/whm.py` (T16) and moved out
-as soon as a second caller appeared — `support/remote_exec.py` for PMG (T18),
-`support/secrets.py` for Proxmox (T17). Both moves left a re-export behind so the four WHM
+The SSH transport doubles and `build_cipher` were born in `support/whm.py` and moved out
+as soon as a second caller appeared — `support/remote_exec.py` for PMG,
+`support/secrets.py` for Proxmox. Both moves left a re-export behind so the four WHM
 test files could stay untouched, which meant nine shared names had two import paths at once.
 T72 removed the shims.
 
@@ -50,4 +50,4 @@ def test_no_test_imports_a_shared_double_from_support_whm() -> None:
         if alias.name not in WHM_OWNED
     }
 
-    assert borrowed == set(), "import these from support.remote_exec or support.secrets (V66)"
+    assert borrowed == set(), "import these from support.remote_exec or support.secrets"

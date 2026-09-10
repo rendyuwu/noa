@@ -1,4 +1,4 @@
-"""The decision gate against a real Postgres: one answer per request (T37 — V15, V27, V28, V32).
+"""The decision gate against a real Postgres: one answer per request.
 
 `test_action_request_decision_routes.py` drives the same service over an in-memory
 repository, which proves the ordering and every refusal but cannot prove the claim that is
@@ -81,7 +81,7 @@ async def factory(database_url: str) -> AsyncIterator[async_sessionmaker[AsyncSe
 
 # The row helpers — `insert_user`, `open_request`, `read_request`, `read_runs` — moved to
 # `support.action_decisions` at T39, when the expiry sweep's live file needed the same four
-# (V66). They still write through the gate's own repository; see their docstrings.
+#. They still write through the gate's own repository; see their docstrings.
 
 
 # --------------------------------------------------------------------------------------
@@ -91,7 +91,7 @@ async def factory(database_url: str) -> AsyncIterator[async_sessionmaker[AsyncSe
 
 # `ObservedDecisionRepository` and `HANDOVER_GRACE_SECONDS` moved to
 # `support.action_decisions` at T39: the expiry sweep races the same window and must hold it
-# open the same way (V66, V89).
+# open the same way.
 
 
 async def test_concurrent_approves_produce_one_decision_and_one_run(factory) -> None:
@@ -195,7 +195,7 @@ async def test_concurrent_approves_produce_one_decision_and_one_run(factory) -> 
 
 
 async def test_an_unlocked_read_of_the_same_row_does_not_wait(factory) -> None:
-    """The negative control for the ordering assertion above (V87).
+    """The negative control for the ordering assertion above.
 
     A "second read landed after the first commit" assertion is worthless if *every* read
     would land there — if, say, the harness simply never overlapped the two transactions.
@@ -364,7 +364,7 @@ async def test_an_unknown_id_is_not_found(factory) -> None:
 
 
 async def test_a_request_whose_requester_was_deleted_is_not_found(factory) -> None:
-    """The FK is `SET NULL` (T34), so a deleted operator's request matches nobody.
+    """The FK is `SET NULL`, so a deleted operator's request matches nobody.
 
     Asserted against a real `DELETE`, because `ondelete` is a string in metadata until
     something deletes — and because the fail-closed direction is the whole point: NULL must
@@ -467,7 +467,7 @@ async def test_a_blank_reason_touches_no_row(factory) -> None:
 
 
 async def test_the_gates_repository_still_cannot_decide(factory) -> None:
-    """V22, asserted against the class the MCP path actually holds (T33).
+    """V22, asserted against the class the MCP path actually holds.
 
     `SQLActionRequestRepository` is what `McpToolContext` carries. If it ever grew a way to
     write a terminal status, the bearer-token path would hold the key to the authorization —

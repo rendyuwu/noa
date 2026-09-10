@@ -1,4 +1,4 @@
-"""Imunify360 `ip-list` response parsing (T16, V57, V69).
+"""Imunify360 `ip-list` response parsing.
 
 New — `noa-old` shipped `imunify.py` without a parser test on branch `MCP`. It is the second
 of V57's two backends, so its verdict carries the same weight as CSF's, and every guard in the
@@ -78,7 +78,7 @@ def test_a_white_entry_is_reported_even_when_a_drop_outranks_it() -> None:
 
 
 def test_no_allow_entry_is_reported_for_a_drop_only_ip() -> None:
-    """The negative control (V87): a parser that answered `True` for every row would pass the
+    """The negative control: a parser that answered `True` for every row would pass the
     case above and say nothing."""
     result = parse_imunify_ip_list_response({"items": [_item(purpose="drop")]}, TARGET)
 
@@ -103,7 +103,7 @@ def test_absent_ip_reports_not_found_rather_than_whitelisted() -> None:
 
 
 def test_missing_or_malformed_payload_degrades_to_not_found() -> None:
-    """One bad row must ⊥ turn a dual-backend preflight into an error (V57)."""
+    """One bad row must ⊥ turn a dual-backend preflight into an error."""
     payload = {
         "items": [
             "not-a-dict",

@@ -1,4 +1,4 @@
-# Build context for the embed image (§T.60). Context is this directory (C12).
+# Build context for the embed image (§T.60). Context is this directory.
 #
 # Same shape as `apps/admin-web/.dockerignore`, including the rule that matters most: nothing
 # TypeScript compiles is excluded. `tsconfig.json` includes `**/*.ts`/`**/*.tsx` for the whole
@@ -13,7 +13,7 @@ node_modules/
 out/
 *.tsbuildinfo
 
-# Secrets never enter a layer (C11). Config arrives from the environment at boot, except the
+# Secrets never enter a layer. Config arrives from the environment at boot, except the
 # framing origin, which is a build argument — see the Dockerfile.
 .env
 .env.*

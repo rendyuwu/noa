@@ -50,7 +50,7 @@ describe('submitDecision', () => {
     vi.restoreAllMocks()
   })
 
-  it('POSTs the typed reason and the server-minted token (V15, V39)', async () => {
+  it('POSTs the typed reason and the server-minted token', async () => {
     const seen = stubFetch(Response.json({ action_request_id: ID, tool_run_id: 'run-1' }))
 
     const outcome = await submitDecision({
@@ -66,7 +66,7 @@ describe('submitDecision', () => {
     expect(outcome).toEqual({ kind: 'recorded', decision: 'approve' })
   })
 
-  it('sends the cookie, which is what authenticates it (V22, V40)', async () => {
+  it('sends the cookie, which is what authenticates it', async () => {
     const seen = stubFetch(Response.json({}))
 
     await submitDecision({ actionRequestId: ID, decision: 'deny', reason: REASON, csrf: CSRF })
@@ -75,7 +75,7 @@ describe('submitDecision', () => {
     expect(seen[0]?.init?.cache).toBe('no-store')
   })
 
-  it('carries no status claim in the body (V23)', async () => {
+  it('carries no status claim in the body', async () => {
     // "May this run?" is read from `action_requests.status`. There is nowhere in this body to
     // assert that a request is already approved, and this asserts the body stays that shape.
     const seen = stubFetch(Response.json({}))
@@ -85,7 +85,7 @@ describe('submitDecision', () => {
     expect(Object.keys(JSON.parse(String(seen[0]?.init?.body))).sort()).toEqual(['csrf', 'reason'])
   })
 
-  it('sends a blank reason rather than refusing it locally (V15)', async () => {
+  it('sends a blank reason rather than refusing it locally', async () => {
     // The gate is the endpoint: 409 `change_reason_required`, checked under the row lock against
     // the same rule the database CHECK holds. A second definition of "blank" here is one that can
     // disagree with those two, and two spellings of blank is one too many.
@@ -168,7 +168,7 @@ describe('submitDecision', () => {
 })
 
 describe('describeDecision', () => {
-  it('prefers the API’s message, which already names the remedy (V8)', () => {
+  it('prefers the API’s message, which already names the remedy', () => {
     expect(
       describeDecision({
         kind: 'refused',

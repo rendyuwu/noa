@@ -1,4 +1,4 @@
-"""Doubles and an app builder for the decision routes (T37).
+"""Doubles and an app builder for the decision routes.
 
 Postgres is not required for a route test here: `decision_harness` builds an app with the
 `/action-requests` router, points `get_action_decision_service` at an in-memory repository and
@@ -15,8 +15,8 @@ second one is V28. Same split as `support.action_requests`, `support.tool_runs` 
 **The journal is the point of this module.** Every double appends to one shared list, so a
 test can assert the *order* the service did things in rather than only the fact that it did
 them. `["lock", "run", "decision:APPROVED", "commit", "execute"]` is what pins three separate
-decisions at once: the lock precedes every guard (V28), the run is inserted before the
-decision commits so both land together (V29, V46), and the executor is handed the run only
+decisions at once: the lock precedes every guard, the run is inserted before the
+decision commits so both land together, and the executor is handed the run only
 after that commit — a handoff before it could start a change whose authorization then rolled
 back.
 
@@ -27,10 +27,10 @@ what the caller asked for.
 
 **The live helpers at the bottom are not doubles.** `insert_user`, `open_request`,
 `read_request`, `read_runs` and `ObservedDecisionRepository` run against a real Postgres and
-live here because several files need them (V66): the three the decision's live coverage is
+live here because several files need them: the three the decision's live coverage is
 split across — `test_action_request_decisions_live.py` (T37, the row lock and the refusals),
 `test_action_request_decision_records_live.py` (what a decision writes) and
-`test_action_request_change_cap_live.py` (V31) — plus `test_action_request_expiry_live.py`
+`test_action_request_change_cap_live.py` — plus `test_action_request_expiry_live.py`
 (T39). That last one races a sweep against an approval, which needs the same "hold the
 transaction open between its locked read and its commit" instrument the others use — and a
 second copy of that instrument is a second thing that can silently stop overlapping, which is
@@ -85,17 +85,17 @@ from support.auth import (
     override_auth_service_factory,
 )
 
-# The first CHANGE tool (T22). Named rather than built: these tests are about the decision,
+# The first CHANGE tool. Named rather than built: these tests are about the decision,
 # and a tool would only be a second thing that could be wrong.
 CHANGE_TOOL = "whm_suspend_account"
 
-# What an operator types into the card's one reason box (C8, V15).
+# What an operator types into the card's one reason box.
 REASON = "Customer confirmed the account is compromised; suspending per ticket NOC-4471."
 
-# What LibreChat fills from `{{LIBRECHAT_BODY_CONVERSATIONID}}` (T57, R28).
+# What LibreChat fills from `{{LIBRECHAT_BODY_CONVERSATIONID}}`.
 CONVERSATION_ID = "1f0c2e5a-7b41-4d2e-9a3c-0b5d8e6f4a12"
 
-# V31's cap for a support-built service (T38). Deliberately not `Settings`' own default of 1:
+# V31's cap for a support-built service. Deliberately not `Settings`' own default of 1:
 # four live files approve a request or two and none of them is about the cap, so a helper
 # carrying the production number would make every one of them a cap test by accident — and a
 # helper that agreed with the default would be unseparable from one that hardcoded it (T33(e)'s
@@ -150,7 +150,7 @@ class RecordedDecision:
 
 @dataclass
 class RecordedChangeRun:
-    """The `tool_runs` row an approval started (V46, V47)."""
+    """The `tool_runs` row an approval started."""
 
     tool_run_id: UUID
     tool_name: str
@@ -172,7 +172,7 @@ class FakeActionDecisionRepository:
         self.commits: list[str] = []
         self.journal = journal if journal is not None else []
         self._pending: list[RecordedDecision] = []
-        # V31's count, as this double reports it (T38). Per user rather than a single number,
+        # V31's count, as this double reports it. Per user rather than a single number,
         # so a cap test can put one operator at their limit and leave another free — which is
         # what proves the count is scoped by requester and not global.
         self.inflight_by_user: dict[UUID, int] = {}
@@ -182,7 +182,7 @@ class FakeActionDecisionRepository:
         return request
 
     def set_inflight(self, user_id: UUID, count: int) -> None:
-        """Report `count` in-flight CHANGE runs for `user_id` (V31)."""
+        """Report `count` in-flight CHANGE runs for `user_id`."""
         self.inflight_by_user[user_id] = count
 
     # --- `ActionDecisionRepository` ---
@@ -259,7 +259,7 @@ class FakeActionDecisionRepository:
 
 @dataclass
 class StartedExecution:
-    """One handoff to the executor (V29)."""
+    """One handoff to the executor."""
 
     tool_run_id: UUID
     action_request_id: UUID
@@ -300,7 +300,7 @@ def build_decision_service(
 ) -> ActionDecisionService:
     """The production service over whatever repository a test hands it.
 
-    One construction site for nine call sites (V66). It exists because T38 made V31's cap a
+    One construction site for nine call sites. It exists because T38 made V31's cap a
     required argument: nine copies of the constructor meant nine places to decide what the cap
     is, and eight of them are in files that have nothing to say about it.
 
@@ -326,7 +326,7 @@ def build_live_decision_service(
     classes are all production code — which is what makes these files claims about V28 and V29
     rather than about a service calling a repository.
 
-    Both `*_live` files that race the two writers had this verbatim (V66); it landed here when
+    Both `*_live` files that race the two writers had this verbatim; it landed here when
     T38's cap argument made it two places to decide what a cap is.
     """
     recorder = executor or RecordingApprovedChangeExecutor()
@@ -366,7 +366,7 @@ class DecisionHarness:
         self.client.cookies.delete(COOKIE_NAME)
 
     def add_operator(self, email: str) -> FakeUserRow:
-        """A second active operator, for the requester-match cases (V27)."""
+        """A second active operator, for the requester-match cases."""
         return self.auth_repository.add_active_user(email)
 
     # --- Requests ---
@@ -435,7 +435,7 @@ def decision_harness(
 
     Two dependency overrides, and no more: the repository and the executor. `AuthService` is
     overridden too, but with `support.auth`'s own factory over a real `AuthService` — the
-    `users.is_active` re-read behind `require_session_user` is production code here (V6), and
+    `users.is_active` re-read behind `require_session_user` is production code here, and
     the routes' 401 path depends on it.
     """
     resolved_settings = settings or build_settings()
@@ -489,7 +489,7 @@ def decision_harness(
 
 
 # --------------------------------------------------------------------------------------
-# Live helpers — real Postgres, shared by the two `*_live` files (V66)
+# Live helpers — real Postgres, shared by the two `*_live` files
 # --------------------------------------------------------------------------------------
 
 
@@ -510,7 +510,7 @@ async def open_request(
     expires_at: datetime | None = None,
     approval_context: dict[str, Any] | None = None,
 ) -> UUID:
-    """A PENDING row written by the *gate's* repository (T33), not by hand.
+    """A PENDING row written by the *gate's* repository, not by hand.
 
     The row under test is the one the production writer produces, so a change to the gate's
     insert shows up in these files rather than being papered over by a fixture that agrees
@@ -551,7 +551,7 @@ async def read_runs(factory: async_sessionmaker[AsyncSession]) -> list[ToolRun]:
 
 
 async def read_receipts(factory: async_sessionmaker[AsyncSession]) -> list[ActionReceipt]:
-    """Every `action_receipts` row (T36, T38).
+    """Every `action_receipts` row.
 
     Unfiltered, like `read_runs` beside it: the claim these files make is usually about *how
     many* receipts exist, and a query that narrowed to one request could not see a second one
@@ -566,8 +566,8 @@ class ObservedDecisionRepository(SQLActionDecisionRepository):
     """The production repository, with its two locks narrated and optionally held open.
 
     Four hooks and no substitutions: `before_read`/`after_read` fire around the row lock's
-    `SELECT … FOR UPDATE` (V28), `before_count`/`after_count` around V31's advisory lock and the
-    count it holds open (T38), and the journal records all of them plus the commit. The SQL under
+    `SELECT … FOR UPDATE`, `before_count`/`after_count` around V31's advisory lock and the
+    count it holds open, and the journal records all of them plus the commit. The SQL under
     test is the real SQL — what is added is the ability to say *when* each statement happened
     relative to the other transaction's, which is the whole of V89's obligation (a): the window
     is held open on purpose rather than hoped for.
@@ -627,7 +627,7 @@ class ObservedDecisionRepository(SQLActionDecisionRepository):
 class UnlockedCountDecisionRepository(ObservedDecisionRepository):
     """`ObservedDecisionRepository` with V31's advisory lock removed and nothing else changed.
 
-    The negative control's instrument (V87). "The second count landed after the first commit" is
+    The negative control's instrument. "The second count landed after the first commit" is
     worthless as an assertion if *every* count would land there — if the harness simply never
     overlapped the two transactions. This runs the identical handshake with a plain count in
     place of the locked one, which is the same shape

@@ -1,4 +1,4 @@
-"""Resolving an operator's word to one WHM server (T19 — V18, V21).
+"""Resolving an operator's word to one WHM server.
 
 V18 is a rule about what NOA does when it *cannot* tell: it returns candidates, it does not
 pick. So most of this file is about the failure shapes, and the assertions are on the
@@ -144,7 +144,7 @@ async def test_candidate_lists_are_capped() -> None:
 
 
 async def test_candidates_carry_no_credential_material() -> None:
-    """`choices` is transcript (V8, V26): id, name and base URL, nothing else."""
+    """`choices` is transcript: id, name and base URL, nothing else."""
     repository = FakeWHMServerRepository(
         [
             whm_server("alpha", base_url="https://shared.example.net:2087"),

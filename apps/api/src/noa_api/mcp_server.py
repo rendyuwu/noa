@@ -1,10 +1,10 @@
 """The FastMCP server and its ASGI app (T13 — I.mcp, V1, V3, R3, R6, R7, R8).
 
-Protocol era = handshake, negotiated per `initialize` (C23). LibreChat is the sole MCP
+Protocol era = handshake, negotiated per `initialize`. LibreChat is the sole MCP
 client and locks `@modelcontextprotocol/sdk` at exactly 1.29.0, whose client sends its own
-`LATEST_PROTOCOL_VERSION` — `2025-11-25` (R9) — so that is the era this deployment answers
+`LATEST_PROTOCOL_VERSION` — `2025-11-25` — so that is the era this deployment answers
 with, and `Mcp-Session-Id` is in play. NOA does not choose a digit: `mcp==1.29.0` echoes
-whatever the client asks for when it is in `SUPPORTED_PROTOCOL_VERSIONS` (R8), which is why
+whatever the client asks for when it is in `SUPPORTED_PROTOCOL_VERSIONS`, which is why
 an older client asking `2025-06-18` keeps working. The sessionless `2026-07-28` era is in
 neither SDK's list, so reaching it is an SDK bump rather than a setting. `fastmcp==3.4.5`
 is pinned for this; the pin is a decision, not an accident.
@@ -13,7 +13,7 @@ Two functions, because two things need to be separable: what the server *is* (na
 and from T19-T31/T63 its tools) and how it becomes an ASGI app (`http_app`). Verified
 against the installed `fastmcp==3.4.5` rather than docs:
 
-- **`auth=` takes the verifier instance directly** (R3). `TokenVerifier` already subclasses
+- **`auth=` takes the verifier instance directly**. `TokenVerifier` already subclasses
   `AuthProvider`, so a provider wrapper would only exist to add RFC 9728 metadata routes
   NOA has no use for (C5: per-user minted tokens, not OAuth).
 - **`auth` is read at `http_app()` time, not at request time** — `http_app` passes
@@ -22,9 +22,9 @@ against the installed `fastmcp==3.4.5` rather than docs:
   of a module-level singleton getting one attached later: an app built before the verifier
   exists is an app that never authenticates, and V1 would fail silently rather than loudly.
 - **No `stateless_http`, `json_response`, `host`, `port`, `log_level` on the constructor**
-  (R7) — v3 raises `TypeError` for those; they belong on `http_app()` or `FASTMCP_*` env.
+  — v3 raises `TypeError` for those; they belong on `http_app()` or `FASTMCP_*` env.
   Nothing here passes `stateless_http`, so sessions stay on and `Mcp-Session-Id` is minted
-  per `initialize` (R8), which every era C23 admits expects.
+  per `initialize`, which every era C23 admits expects.
 - **The middleware is not optional.** `TokenVerifier.verify_token` has no response hook
   (R2), so without `McpAuthErrorMiddleware` every refusal collapses to the SDK's bare
   `invalid_token` and V3's named bodies — `librechat_user_header_missing` versus
@@ -53,7 +53,7 @@ from noa_api.mcp_request_auth import McpAuthContext, McpAuthErrorMiddleware
 from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.registry import register_mcp_tools
 
-# Shown to the client in `initialize`; also what `librechat.yaml` labels the server (T57).
+# Shown to the client in `initialize`; also what `librechat.yaml` labels the server.
 SERVER_NAME = "NOA"
 
 # Where `noa_api.main` mounts the sub-app, and the path inside it once Starlette has
@@ -81,13 +81,13 @@ def build_mcp_server(
     follows the same rule for T66: no register, no session middleware, and a server that
     announces nothing (V74's emit is best-effort by decision, so its absence breaks nothing).
 
-    Five things happen here and all five belong together (T19, T66, T73):
+    Five things happen here and all five belong together:
 
     - **Tools are registered** (`register_mcp_tools`, T19-T31 and T63). That call is also
       the guard that every exposed name is in `TOOL_CATALOG`, so a name no role can be
-      granted fails at construction (V10, C22), and it is where each tool's `ToolRisk` is
-      declared (V20).
-    - **`RbacToolMiddleware` is attached** (V1), and it is handed the names that were just
+      granted fails at construction, and it is where each tool's `ToolRisk` is
+      declared.
+    - **`RbacToolMiddleware` is attached**, and it is handed the names that were just
       registered. Registering a tool and gating it are the same decision: a server that
       exposes a tool without the gate serves it to every authenticated operator regardless
       of role, and the failure is invisible — the tool works. The registered set travels
@@ -130,14 +130,14 @@ def build_mcp_http_app(
     tool_context: McpToolContext,
     session_registry: McpSessionRegistry | None = None,
 ) -> StarletteWithLifespan:
-    """The mountable Streamable HTTP app, authenticated per T11/T12 (R6, V1, V3).
+    """The mountable Streamable HTTP app, authenticated per T11/T12.
 
     Returns a Starlette app whose `lifespan` starts the session manager. It has to run:
     without it `StreamableHTTPASGIApp` has no session manager and every request fails at
-    the transport. `noa_api.main` combines it with the app's own lifespan (R6).
+    the transport. `noa_api.main` combines it with the app's own lifespan.
 
     `session_registry` is T66's half: the register the admin surface reads to find the sessions
-    a permission change concerns (V74). It is passed in rather than created here because the
+    a permission change concerns. It is passed in rather than created here because the
     *other* end of it — `McpToolListChangedNotifier` on `app.state` — has to be the same object,
     and a register built inside this function would be one the admin routes could never reach.
     """

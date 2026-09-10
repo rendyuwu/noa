@@ -2,7 +2,7 @@
  * Where an operator signs in, when this app cannot let them (§T.43 — V38, V42).
  *
  * **This app has no login page and this module does not add one.** The card authenticates with the
- * `noa_session` cookie (V22, V40) and the MCP bearer token never reaches a browser (C5), so a 401 in
+ * `noa_session` cookie and the MCP bearer token never reaches a browser, so a 401 in
  * the frame means the operator has a working LibreChat token and no NOA browser session. V42 says
  * the answer to that is a pointer, never a form: sign in where NOA already has a login — the admin
  * app — and come back. The cookie is scoped to the registrable domain, so a session minted there

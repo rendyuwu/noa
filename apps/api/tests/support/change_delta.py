@@ -1,9 +1,9 @@
-"""Driving a CHANGE runner from a test, on either side of the seam (T38).
+"""Driving a CHANGE runner from a test, on either side of the seam.
 
 A runner answers a `ChangeOutcome` — the tool envelope, and the before→after delta beside it
 (`core.approvals.delta`). Most assertions in this suite are about one or the other, not both, so
 reaching for `.payload` at every call site would be noise in every file that predates the delta
-and repetition in every file that does not (V66).
+and repetition in every file that does not.
 
 Two entry points, and the split is deliberate rather than a convenience:
 

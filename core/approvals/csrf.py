@@ -1,4 +1,4 @@
-"""The CSRF token that guards a decision POST (T37 — V22, V39).
+"""The CSRF token that guards a decision POST.
 
 V22 puts the decision on exactly one path: a cookie POST from a NOA-origin document. A
 cookie rides automatically, which is the whole point of C17/V40 — and also the whole
@@ -6,7 +6,7 @@ problem, because *any* page that can reach the endpoint gets the cookie sent for
 module is what makes "the browser sent the cookie" insufficient on its own.
 
 **Server-minted and signed, never double-submit.** V39 is explicit that a double-submit
-cookie is not enough here: `noa_session` is scoped `Domain=.noa.internal` (V40), so any
+cookie is not enough here: `noa_session` is scoped `Domain=.noa.internal`, so any
 sibling host under that registrable domain can plant a cookie of its own and echo it back.
 A token this process signed cannot be forged by something that can only *write* cookies.
 
@@ -23,7 +23,7 @@ second half rather than trusting the reasoning).
 
 **Lifetime is the pending TTL**, read off `APPROVAL_PENDING_TTL_SECONDS` rather than given a
 number of its own. A CSRF token that outlives its request buys an attacker nothing, because
-the decision path checks `action_requests.expires_at` under the row lock anyway (V32) — so a
+the decision path checks `action_requests.expires_at` under the row lock anyway — so a
 second, independent timeout would be a second thing to get wrong and nothing to gain.
 
 Clock discipline matches V79: zero leeway, and a token issued in the future is invalid
@@ -32,7 +32,7 @@ than one API replica makes clock drift a real term, and the fix then is an expli
 not a silent widening.
 
 There is no minting *route*, and T41 settled that there never will be: the approval card's own
-`GET /action-requests/{id}` mints one in the same answer that renders the card (T46). A token
+`GET /action-requests/{id}` mints one in the same answer that renders the card. A token
 that arrived separately from the thing it authorises is a token a page could hold without ever
 having passed V27's requester-match, and that read is where the match happens. Terminal
 requests get `null` rather than a token — a live key for a card with no door.
@@ -72,7 +72,7 @@ WIRE_FIELD_COUNT: Final = 3
 # the operator, the request, and when the token was minted.
 MESSAGE_SEPARATOR: Final = "|"
 
-# Diagnostics for the `detail` slot — logs only, never a response body (V8). None of them
+# Diagnostics for the `detail` slot — logs only, never a response body. None of them
 # quotes the token or the expected signature.
 DETAIL_BLANK = "empty CSRF token; ⊥ verification attempted"
 DETAIL_MALFORMED = "CSRF token is not `<version>.<issued_at>.<signature>`"
@@ -115,7 +115,7 @@ def mint_decision_csrf_token(
     action_request_id: UUID,
     issued_at: datetime | None = None,
 ) -> str:
-    """Mint the token an approval card carries into its decision POST (V39).
+    """Mint the token an approval card carries into its decision POST.
 
     `issued_at` is a parameter rather than always the clock so a test can pin the moment and
     assert the age rules directly, instead of sleeping or comparing two tokens minted a
@@ -140,7 +140,7 @@ def verify_decision_csrf_token(
     action_request_id: UUID,
     now: datetime | None = None,
 ) -> None:
-    """Accept `token` for this operator and this request, or raise (V39).
+    """Accept `token` for this operator and this request, or raise.
 
     Raises `DecisionCsrfInvalidError` — never returns a boolean. A predicate invites
     `if verify(...)` written the wrong way round, or called and not branched on at all; a
@@ -179,7 +179,7 @@ def verify_decision_csrf_token(
 
     # Age last: `issued_at` is only trustworthy once the signature over it has held, so a
     # forged stamp cannot buy an attacker a longer window. Both refusals answer with the same
-    # `error_code` and the same body — only `detail`, which is logs-only, says which (V8).
+    # `error_code` and the same body — only `detail`, which is logs-only, says which.
     stamp = int((now or datetime.now(UTC)).timestamp())
     if issued_at > stamp:
         raise DecisionCsrfInvalidError(DETAIL_FUTURE)

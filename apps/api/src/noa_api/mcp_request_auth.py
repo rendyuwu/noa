@@ -1,23 +1,23 @@
-"""The MCP request-path authentication entry point (T12 — V1, V3, V4, V5, V9, R4, R5).
+"""The MCP request-path authentication entry point.
 
 `core.auth.mcp_identity` decides *whether* a caller may act. This module is how an HTTP
 request reaches that decision, and how a refusal reaches the client. Three jobs, and each
 one exists because something in the fastmcp/SDK stack does not do it:
 
-1. **`resolve_mcp_identity` — the one HTTP-side entry (V5).** It reads the two headers,
+1. **`resolve_mcp_identity` — the one HTTP-side entry.** It reads the two headers,
    consults the rate limiter, calls `McpIdentityResolver.resolve()`, and logs the outcome.
    Every MCP request passes through it exactly once, via `NoaTokenVerifier.verify_token`.
 
-2. **`McpAuthErrorMiddleware` — the named body (V3).** `TokenVerifier.verify_token` has no
-   response hook (R2): returning `None` makes `RequireAuthMiddleware` answer
+2. **`McpAuthErrorMiddleware` — the named body.** `TokenVerifier.verify_token` has no
+   response hook: returning `None` makes `RequireAuthMiddleware` answer
    `{"error": "invalid_token", "error_description": "Authentication required"}`
    (`mcp/server/auth/middleware/bearer_auth.py`), which cannot tell "you forgot the header"
    from "this token belongs to someone else's LibreChat account" — the two cases V3 fixes
    client-visible strings for. So the refusal is stashed on the ASGI scope and this
    middleware renders it through the same `status_for`/`error_body`/`error_headers` the
-   FastAPI handler uses (V73).
+   FastAPI handler uses.
 
-3. **`current_mcp_identity` — identity for tools (R5).** Tools read
+3. **`current_mcp_identity` — identity for tools.** Tools read
    `get_access_token().claims`, never the bearer again. The claim keys are constants here
    and `identity_claims()` is what writes them, so the writer and the reader cannot drift.
 
@@ -26,7 +26,7 @@ one exists because something in the fastmcp/SDK stack does not do it:
 at position 0 and `create_streamable_http_app` *appends* caller middleware after the auth
 middleware (`fastmcp/server/http.py`), so the stack per request is:
 
-    RequestContextMiddleware          sets the request contextvar (R4)
+    RequestContextMiddleware          sets the request contextvar
     └─ AuthenticationMiddleware       BearerAuthBackend → verify_token → resolve_mcp_identity
        └─ McpAuthErrorMiddleware      this module: renders the named refusal
           └─ router → Route(endpoint=RequireAuthMiddleware)   the bare 401 we replace
@@ -111,7 +111,7 @@ CLAIM_EMAIL: Final = "email"
 CLAIM_TOKEN_ID: Final = "token_id"  # noqa: S105
 CLAIM_LIBRECHAT_USER_ID: Final = "librechat_user_id"
 
-# Internal diagnostics for the `detail` slot: logs only, never a response body (V8).
+# Internal diagnostics for the `detail` slot: logs only, never a response body.
 DETAIL_NO_ACCESS_TOKEN = "no access token in context; called off an authenticated request"  # noqa: S105
 DETAIL_CLAIMS_MALFORMED = "access token claims do not carry a usable NOA identity"
 
@@ -197,7 +197,7 @@ def parse_bearer(header_value: str | None) -> str | None:
 def read_presented_bearer() -> str | None:
     """The bearer on the current request, read through fastmcp's request context.
 
-    `include={"authorization"}` is load-bearing (R5): the default exclusion list drops
+    `include={"authorization"}` is load-bearing: the default exclusion list drops
     `authorization`, so without it this returns `None` on every request and every caller
     looks like it presented no token. Off-request `get_http_headers()` answers `{}`, which
     reads as "absent" rather than raising.
@@ -206,10 +206,10 @@ def read_presented_bearer() -> str | None:
 
 
 def read_librechat_user() -> str | None:
-    """The `X-Noa-LibreChat-User` value on the current request (C24, V3).
+    """The `X-Noa-LibreChat-User` value on the current request.
 
     No `include=` needed: custom headers are not on the exclusion list, and they come back
-    lowercased, which is why `LIBRECHAT_USER_HEADER` is spelled lowercase (R5).
+    lowercased, which is why `LIBRECHAT_USER_HEADER` is spelled lowercase.
     """
     return get_http_headers().get(LIBRECHAT_USER_HEADER)
 
@@ -229,11 +229,11 @@ async def resolve_mcp_identity(
 
     `presented_token` exists because `verify_token` is *handed* the token by the SDK and
     re-parsing the header there would be a second parse that could disagree with the first.
-    Omitted, the header is read (R5) — that is the path the middleware needs when the SDK
+    Omitted, the header is read — that is the path the middleware needs when the SDK
     never called the verifier at all.
 
     Raises `McpTokenMissingError` before touching the database, then
-    `McpAuthRateLimitedError` (V9), then whatever `McpIdentityResolver.resolve` raises in
+    `McpAuthRateLimitedError`, then whatever `McpIdentityResolver.resolve` raises in
     gate order, plus `LdapUnavailableError` straight through (V4 — deny, do not revoke).
     Every refusal is logged once, here, because this is where the cause is known.
     """
@@ -249,7 +249,7 @@ async def resolve_mcp_identity(
         log_mcp_auth_denial(missing)
         raise missing
 
-    # The same digest `mint()` stored and the resolver will look up (V2). Computed once and
+    # The same digest `mint()` stored and the resolver will look up. Computed once and
     # reused as the limiter's token key, so a stolen token is counted under the value it
     # will keep presenting.
     token_digest = hash_mcp_token(bearer)
@@ -283,7 +283,7 @@ async def resolve_mcp_identity(
                 # Both repositories were handed this request's session, so committing
                 # through the identity repository (the Protocol that declares `commit`)
                 # makes the counter durable. A counter that rolls back with the refusal is
-                # a counter that never counted (V9).
+                # a counter that never counted.
                 await identity_repository.commit()
             log_mcp_auth_denial(exc)
             raise
@@ -292,10 +292,10 @@ async def resolve_mcp_identity(
 
 
 def identity_claims(identity: McpIdentity) -> dict[str, str]:
-    """`AccessToken.claims` for an accepted identity — what tools read (R5).
+    """`AccessToken.claims` for an accepted identity — what tools read.
 
     Ids, the email the audit trail already records, and the binding. Nothing sensitive and
-    no token material: `claims` renders in tracebacks and structlog values (V2, V8).
+    no token material: `claims` renders in tracebacks and structlog values.
     """
     return {
         CLAIM_USER_ID: str(identity.user_id),
@@ -320,15 +320,15 @@ class McpToolIdentity:
 
 
 def current_mcp_identity() -> McpToolIdentity:
-    """The caller behind the current tool invocation (R5).
+    """The caller behind the current tool invocation.
 
     Read from `get_access_token()`, never by re-parsing the bearer: the token was already
-    resolved once this request (V5), and a second parse would be a second answer to "who is
+    resolved once this request, and a second parse would be a second answer to "who is
     this?" that could disagree with the one the RBAC check used.
 
     Raises rather than returning `None`. A tool reached without an access token means the
     mount lost its verifier, and every tool would otherwise need a branch for a state that
-    must not exist (V1).
+    must not exist.
     """
     access_token = get_access_token()
     if access_token is None:
@@ -371,7 +371,7 @@ def take_mcp_auth_error(scope: Scope) -> NoaError | None:
 
 
 def log_mcp_auth_denial(error: NoaError) -> None:
-    """Record one refusal (V8).
+    """Record one refusal.
 
     `error_code` and the internal `detail` only. No token, no digest, no prefix, and no
     LibreChat identifier — a mismatch line pairing a NOA token with a LibreChat account
@@ -388,7 +388,7 @@ def mount_relative_path(scope: Scope) -> str:
 
     Starlette's `Mount` does **not** rewrite `scope["path"]`; it extends `root_path` with
     the matched prefix and leaves the full path in place, and every router below strips
-    `root_path` again when it matches. So under `app.mount("/mcp", mcp_app)` (T13) a request
+    `root_path` again when it matches. So under `app.mount("/mcp", mcp_app)` a request
     to `/mcp/` arrives here as `path="/mcp/"`, `root_path="/mcp"` — comparing `scope["path"]`
     to the sub-app's own `/` would never match, the refusal would pass straight through, and
     V3's named bodies would silently become the SDK's bare `invalid_token` while the status
@@ -409,7 +409,7 @@ def mount_relative_path(scope: Scope) -> str:
 
 
 class McpAuthErrorMiddleware:
-    """Replace the SDK's bare 401 with a NOA error envelope (V3, V73).
+    """Replace the SDK's bare 401 with a NOA error envelope.
 
     Runs after the auth middleware and before the route, so an unauthenticated request is
     answered here instead of by `RequireAuthMiddleware`. Nothing is re-resolved: the cause
@@ -468,12 +468,12 @@ class McpAuthErrorMiddleware:
 
     @staticmethod
     async def _send_error(send: Send, error: NoaError, *, request_id: str) -> None:
-        """Write the envelope the FastAPI handler would have written (V73).
+        """Write the envelope the FastAPI handler would have written.
 
         Raw ASGI because the mounted MCP app is a Starlette app with no NOA exception
         handler on it; `status_for`/`error_body`/`error_headers` are shared with
         `noa_api.api.errors` so the two surfaces cannot drift. `detail` stays out of the
-        body (V8), and `request_id` is in it for the same reason it is in every other error
+        body, and `request_id` is in it for the same reason it is in every other error
         body: it is what an operator quotes, and it names the log line this refusal wrote.
 
         The header is written here too, not left to `RequestContextMiddleware`. That

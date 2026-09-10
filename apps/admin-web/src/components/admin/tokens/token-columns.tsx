@@ -14,7 +14,7 @@ import type { McpToken } from '@/lib/admin/tokens/types'
 // nothing the operator holds, so it is not a column.
 //
 // There is no plaintext column and there cannot be one — `McpToken` has no such
-// field (types.ts) and the API never returns it after the mint (V2).
+// field (types.ts) and the API never returns it after the mint.
 //
 // `last_used_at` and `created_at` keep their raw accessorKey so the header sort
 // orders by the real ISO timestamp while the cell shows the friendly relative

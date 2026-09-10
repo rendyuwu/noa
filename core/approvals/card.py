@@ -1,4 +1,4 @@
-"""The approval card's read of one request (T41 — V27, V32, V33, V35).
+"""The approval card's read of one request.
 
 This is what an **operator** is shown before authorising a CHANGE. `core.approvals.results` is
 what a **model** is told about the same row, and the two are separate classes for one reason:
@@ -12,7 +12,7 @@ caller's is never fetched and a NULL requester (T34's `SET NULL`) matches nobody
 V32's check-on-read *after* that matched read via `apply_due_expiry`. What each does with the
 row it got is its own business, and that is the only part duplicated here.
 
-**Provenance comes off the row, not off a join at render time** (V35). Created-at,
+**Provenance comes off the row, not off a join at render time**. Created-at,
 conversation ref, tool name and deadline are columns; the requesting identity and the LibreChat
 account behind the call are on `approval_context`, persisted at gate time precisely because the
 requester FK is `SET NULL` — a deleted operator would otherwise erase the identity from a
@@ -25,21 +25,21 @@ an approved change did, in two halves DECISIONS §6.5 refuses to let collapse: t
 the operator authorised against, and what the change answered. This is where those render, and
 `select_requester_matched` is asked for them by this repository only — the model-facing reader
 next door leaves the join off, because a receipt's `before` half *is* V17's preflight evidence
-and the point of that separation is that it is never loaded on the transcript's path (V76).
+and the point of that separation is that it is never loaded on the transcript's path.
 
 That this one is a join at render time while the provenance above is not is the difference
 between the two FKs, not an inconsistency: `requested_by_user_id` is `SET NULL`, so the identity
 had to be copied onto `approval_context` before it could vanish, whereas
-`action_receipts.action_request_id` is NOT NULL with `UNIQUE` on it (T36) — the row cannot
+`action_receipts.action_request_id` is NOT NULL with `UNIQUE` on it — the row cannot
 detach from the request, and there is at most one of it.
 
-**No `reason`, and nowhere to put one.** The reason is written by a decision (T37) and read by
+**No `reason`, and nowhere to put one.** The reason is written by a decision and read by
 nothing on a render path: the card's job is to collect one, not to replay one. Leaving the
-field off means a future edit that wanted to show it has to add it on purpose (C8, V15, V43).
+field off means a future edit that wanted to show it has to add it on purpose.
 
 **Writes nothing.** No `commit`, no status parameter, no statement that is not a `SELECT`. The
 one write this path can cause is an expiry, and that belongs to `ActionRequestExpiryService`,
-whose writer can set exactly one status (V32).
+whose writer can set exactly one status.
 """
 
 from __future__ import annotations
@@ -57,14 +57,14 @@ from core.approvals.context import (
     CONTEXT_REQUESTER_KEY,
     arguments_from_context,
     # Lived here until T38, when the executor became its second reader and it moved beside
-    # `arguments_from_context` (V66). Re-exported below so this module stays the name T41's
+    # `arguments_from_context`. Re-exported below so this module stays the name T41's
     # card and its tests reach for.
     evidence_from_context,
 )
 from core.approvals.execution import (
     # The keys T38's writer puts in `receipt_data`, read here rather than respelled: a misspelt
     # key in JSONB reads as an absent one, and the constants' own comment names this card as one
-    # of the three readers they exist for (V66). The import is of five strings — nothing on this
+    # of the three readers they exist for. The import is of five strings — nothing on this
     # read path executes anything.
     RECEIPT_AFTER_KEY,
     RECEIPT_BEFORE_KEY,
@@ -84,7 +84,7 @@ from core.db.lifecycle import ActionRequestStatus
 
 @dataclass(frozen=True)
 class ApprovalCardRequester:
-    """Who asked for the change (V35): the operator, and the LibreChat account behind them.
+    """Who asked for the change: the operator, and the LibreChat account behind them.
 
     Both strings, both possibly empty, and neither is an id the card resolves anything with —
     `requested_by_user_id` is the column V27 matches against and it never reaches the browser
@@ -101,7 +101,7 @@ class ApprovalCardRequester:
 
 @dataclass(frozen=True)
 class ApprovalCardReceipt:
-    """What the change actually did, in the two halves it was written as (T38 — V46, V34).
+    """What the change actually did, in the two halves it was written as.
 
     DECISIONS §6.5 is the requirement this shape serves: an operator reads back the state they
     authorised against **and** what the change did to it, each on its own, never collapsed into
@@ -114,7 +114,7 @@ class ApprovalCardReceipt:
     none, matching the writer's rule that an absent field beats an empty one.
 
     **Neither half is re-derived and neither is re-redacted.** `after` was redacted by the
-    writer on the way in (V8, V45) and `before` is the gate's own `approval_context` evidence;
+    writer on the way in and `before` is the gate's own `approval_context` evidence;
     this class copies. A reader that redacted again would be a second redaction policy, and the
     day the two disagree is the day one of them is wrong.
 
@@ -132,7 +132,7 @@ class ApprovalCardReceipt:
     readings disagree is the day one of them is wrong.
 
     No timestamp. `action_receipts.created_at` exists on the row and is deliberately not carried:
-    `tool_runs` already reports when the run started and finished (V47), and a third stamp for
+    `tool_runs` already reports when the run started and finished, and a third stamp for
     one moment is the third truth T34 refused when it dropped its own duplicate columns.
     """
 
@@ -162,7 +162,7 @@ class ApprovalCardReceipt:
 
 @dataclass(frozen=True)
 class ApprovalCardView:
-    """One request as the operator who opened it may read it (V33, V35).
+    """One request as the operator who opened it may read it.
 
     Wider than `ActionResultView` by exactly three fields — `requester`, `evidence` and
     `receipt` — plus the `conversation_ref` column. The first two are the provenance and the
@@ -171,7 +171,7 @@ class ApprovalCardView:
 
     `run` is the execution an approval started, or `None`. `receipt` is what that execution
     recorded, or `None`. Both are present here so one URL can own the whole lifecycle **through
-    the receipt** (V34): the same card that asked the question reports what the answer did.
+    the receipt**: the same card that asked the question reports what the answer did.
     """
 
     action_request_id: UUID
@@ -191,7 +191,7 @@ class ApprovalCardView:
     def is_pending(self) -> bool:
         """Whether this request is still answerable.
 
-        Read by the route to decide whether to mint a CSRF token at all (V39): a live token on
+        Read by the route to decide whether to mint a CSRF token at all: a live token on
         a card nobody may decide is a spare key with no door.
         """
         return self.status is ActionRequestStatus.PENDING
@@ -222,7 +222,7 @@ class ApprovalCardView:
 
 
 def requester_from_context(approval_context: Mapping[str, Any]) -> ApprovalCardRequester:
-    """The requesting identity as the gate persisted it (V35).
+    """The requesting identity as the gate persisted it.
 
     Empty strings when the key is missing or is not an object, matching
     `arguments_from_context`'s rule one field over: a context written by something other than
@@ -242,16 +242,16 @@ def requester_from_context(approval_context: Mapping[str, Any]) -> ApprovalCardR
 
 
 def receipt_from_data(receipt_data: Any) -> ApprovalCardReceipt:
-    """One `action_receipts.receipt_data` payload as the card reads it (V46, V38).
+    """One `action_receipts.receipt_data` payload as the card reads it.
 
     Called only when a receipt **row** exists, which is what "the change recorded an outcome"
     means — so this never answers `None`. What it is permissive about is the payload's shape:
-    `receipt_data` is unversioned JSONB (T36), and a half that is not an object renders as
+    `receipt_data` is unversioned JSONB, and a half that is not an object renders as
     "nothing recorded" rather than raising, because a `KeyError` in front of an operator is a
     blank iframe and V38 says that is not an acceptable state.
 
     Every key goes through the writer's own constants, so a rename there fails the import rather
-    than quietly reading as an absent key (V66).
+    than quietly reading as an absent key.
 
     `ok` is `True` only for a literal `True`, the same comparison `build_receipt` makes when it
     lifts the field off the runner's envelope: a truthy string on this row is a payload nothing
@@ -284,7 +284,7 @@ def _receipt_half(value: Any) -> dict[str, Any]:
 
 
 class ApprovalCardRepository(Protocol):
-    """The one read this path may make (V27)."""
+    """The one read this path may make."""
 
     async def get_for_requester(
         self,
@@ -310,14 +310,14 @@ class SQLApprovalCardRepository:
         action_request_id: UUID,
         requester_user_id: UUID,
     ) -> ApprovalCardView | None:
-        """The caller's request as a card, or `None` (V27, V35, V46).
+        """The caller's request as a card, or `None`.
 
         `None` covers absent, another operator's, and one whose requester was deleted — one
         answer for all three, which is what keeps the route from being an existence oracle.
 
         `include_receipt=True` is this surface's half of the split `core.approvals.reads`
-        describes: the card is where a receipt renders (V34), and the model-facing reader next
-        door leaves it off so V17's before-state is never loaded on that path (V76).
+        describes: the card is where a receipt renders, and the model-facing reader next
+        door leaves it off so V17's before-state is never loaded on that path.
         """
         row = await select_requester_matched(
             self._session,
@@ -347,7 +347,7 @@ class SQLApprovalCardRepository:
 
 
 class ApprovalCardService:
-    """Read one request for its card, and never serve a stale PENDING (T41 — V23, V27, V32).
+    """Read one request for its card, and never serve a stale PENDING.
 
     Sibling of `ActionResultService`, and the same two steps in the same order: the
     requester-matched read, then V32's check-on-read (`core.approvals.reads.apply_due_expiry`,
@@ -355,7 +355,7 @@ class ApprovalCardService:
 
     V32 says a surface that resolves the row itself *may* run the expiry first. This one
     declines: `expire_if_due` takes an id and no requester, and the id in this URL reaches the
-    operator through a tool result that persists in LibreChat's MongoDB (V26) — so an
+    operator through a tool result that persists in LibreChat's MongoDB — so an
     expiry-first card would let an id its reader cannot see be written to. Reading first makes a
     foreign id a pure no-op, and the card still never shows a live PENDING past its deadline,
     because the view it returns reports the write that just happened.
@@ -377,7 +377,7 @@ class ApprovalCardService:
         requester_user_id: UUID,
         now: datetime | None = None,
     ) -> ApprovalCardView | None:
-        """The caller's card, with a passed deadline already made terminal (V32)."""
+        """The caller's card, with a passed deadline already made terminal."""
         view = await self._repository.get_for_requester(
             action_request_id=action_request_id,
             requester_user_id=requester_user_id,

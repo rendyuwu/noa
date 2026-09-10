@@ -1,6 +1,6 @@
-"""Fernet encryption for secrets held at rest (T15, C7, V48).
+"""Fernet encryption for secrets held at rest.
 
-Copied from `noa-old` branch `MCP` (C13, V69). The part worth copying is the
+Copied from `noa-old` branch `MCP`. The part worth copying is the
 `enc:v1:fernet:` prefix and the behaviour built around it:
 
 - **Encryption is idempotent.** `encrypt_text` on an already-prefixed value returns it
@@ -20,7 +20,7 @@ quietly stays in cleartext.
 
 What encrypts: server credentials — SSH passwords and private keys, WHM/Proxmox API tokens
 (C7, V52). ⊥ the database, ⊥ MCP tokens, which are SHA-256 hashed because NOA only ever
-verifies those (C5, V2).
+verifies those.
 
 Settings are injected, not imported. `noa-old` reached for a module-global `settings` inside
 `from_settings()`; this repo has no such singleton — `core/` services take `Settings` in
@@ -64,7 +64,7 @@ class SecretCipher:
 
     @classmethod
     def from_settings(cls, settings: Settings) -> SecretCipher:
-        """Build from `NOA_SECRET_ENCRYPTION_KEY` (C7, V52).
+        """Build from `NOA_SECRET_ENCRYPTION_KEY`.
 
         `Settings` has already validated the key at construction, so this raises only when a
         caller hands over settings built some other way.

@@ -22,18 +22,18 @@ for one deployment is two places for `NOA_API_URL` to disagree.
 The browser never calls FastAPI directly. Everything goes to `/api/*` on this origin and
 `src/app/api/[...path]/route.ts` forwards it server-side to `NOA_API_URL`, carrying the httpOnly
 `noa_session` cookie the registrable domain put here (§T.50, V40). `Authorization` is dropped
-outbound: bearer tokens are MCP-only and LibreChat's to send (C5), so `/api/mcp/` is reachable on
+outbound: bearer tokens are MCP-only and LibreChat's to send, so `/api/mcp/` is reachable on
 this origin and inert.
 
 It is a pass-through, unlike the embed's four-entry allowlist (§T.44). The embed needs one because
-it is the single NOA origin LibreChat may frame (V41); this app answers `frame-ancestors 'none'`, and
+it is the single NOA origin LibreChat may frame; this app answers `frame-ancestors 'none'`, and
 the surface it needs is `§I.admin-api` in full — an allowlist would have to be edited by every later
 admin task and a stale entry there fails as a 404 the panel cannot explain.
 
 `/login` is the LDAP sign-in form (§T.50). Its primary action is a `type="button"` click handler, not
 a form submit, and that is load-bearing rather than stylistic: `NOA_SIGN_IN_URL` points here, one way
 an operator arrives is a click on the embed's 401 card link-out, and R32 measured that the tab such a
-click opens inherits the frame's sandbox — where `allow-forms` is absent (R13), so a submit-driven
+click opens inherits the frame's sandbox — where `allow-forms` is absent, so a submit-driven
 login would be refused with nothing the operator can see (V94, and V80's failure shape one origin
 over). The `<form>` stays and routes to the same handler, for the operator who copies the address
 into a fresh tab instead.

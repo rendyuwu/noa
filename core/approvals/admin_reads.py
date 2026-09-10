@@ -8,11 +8,11 @@ This module is that reader, and `action_receipts` comes with it because a decisi
 produced are one story an operator reads in one sitting (V46, DECISIONS §6.5).
 
 **Reader beside the writer, split by what it can do.** `core.approvals.decisions` is the single
-writer of a terminal status (V22, V28) and `core.audit.receipts` writes the receipt; nothing here
+writer of a terminal status and `core.audit.receipts` writes the receipt; nothing here
 commits, nothing here holds a session it could commit through, and no statement here is anything
 but a `SELECT`. Same discipline as `core.audit.tool_run_reads` and `core.results.tables`, and the
 same reason: the write side is reachable from the MCP tool path, this side only from behind a
-session cookie and `require_admin` (V13).
+session cookie and `require_admin`.
 
 **No requester match, deliberately.** V27 scopes the *embed* read to the operator who asked, which
 is why `core.approvals.reads.select_requester_matched` puts the requester in the `WHERE`. An admin
@@ -25,14 +25,14 @@ outlived their operator. A missing email is `null` on the wire — "the account 
 "nobody asked".
 
 **The receipt join is a presence bit on the list and a row on the detail.** `action_receipts`
-carries `UNIQUE (action_request_id)` (T36), so the outer join cannot multiply rows and
+carries `UNIQUE (action_request_id)`, so the outer join cannot multiply rows and
 `hasReceipt` needs no second query per row. The body itself is a separate read because it is the
 largest JSONB on this path and most list rows will never be opened — T55's argument for leaving
 `args` off the audit list, one table over.
 
 **Nothing here redacts, and nothing here un-redacts.** `approval_context` was redacted at gate
-time by T33's `build_approval_context`, and `receipt_data` by `build_receipt` on the way in (V8).
-A second redactor under the read would be a quieter second home for one rule (V66) and the one an
+time by T33's `build_approval_context`, and `receipt_data` by `build_receipt` on the way in.
+A second redactor under the read would be a quieter second home for one rule and the one an
 auditor would have to trust without seeing it. `core/approvals/card.py` records the same rule for
 the operator-facing reader: the day two redaction policies disagree is the day one of them is
 wrong.
@@ -58,7 +58,7 @@ from core.approvals.clock import as_utc
 from core.approvals.execution import (
     # The keys T38's writer puts in `receipt_data`, read here rather than respelled — a misspelt
     # key in JSONB reads as an absent one, and this surface is the third reader those constants
-    # exist for (V66). A sixth key added there reaches this route; a hand-kept mirror would not.
+    # exist for. A sixth key added there reaches this route; a hand-kept mirror would not.
     RECEIPT_AFTER_KEY,
     RECEIPT_BEFORE_KEY,
     RECEIPT_DELTA_KEY,
@@ -106,7 +106,7 @@ class ActionRequestListItem:
     JSONB payloads to draw six columns, and both are one click away on the detail read. That is
     T55's argument for leaving `args` off the audit list, made again one table over.
 
-    `tool_run_id` is the edge to `tool_runs` and it lives on this row and only here (T34) — a
+    `tool_run_id` is the edge to `tool_runs` and it lives on this row and only here — a
     matching column on the run would be two truths about one link. `null` on a denied or expired
     request, because no run was ever started.
 
@@ -157,7 +157,7 @@ class ActionRequestDetailView:
     DB CHECK `ck_action_requests_decided_reason` is what keeps that honest. It is never `''` for a
     decided request, which is why the wire spelling is `null` rather than an empty string — an
     empty reason on an approved change would read as "the operator wrote nothing" and the gate
-    refuses that with a 409 before it can happen (V15, V43).
+    refuses that with a 409 before it can happen.
 
     `approval_context` is the object T33 persisted, carried whole. Not re-projected into named
     fields: the keys are the gate's own vocabulary per tool, so a model that flattened them here
@@ -180,7 +180,7 @@ class ActionRequestDetailView:
 
 @dataclass(frozen=True)
 class ActionReceiptAdminView:
-    """What an approved CHANGE actually did, as an administrator may read it (V46, V34).
+    """What an approved CHANGE actually did, as an administrator may read it.
 
     The stored halves, uncollapsed. DECISIONS §6.5 refuses to let `before` and `after` become a
     single "done", so they are two fields here as they are two fields on the operator's card, and
@@ -239,7 +239,7 @@ class ActionRequestPage:
 
 
 def _apply_filters(statement: Select[Any], filters: ActionRequestAdminFilters) -> Select[Any]:
-    """Add one predicate per set filter. Every one lands in the `WHERE` (V93).
+    """Add one predicate per set filter. Every one lands in the `WHERE`.
 
     A filter applied after the fetch is not a filter here — it also breaks paging, because the
     `LIMIT` would have cut the rows the filter was about to remove, so a page comes back short
@@ -252,7 +252,7 @@ def _apply_filters(statement: Select[Any], filters: ActionRequestAdminFilters) -
     if filters.requested_by_email:
         # Both halves of the escaping come from `core.audit.tool_run_reads`: `escape_like` inserts
         # the character and `LIKE_ESCAPE` is the character the `ESCAPE` clause declares. Imported
-        # rather than respelled here (V66) — two copies that must agree is one that can drift, and
+        # rather than respelled here — two copies that must agree is one that can drift, and
         # a declared escape that does not match the inserted one turns a caller's `%` back into a
         # wildcard while the response still reads as filtered.
         statement = statement.where(
@@ -268,7 +268,7 @@ def _apply_filters(statement: Select[Any], filters: ActionRequestAdminFilters) -
 def _joined() -> Select[Any]:
     """`action_requests` with the requester's email and the receipt's presence bit.
 
-    Two outer joins and no inner one. `requested_by_user_id` is `SET NULL` (T34), so an inner join
+    Two outer joins and no inner one. `requested_by_user_id` is `SET NULL`, so an inner join
     to `users` would hide the decisions that outlived their operator; `action_receipts` is absent
     for every denied, expired and still-pending request, which is most of the table. The receipt
     join cannot multiply rows — `uq_action_receipts_action_request_id` allows at most one.
@@ -292,7 +292,7 @@ def select_action_request_page(
 ) -> Select[Any]:
     """The statement one page of authorisations is read with (§I.admin-api, V85, V92, V93).
 
-    Built as a function for the reason `select_tool_run_page` is (T55): the claims worth asserting
+    Built as a function for the reason `select_tool_run_page` is: the claims worth asserting
     — that the filters and the cursor are *in* the statement, and that the order carries its
     tie-break — are claims about the SQL, and a check made after the rows arrive would leave every
     payload test green while being no check at all.
@@ -354,7 +354,7 @@ def select_action_receipt(*, action_request_id: UUID) -> Select[Any]:
 def _to_list_item(
     request: ActionRequest, requested_by_email: str | None, receipt_id: UUID | None
 ) -> ActionRequestListItem:
-    """One row → one list item. The only place the mapping lives (V66)."""
+    """One row → one list item. The only place the mapping lives."""
     return ActionRequestListItem(
         action_request_id=request.id,
         tool_name=request.tool_name,
@@ -399,7 +399,7 @@ class ActionRequestAdminReader(Protocol):
 
     Every method here is driven by `test_action_request_admin_read.py`'s read-only walk, and that
     file asserts this Protocol's method names against the set it drives — a read added here and
-    not driven there is caught by name rather than being left outside the two properties (V119).
+    not driven there is caught by name rather than being left outside the two properties.
     """
 
     async def list_requests(

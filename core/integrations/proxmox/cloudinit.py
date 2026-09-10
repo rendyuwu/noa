@@ -1,4 +1,4 @@
-"""What cloud-init says about a VM's password, and whether NOA may claim it took (T27, T69).
+"""What cloud-init says about a VM's password, and whether NOA may claim it took.
 
 Ported from `noa-old` branch `MCP` (`proxmox/tools/_cloudinit_passwords.py`, C13, V69) with one
 deliberate correction, which is the whole of §T.69.
@@ -22,7 +22,7 @@ second removal would mean two reasons to be stuck on one interpreter instead of 
 
 **The lock is load-bearing, not caution.** POSIX `crypt(3)` returns a pointer into a static
 buffer, so two concurrent calls in one process can read each other's result. NOA runs approved
-changes as concurrent asyncio tasks (T38), and while an event loop serialises the *Python* here,
+changes as concurrent asyncio tasks, and while an event loop serialises the *Python* here,
 `CDLL` releases the GIL for the call — the lock is what makes that safe.
 
 `crypt(3)` on a SHA-512 hash is a few milliseconds of CPU and is called once per verification
@@ -52,7 +52,7 @@ from hmac import compare_digest
 from threading import Lock
 from typing import Any, Final
 
-# The candidates `noa-old` tried, in its order (C13). `find_library` first because it consults
+# The candidates `noa-old` tried, in its order. `find_library` first because it consults
 # the linker cache and answers the platform's real SONAME; the literals cover a container whose
 # `ldconfig` cache or `binutils` is absent, which is the common way `find_library` answers `None`
 # on an otherwise healthy box.
@@ -80,7 +80,7 @@ _CIPASSWORD_KEY: Final = "cipassword"
 
 
 class CryptVerdict(StrEnum):
-    """What a crypt-compare established, including "nothing" (V62).
+    """What a crypt-compare established, including "nothing".
 
     Three values rather than a `bool`, because the third is the one §T.69 exists for: a box that
     cannot compare has not refuted anything, and collapsing it into `MISMATCH` reports a change
@@ -119,7 +119,7 @@ class CloudInitPasswordVerification:
 
     @property
     def verified(self) -> bool:
-        """Did NOA *measure* that this password is the one on the VM? (V62)"""
+        """Did NOA *measure* that this password is the one on the VM?"""
         return self.verdict is CryptVerdict.MATCH
 
     @property
@@ -129,7 +129,7 @@ class CloudInitPasswordVerification:
 
 
 def _load_crypt_lib() -> CDLL | None:
-    """The host's `crypt(3)`, or `None` when there is not one (T69).
+    """The host's `crypt(3)`, or `None` when there is not one.
 
     Cached both ways, for the reason `_NOT_LOADED` exists. `None` is the answer V62 turns into
     `verification_unavailable`; it is never an exception, because a missing library is a fact
@@ -171,7 +171,7 @@ def crypt_password(
     them, because they are different causes with different remedies — this function's job is to
     keep either from looking like a hash.
 
-    `loader` is the seam a test uses to present a host with no libcrypt (T69). It is a parameter
+    `loader` is the seam a test uses to present a host with no libcrypt. It is a parameter
     rather than a patched module global so the absent-library case is reachable without leaving
     the process in a state the next test inherits.
     """
@@ -217,7 +217,7 @@ def verify_cloudinit_password(
     *,
     loader: CryptLibraryLoader = _load_crypt_lib,
 ) -> CloudInitPasswordVerification:
-    """Does the VM's rendered cloud-init carry *this* password? (V62, T69)
+    """Does the VM's rendered cloud-init carry *this* password?
 
     Three outcomes and never two. The order matters: the library is probed **before** the hash is
     read, so a host that cannot compare says so rather than blaming a VM whose dump it was never

@@ -1,15 +1,15 @@
-"""A Proxmox VM whose NICs can actually be flipped, and the calls into it (T28).
+"""A Proxmox VM whose NICs can actually be flipped, and the calls into it.
 
 `support/proxmox.py` owns the client-level double and `support/proxmox_password.py` owns T27's
 VM. This owns what `proxmox_vm_nic`'s two lanes need: a VM whose `netN` lines are **state**, the
 two call helpers, and the fixture shapes both lanes share. Its own module because those lanes are
 two test files, split so neither runs past C14's line budget, and helpers duplicated across files
-are helpers that drift (V66).
+are helpers that drift.
 
 **`FakeProxmoxNICVM` stores lines, not answers.** A config write parses the submitted `netN` value
 and keeps it, so a later read returns what the runner actually sent. That is what makes the
 postflight worth running: a fixture that replayed a canned "now it is down" document would pass
-with the whole write-then-verify path deleted (V87).
+with the whole write-then-verify path deleted.
 
 It also **enforces the digest**, the way Proxmox does. A write carrying a digest that is not the
 current one is refused with Proxmox's own shape, so "the runner re-reads before it writes" is a
@@ -205,7 +205,7 @@ def nic_context(
     """A tool context whose Proxmox endpoint is reachable only through `vm`.
 
     The row's `api_token_secret` is real ciphertext under the fixture's own cipher, so the
-    production decrypt site runs on the way to every call (C7, T15).
+    production decrypt site runs on the way to every call.
     """
     box = vm or FakeProxmoxNICVM()
     fixture = build_tool_context(proxmox_transport=box.transport(), **kwargs)
@@ -228,7 +228,7 @@ async def call_nic(
     """Call the tool inside a real request context; return its answer and the caller's id.
 
     The context is not decoration: `open_change_request` reads the requester from the
-    authenticated identity rather than from an argument (V23, V27), so a call outside it would be
+    authenticated identity rather than from an argument, so a call outside it would be
     asserting against an identity the test planted.
     """
     user, resolved = authenticated_caller()

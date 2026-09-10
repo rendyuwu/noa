@@ -1,4 +1,4 @@
-"""The before→after delta a runner publishes beside its envelope (V46, V85, V86).
+"""The before→after delta a runner publishes beside its envelope.
 
 **Why the runner states it, and not a reader.** A receipt's two halves are written by different
 code at different moments about the same fact: `before` is the gate's in-process preflight and
@@ -81,7 +81,7 @@ code already:
 **The delta carries no reason.** C8's single field is operator-typed on the card, and the LLM
 never authors, relays or sees it; a runner must not echo it back in its payload, because
 `result_summary` is derived from that payload and `noa_get_action_result` hands the summary to a
-model (V15, V43). A receipt key is the same door one step over, so the fence is checked here
+model. A receipt key is the same door one step over, so the fence is checked here
 rather than left to seven authors: a reason-bearing key anywhere in a delta is refused at
 construction.
 """
@@ -94,7 +94,7 @@ from typing import Any, Final
 
 # The four states `verification` may hold. Constants because a receipt outlives the call and is
 # read by the approval card, the admin audit surface and a renderer that switches on the value —
-# a misspelt state reads as an unknown one, which is the direction that must not fail open (V66).
+# a misspelt state reads as an unknown one, which is the direction that must not fail open.
 VERIFICATION_VERIFIED: Final = "verified"
 VERIFICATION_UNAVAILABLE: Final = "unavailable"
 VERIFICATION_MISMATCH: Final = "mismatch"
@@ -110,7 +110,7 @@ VERIFICATION_STATES: Final[frozenset[str]] = frozenset(
 )
 
 # Key names that carry the operator's reason, or a target system's echo of it. Refused anywhere
-# in a delta (C8, V15, V43): WHM stores a suspension note and returns it as `suspendreason` on
+# in a delta: WHM stores a suspension note and returns it as `suspendreason` on
 # every later `listaccts`, and a firewall allow entry carries the reason behind NOA's marker, so
 # the words can arrive at a runner from the target system as well as from the request.
 # Case-insensitive and whitespace-stripped, the comparison `core.secrets.redaction` makes for the
@@ -129,12 +129,12 @@ REASON_BEARING_KEYS: Final[frozenset[str]] = frozenset(
 
 
 def is_reason_bearing_key(key: str) -> bool:
-    """True when a delta must not carry a value under `key` (C8, V15, V43)."""
+    """True when a delta must not carry a value under `key`."""
     return key.strip().lower() in REASON_BEARING_KEYS
 
 
 def reason_bearing_key_paths(value: object, *, _prefix: str = "") -> list[str]:
-    """Every location inside `value` that a delta may not carry (C8).
+    """Every location inside `value` that a delta may not carry.
 
     The same recursive walk `core.secrets.redaction.sensitive_key_paths` makes for credentials,
     asking a different question: a flat top-level scan would pass
@@ -142,7 +142,7 @@ def reason_bearing_key_paths(value: object, *, _prefix: str = "") -> list[str]:
     preflight reads is exactly that shape.
 
     Paths are dotted, with list positions as `[i]`, so a refusal names where the value was
-    without carrying it (V8).
+    without carrying it.
     """
     found: list[str] = []
     if isinstance(value, Mapping):
@@ -195,7 +195,7 @@ class ListDelta:
     total_entries: int | None = None
 
     def as_payload(self) -> dict[str, Any]:
-        """JSON-native. `total_entries` is omitted when nothing measured it (V86)."""
+        """JSON-native. `total_entries` is omitted when nothing measured it."""
         payload: dict[str, Any] = {"added": list(self.added), "removed": list(self.removed)}
         if self.total_entries is not None:
             payload["total_entries"] = self.total_entries
@@ -238,7 +238,7 @@ class BackendOutcome:
 
 @dataclass(frozen=True)
 class Bound:
-    """The bound of a capped list the delta's claim rests on (V85).
+    """The bound of a capped list the delta's claim rests on.
 
     A read that caps rows ships its own bound, and a delta stated against a capped reading owes
     the same thing one surface over: without it, "this address was blocked and is now allowed"
@@ -271,13 +271,13 @@ class ChangeDelta:
     # One of `VERIFICATION_STATES`.
     verification: str
     # Why there is no measurement, when there is none. A named code, never a sentence about the
-    # operator's request (V8).
+    # operator's request.
     verification_cause: str | None = None
     changed_fields: tuple[FieldChange, ...] | None = None
     list_delta: ListDelta | None = None
     backends: tuple[BackendOutcome, ...] | None = None
     # The sources that produced no answer a decision can rest on. Names, never a count: "one
-    # backend was silent" does not say which server to go and look at (V86).
+    # backend was silent" does not say which server to go and look at.
     unanswered: tuple[str, ...] | None = None
     # The slot for a change whose new value has no before twin and cannot be shown either — a
     # one-open delivery URL for a credential NOA generated. Its presence is the claim that the
@@ -299,7 +299,7 @@ class ChangeDelta:
           attached to an answer;
         - a reason-bearing key anywhere inside it (C8, V15, V43, and the module docstring);
         - a `changed_fields` row whose two sides are equal, which is "changed only" broken;
-        - a negative `bound.total`, which is not a bound and would render as one (V85).
+        - a negative `bound.total`, which is not a bound and would render as one.
 
         **The reason fence scans `as_payload()` — the bytes that will be stored** — rather than a
         second view of the same record. A hand-maintained mirror of the serialiser is one edit

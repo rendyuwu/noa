@@ -1,16 +1,16 @@
-"""The asyncio host an approval hands its run to (T38 — V29, V30).
+"""The asyncio host an approval hands its run to.
 
 `ApprovedChangeExecutor` is the seam T37 wired; this is the real thing behind it, and V30 fixes
 its shape. Four claims, and every one of them is a way the arrangement can fail quietly:
 
-- **`start` returns before the change finishes** (V29). That is what makes the approve endpoint
+- **`start` returns before the change finishes**. That is what makes the approve endpoint
   a 202 rather than a request held open across an SSH round trip.
 - **One session per execution**, opened inside the task — not the approving request's, which is
   closed by then, and not a long-lived one, which would pin a connection for the life of the
   process.
 - **Tasks are held**, because the event loop is free to garbage-collect a task nothing
   references, and a change collected mid-flight leaves a `STARTED` row and no explanation.
-- **Shutdown cancels and waits** (V30), because the lifespan disposes the engine immediately
+- **Shutdown cancels and waits**, because the lifespan disposes the engine immediately
   after — and the runs it interrupts stay `STARTED` on purpose, which is the reaper's population.
 
 What one execution *records* is `test_approved_change_execution.py`'s; the SQL is the live
@@ -110,7 +110,7 @@ class Host:
         return live_tasks(self.authorized.tool_run_id)
 
 
-# --- The handoff returns immediately (V29) ---
+# --- The handoff returns immediately ---
 
 
 async def test_start_returns_before_the_change_has_run() -> None:
@@ -153,7 +153,7 @@ async def test_the_change_actually_runs() -> None:
     assert host.repositories[0].only_finish.status is ToolRunStatus.COMPLETED
 
 
-# --- One session per execution (V30) ---
+# --- One session per execution ---
 
 
 async def test_each_execution_opens_its_own_session() -> None:
@@ -218,7 +218,7 @@ async def test_a_session_that_cannot_be_opened_is_logged_and_not_raised() -> Non
     assert entry["tool_run_id"] == str(host.authorized.tool_run_id)
 
 
-# --- Tasks are held, and shutdown ends them (V30) ---
+# --- Tasks are held, and shutdown ends them ---
 
 
 async def test_the_task_is_named_after_the_run_it_is_executing() -> None:
@@ -244,7 +244,7 @@ async def test_a_finished_execution_is_no_longer_held() -> None:
 
 
 async def test_stop_cancels_outstanding_executions() -> None:
-    """The lifespan disposes the engine right after this returns (V30).
+    """The lifespan disposes the engine right after this returns.
 
     The interrupted run is left `STARTED` deliberately: writing a terminal status here would
     claim an outcome nobody observed, and a change cancelled mid-flight may well have applied on

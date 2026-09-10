@@ -1,6 +1,6 @@
-"""SSH banner stripping (T14, V56).
+"""SSH banner stripping.
 
-Ported with the implementation from `noa-old` branch `MCP` (C13/V69). Half these cases guard
+Ported with the implementation from `noa-old` branch `MCP`. Half these cases guard
 *against* stripping: the removal is signature-gated, so legitimate boxed output — a build
 report, a table of stars — must survive byte-exact. `noa-old` GH #82/#83 is the incident that
 bought the LVE case; the false-positive cases are what keep the fix from eating real output.

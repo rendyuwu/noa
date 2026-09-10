@@ -1,4 +1,4 @@
-"""`McpTokenService` policy over in-memory doubles (T10 — C5, V2, V3, V8, V14, V73).
+"""`McpTokenService` policy over in-memory doubles.
 
 `test_mcp_token_repository.py` covers the SQL. Everything here is about the rules: what the
 plaintext may touch, what a view may carry, who may revoke what, and what lands in the
@@ -65,7 +65,7 @@ async def test_each_mint_generates_a_distinct_token() -> None:
 
 
 async def test_mint_stores_the_sha256_digest_and_never_the_plaintext() -> None:
-    """V2: hashed at rest. The digest is what the verify path (T11) will look up."""
+    """V2: hashed at rest. The digest is what the verify path will look up."""
     fixture = build_token_service()
     user_id = fixture.repository.add_user()
 
@@ -102,7 +102,7 @@ async def test_minted_token_repr_omits_the_plaintext() -> None:
 
 
 async def test_stored_prefix_is_a_short_non_secret_fragment() -> None:
-    """The display fragment matches the head of the plaintext and fits `String(16)` (T4)."""
+    """The display fragment matches the head of the plaintext and fits `String(16)`."""
     fixture = build_token_service()
     user_id = fixture.repository.add_user()
 
@@ -194,7 +194,7 @@ async def test_mint_leaves_librechat_user_id_null() -> None:
 
 
 async def test_mint_without_a_ttl_leaves_expires_at_null() -> None:
-    """Default `MCP_TOKEN_TTL_SECONDS` is unset: live until the row is deleted (V2)."""
+    """Default `MCP_TOKEN_TTL_SECONDS` is unset: live until the row is deleted."""
     fixture = build_token_service(ttl_seconds=None)
     user_id = fixture.repository.add_user()
 
@@ -393,7 +393,7 @@ def test_error_body_omits_internal_detail_for_token_errors() -> None:
     assert "deadbeef" not in str(body)
 
 
-# --- V100: the transaction boundary this service owns (T53) ---
+# --- V100: the transaction boundary this service owns ---
 
 
 async def test_mint_commits_once_and_last() -> None:

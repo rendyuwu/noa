@@ -1,4 +1,4 @@
-"""Operator word → one WHM server, or a structured refusal (T19, V18, V21).
+"""Operator word → one WHM server, or a structured refusal.
 
 Ported from `noa-old` branch `MCP` (`whm/server_ref.py`, C13).
 
@@ -6,14 +6,14 @@ Ported from `noa-old` branch `MCP` (`whm/server_ref.py`, C13).
 tie is `choices`, a well-formed id stops rather than falling through, case-insensitive fallbacks
 — moved to `core.servers.reference`, which the package docstring parked at "the third system
 shows whether that difference is two parameters or a third shape". Proxmox is this module's
-shape exactly, so it was two parameters (V66). Nothing about behaviour changed: the codes, the
+shape exactly, so it was two parameters. Nothing about behaviour changed: the codes, the
 messages and the `choices` fields are byte-identical, which is what `test_whm_server_ref.py`
 holds unchanged.
 
 What is left here is what a WHM row is: the host lives inside `base_url` rather than in a column
 of its own, and a candidate is recognised by id, name and that URL.
 
-**The resolved row keeps its own type** (T21). Matching only ever reads id, name and `base_url` —
+**The resolved row keeps its own type**. Matching only ever reads id, name and `base_url` —
 the `WHMServerRowLike` bound — but the tools of T20-T26 need the credentials off the row that was
 resolved, and re-reading it by id would let a second query disagree with the list the tie was
 judged against. So `resolve_whm_server_ref` is generic in the row: hand it a
@@ -58,7 +58,7 @@ def describe(server: WHMServerRowLike) -> dict[str, str]:
 
     Id, name and `base_url` — the three fields that let an operator recognise a server and then
     name it unambiguously. No credentials and no SSH fields: this text goes into an LLM
-    transcript (V8, V26).
+    transcript.
     """
     return {"id": str(server.id), "name": server.name, "base_url": server.base_url}
 
@@ -66,11 +66,11 @@ def describe(server: WHMServerRowLike) -> dict[str, str]:
 async def resolve_whm_server_ref(
     server_ref: str, *, repository: WHMServerReadRepository[RowT]
 ) -> ServerRefResolution[RowT]:
-    """Resolve `server_ref` to one WHM server, or refuse with a named code (V18, V21).
+    """Resolve `server_ref` to one WHM server, or refuse with a named code.
 
     Never raises for a bad reference: every outcome is a resolution the tool layer turns into a
     structured result, because "I could not tell which server" is information the model can act
-    on, while an exception is not (V19).
+    on, while an exception is not.
     """
     return await resolve_server_ref(
         server_ref,

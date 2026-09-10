@@ -17,7 +17,7 @@ import { createServer } from 'node:http'
  *
  * **`?src` and `?sandbox` are how §T.41 borrows this** rather than standing up a second parent. The
  * approval specs frame the card under the sandbox string LibreChat was measured applying at pin
- * `45cc53c4` — `allow-scripts allow-same-origin`, with `allow-forms` absent (R13, R29) — which is
+ * `45cc53c4` — `allow-scripts allow-same-origin`, with `allow-forms` absent — which is
  * the whole premise V80 rests on. Both parameters default to §T.45's fixed frame, so those specs
  * are unaffected by the addition.
  *

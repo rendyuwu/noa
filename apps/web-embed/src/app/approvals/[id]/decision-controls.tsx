@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { type DecisionKind, submitDecision } from '@/lib/approvals/decide'
 import { type DecisionOutcome, describeDecision } from '@/lib/approvals/outcome'
 
-// `.actions` and `.button` live with the notice states since §T.56 hoisted them (V66); the two
+// `.actions` and `.button` live with the notice states since §T.56 hoisted them; the two
 // colour modifiers below are the card's own, so the class names compose across both modules.
 import shared from '@/components/notice.module.css'
 
@@ -18,13 +18,13 @@ import styles from './card.module.css'
  * ships to the browser is this: two `<button type="button">` elements, a `<textarea>`, and one
  * `fetch`.
  *
- * **There is no `<form>` in this tree, and that is load-bearing (V80).** The sandbox LibreChat
+ * **There is no `<form>` in this tree, and that is load-bearing.** The sandbox LibreChat
  * renders the frame under omits `allow-forms` (R13, measured again live at R29), so a native
  * submit would do nothing at all — no request, no error, a button that lies. `type="button"` on
  * both is the same rule stated twice: even if a `<form>` were introduced above this component by
  * some future layout, neither button would submit it.
  *
- * **The reason is typed here and nowhere else** (C8, V15, V43). It is not in any tool schema, the
+ * **The reason is typed here and nowhere else**. It is not in any tool schema, the
  * model never authors it, never relays it and never sees it; it is born at this keystroke and
  * travels in the POST body. Blankness is the endpoint's judgement, not this component's — see
  * `lib/approvals/decide.ts` for why a second definition of "blank" is the wrong trade.
@@ -34,7 +34,7 @@ export function DecisionControls({
   csrf,
 }: {
   actionRequestId: string
-  /** A live token. The server renders this component only when there is one (V38, V39). */
+  /** A live token. The server renders this component only when there is one. */
   csrf: string
 }) {
   const [reason, setReason] = useState('')
@@ -42,8 +42,8 @@ export function DecisionControls({
   const [outcome, setOutcome] = useState<DecisionOutcome | null>(null)
 
   // A recorded decision is terminal for this card: exactly one `pending → decided` transition
-  // exists (V28), so leaving the buttons live afterwards would only ever earn a 409. A *refusal*
-  // leaves them live on purpose — a blank reason (V15) is fixed by typing one and clicking again.
+  // exists, so leaving the buttons live afterwards would only ever earn a 409. A *refusal*
+  // leaves them live on purpose — a blank reason is fixed by typing one and clicking again.
   const settled = outcome?.kind === 'recorded'
 
   async function decide(decision: DecisionKind) {
@@ -70,7 +70,7 @@ export function DecisionControls({
           onChange={(event) => setReason(event.target.value)}
           disabled={settled}
           // Not `required`: constraint validation belongs to a form submit, and there is none
-          // here. The endpoint answers 409 `change_reason_required` and the card shows it (V15).
+          // here. The endpoint answers 409 `change_reason_required` and the card shows it.
           placeholder="Required. This is recorded with the decision."
         />
       </label>

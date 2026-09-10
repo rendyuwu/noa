@@ -91,14 +91,14 @@ describe('C2 — web dependencies are pinned exactly', () => {
     expect(packageJson().engines['node']).toBe('>=20.9.0')
   })
 
-  it('declares pnpm as the package manager (C2)', () => {
+  it('declares pnpm as the package manager', () => {
     expect(packageJson().packageManager).toMatch(/^pnpm@/)
   })
 
   it('keeps @types/node on the runtime major it types', () => {
     // A types package a major ahead of the runtime describes APIs that are not
     // there, and `tsc` then accepts code the deploy cannot run. Node's floor is
-    // 20 (C2) and the toolchain here runs 24.
+    // 20 and the toolchain here runs 24.
     expect(packageJson().devDependencies['@types/node']).toMatch(/^24\./)
   })
 

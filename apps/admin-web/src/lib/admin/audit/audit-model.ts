@@ -1,7 +1,7 @@
 import type { ActionRequestFilters, ToolRunFilters } from './types'
 import { AUDIT_PAGE_SIZE } from './types'
 
-// Query construction + filter accounting for the audit list (T55). The API is
+// Query construction + filter accounting for the audit list. The API is
 // server-paged (keyset cursor) and server-filtered, so the page keeps its filter
 // state here and hands the built query string to the transport.
 //

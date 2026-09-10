@@ -1,4 +1,4 @@
-"""Alembic migration guards (T4, C3).
+"""Alembic migration guards.
 
 Two levels:
 
@@ -7,7 +7,7 @@ Two levels:
   live schema against `Base.metadata`, then `downgrade base`. Skipped when no DB
   is reachable, so the suite stays runnable without Docker.
 
-Everything goes over asyncpg — the only driver the project pins (C3). The scratch
+Everything goes over asyncpg — the only driver the project pins. The scratch
 DB is created and dropped here; the dev database is never touched.
 """
 
@@ -29,7 +29,7 @@ from core.config import get_settings
 from core.db import Base
 
 API_DIR = Path(__file__).resolve().parents[1]
-# Same URL resolution the app and Alembic use (T5).
+# Same URL resolution the app and Alembic use.
 DEV_URL = get_settings().postgres_url_str
 SCRATCH_DB = "noa_migration_test"
 # Alembic's own bookkeeping table; excluded when diffing against `Base.metadata`.

@@ -1,9 +1,9 @@
-"""Attempt counting shared by every rate-limited auth surface (V9, V66).
+"""Attempt counting shared by every rate-limited auth surface.
 
 Extracted from `core.auth.login_rate_limiter` when T12 needed the same arithmetic for
 failed MCP authentication. Nothing here is new behaviour — the window rollover, the
 `>=` on the maximum and the `>` on `blocked_until` are the semantics T8 shipped and
-`test_login_rate_limiter.py` pins. What changed is that they are now stated once (V66):
+`test_login_rate_limiter.py` pins. What changed is that they are now stated once:
 duplicating ~60 lines of clock arithmetic per surface is how two limiters end up
 disagreeing about whether a bucket at exactly its window boundary still counts.
 
@@ -83,7 +83,7 @@ class AttemptLimitRepository(Protocol):
 
 
 class AttemptLimiter:
-    """Count failures per key; block past the configured maximum (V9).
+    """Count failures per key; block past the configured maximum.
 
     Every operation is protected, and the public surface belongs to the subclass. That is
     on purpose: a limiter's callers should name the thing being limited

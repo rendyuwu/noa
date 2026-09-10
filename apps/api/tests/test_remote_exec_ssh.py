@@ -1,6 +1,6 @@
-"""Pinned SSH execution (T14, V56, V69, V73, V82).
+"""Pinned SSH execution.
 
-Two kinds of test here, and the split is deliberate (B2).
+Two kinds of test here, and the split is deliberate.
 
 Everything *around* the transport — banner stripping, timeouts, failure classification, error
 shape — runs against a monkeypatched `asyncssh.create_connection`. Those behaviours need no
@@ -10,16 +10,16 @@ The pin itself does **not** use the fake. A double that calls `validate_host_pub
 itself proves only that the callback works when something calls it; B2 was precisely that
 nothing did. So the pin is exercised against a real `asyncssh.create_server` on loopback: the
 rejection has to come out of a real key exchange, and the server has to record that it was
-never asked to authenticate anyone (V82).
+never asked to authenticate anyone.
 
 What each group protects:
 
 - banner strip + raw retention — V56, and the parse failures behind `noa-old` GH #83.
 - the pin — `ssh_exec` refuses without a stored fingerprint *before* opening a socket, and a
-  host presenting any other key is rejected in-handshake, pre-auth (V69, V82).
+  host presenting any other key is rejected in-handshake, pre-auth.
 - TOFU capture — the one unpinned path, which T54's validate endpoint depends on.
 - error shape — `SSHExecutionError` is a `NoaError` with a mapped status, so the shared
-  handler answers 502 instead of the unclassified-auth 503 fallback (V73).
+  handler answers 502 instead of the unclassified-auth 503 fallback.
 """
 
 from __future__ import annotations
@@ -174,7 +174,7 @@ async def test_ssh_exec_strips_banner_from_stdout_and_preserves_raw(
 
     result = await ssh_exec(_config(), command="imunify360-agent ... --json")
 
-    # Boundary strip: stdout banner-free, raw retained for debug/audit (V56).
+    # Boundary strip: stdout banner-free, raw retained for debug/audit.
     assert result.stdout == payload
     assert result.raw_stdout == raw_stdout
     # stderr untouched (banner is stdout-only); raw_stderr mirrors for symmetry.
@@ -249,7 +249,7 @@ async def test_ssh_exec_without_stored_fingerprint_never_connects(
     assert attempts == []
 
 
-# --- V82: the pin runs inside a real handshake (B2) ---
+# --- V82: the pin runs inside a real handshake ---
 #
 # `known_hosts=None` is the one value that silently switches host-key validation off — asyncssh
 # sets `_trusted_host_keys = None` and skips the block that would call the callback. These tests

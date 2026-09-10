@@ -2,14 +2,14 @@
 
 **Six routes and no policy**, for the reason `admin_users.py` gives one file over: every rule
 these handlers lean on lives in `core.auth.authorization_service` — the reserved `admin` role,
-the role-name validator, the catalog check on a grant (V10, V13). They are invariants about the
+the role-name validator, the catalog check on a grant. They are invariants about the
 data, so they must hold for a future CLI or a migration script too, not only for whoever calls
 these paths. A handler here resolves the actor, calls one service method, and shapes the answer.
 
 **`admin` is visible in the list and refused everywhere else.** It is a real `roles` row —
 `AuthService._provision` writes it for a bootstrap admin — so filtering it out of `GET /roles`
 would hide the one role an operator most wants to see who holds. `DELETE` and `PUT .../tools`
-answer 403 `reserved_role` (V13), and `GET /roles/admin/tools` answers the *whole catalog*
+answer 403 `reserved_role`, and `GET /roles/admin/tools` answers the *whole catalog*
 rather than its empty grant rows: V10 gives `admin` every known tool by bypassing the table, so
 `[]` would render a role that appears to permit nothing while permitting everything. Displayed
 state equals enforced state, which is the property that makes the panel worth reading.
@@ -17,10 +17,10 @@ state equals enforced state, which is the property that makes the panel worth re
 **`GET /admin/tools` sits here, not with the users routes.** It is the vocabulary of
 `PUT /roles/{name}/tools` — the set an allowlist editor picks from — and it answers off the same
 `AuthorizationService` that validates the write, so the offered names and the accepted names
-cannot drift (V66). `noa-old` kept it on its user router; nothing about it belongs there.
+cannot drift. `noa-old` kept it on its user router; nothing about it belongs there.
 
 **Nothing here builds an `HTTPException`.** Refusals are `AuthorizationError` subclasses and
-`noa_api.api.errors` owns status, body and `request_id` (V8, V73). `noa-old` spelled the same
+`noa_api.api.errors` owns status, body and `request_id`. `noa-old` spelled the same
 five refusals out per handler, ~35 lines each, and had to keep four `error_code` strings in step
 by hand; those strings now live on the error class.
 
@@ -41,7 +41,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 class AdminRolesResponse(BaseModel):
-    """`GET /admin/roles`. Assignable roles, internal `user:` roles excluded (V13, V75).
+    """`GET /admin/roles`. Assignable roles, internal `user:` roles excluded.
 
     Bare strings rather than objects: a role has no attribute the panel renders except its
     name, and its grants are a separate read (`/roles/{name}/tools`) because the list view
@@ -52,7 +52,7 @@ class AdminRolesResponse(BaseModel):
 
 
 class CreateRoleRequest(BaseModel):
-    """`POST /admin/roles`. The name, validated by the service (V13)."""
+    """`POST /admin/roles`. The name, validated by the service."""
 
     name: str
 
@@ -95,7 +95,7 @@ class RoleToolsResponse(BaseModel):
 
 
 class AdminToolsResponse(BaseModel):
-    """`GET /admin/tools`. Every tool name a grant may name (V10)."""
+    """`GET /admin/tools`. Every tool name a grant may name."""
 
     tools: list[str]
 
@@ -105,9 +105,9 @@ async def list_roles(
     admin_user: AdminUserDep,
     authorization: AuthorizationServiceDep,
 ) -> AdminRolesResponse:
-    """Assignable roles (T52 — V13, V75).
+    """Assignable roles.
 
-    Read fresh on every call with nothing cached behind it (V14). Internal `user:` roles are
+    Read fresh on every call with nothing cached behind it. Internal `user:` roles are
     excluded in the statement, not filtered here: they are NOA's own bookkeeping, the API
     refuses to assign them, and a list that offered one would ask the panel for something the
     write path rejects with 400.
@@ -121,7 +121,7 @@ async def create_role(
     admin_user: AdminUserDep,
     authorization: AuthorizationServiceDep,
 ) -> AdminRoleResponse:
-    """Create a role (T52 — V13, V14).
+    """Create a role.
 
     Idempotent, and deliberately so: re-creating an existing role changes nothing, records no
     audit event and commits nothing, so a double-submitted dialog is not an error an operator
@@ -145,10 +145,10 @@ async def delete_role(
     admin_user: AdminUserDep,
     authorization: AuthorizationServiceDep,
 ) -> DeleteRoleResponse:
-    """Delete a role (T52 — V13, V14).
+    """Delete a role.
 
     Its grants and its assignments go with it through `ON DELETE CASCADE`, so every operator
-    who held it loses those tools on their next request (V14) — there is no orphaned grant row
+    who held it loses those tools on their next request — there is no orphaned grant row
     left to resolve.
 
     Refusals: 400 `invalid_role_name`, 403 `reserved_role`, 404 `admin_role_not_found`. The 404
@@ -165,12 +165,12 @@ async def get_role_tools(
     admin_user: AdminUserDep,
     authorization: AuthorizationServiceDep,
 ) -> RoleToolsResponse:
-    """One role's tool grants (T52 — V10, V13).
+    """One role's tool grants.
 
     `admin` answers with the whole catalog rather than its (empty) grant rows — see the module
     docstring. Every other name answers with its stored grants, filtered to nothing: a grant
     written before a tool was renamed is still a row, and it is the *permission resolution*
-    that drops it (V10), so this read shows what is stored and `GET /admin/users` shows what it
+    that drops it, so this read shows what is stored and `GET /admin/users` shows what it
     resolves to.
 
     Refusals: 400 `invalid_role_name`, 404 `admin_role_not_found`.
@@ -185,12 +185,12 @@ async def set_role_tools(
     admin_user: AdminUserDep,
     authorization: AuthorizationServiceDep,
 ) -> RoleToolsResponse:
-    """Replace one role's tool grants (T52 — V10, V13, V14).
+    """Replace one role's tool grants.
 
     This is the write V14's "permission updates take effect immediately" is about: nothing
     behind it caches, so the next `tools/list` and the next execution-gate check both resolve
-    from these rows (V1). A client holding a stale catalog may still *show* a revoked tool;
-    calling it 403s (V74).
+    from these rows. A client holding a stale catalog may still *show* a revoked tool;
+    calling it 403s.
 
     Refusals: 400 `invalid_role_name`, 403 `reserved_role` (V13 — `admin` bypasses the grant
     table, so rows here would imply a limit NOA does not enforce), 404
@@ -208,7 +208,7 @@ async def list_tools(
     admin_user: AdminUserDep,
     authorization: AuthorizationServiceDep,
 ) -> AdminToolsResponse:
-    """Every tool name a grant may name (T52 — V10).
+    """Every tool name a grant may name.
 
     The vocabulary the allowlist editor offers, read off the same set that validates a write —
     see the module docstring. Not an existence oracle over anything hidden: V83(d) is about the

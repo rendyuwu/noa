@@ -1,4 +1,4 @@
-"""`pmg_whitelist_search` — the discovery step in front of every PMG whitelist change (T31).
+"""`pmg_whitelist_search` — the discovery step in front of every PMG whitelist change.
 
 Real resolver, real `resolve_pmg_ssh_config`, real `SecretCipher`, real `pmgsh` command
 composition, real `sanitize_tool_errors`. Only the socket is doubled (`support.pmg`), because
@@ -443,7 +443,7 @@ async def test_the_ssh_connection_uses_the_decrypted_credentials(monkeypatch) ->
 
 
 async def test_the_database_session_closes_before_the_ssh_hop(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """T21's rule, and the reason the PMG SSH layer takes a config rather than a row (T31).
+    """T21's rule, and the reason the PMG SSH layer takes a config rather than a row.
 
     A pooled Postgres connection held across a hop to someone else's host is how a slow PMG
     node becomes a database outage.

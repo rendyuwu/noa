@@ -1,4 +1,4 @@
-"""Pinned SSH execution (T14, V55, V56, V69, V82).
+"""Pinned SSH execution.
 
 Ported from `noa-old` branch `MCP` (`core/remote_exec/ssh.py`, C13/V69), plus the B2 fix that
 the source needed too: `known_hosts` is an empty trusted-key *list*, never `None`.
@@ -11,13 +11,13 @@ Two connection paths, and the split is the whole security model:
   happens mid-handshake and before user auth, so a host that fails the pin never receives the
   decrypted password or key.
 - `ssh_get_host_fingerprint` — the deliberate exception: trust-on-first-use, used by the
-  admin validate flow (T54) to capture or refresh the value an operator then stores. It runs
+  admin validate flow to capture or refresh the value an operator then stores. It runs
   no command, so an unpinned connection here reveals nothing to a host that lied.
 
 Both paths reach the callback through the same `known_hosts` value, so there is one place to
 get wrong and one place to test — see `_connection_kwargs` for why `None` is the wrong value.
 
-`sudo -n` composition lives in `core.remote_exec.sudo` (V55), not here: this module runs a
+`sudo -n` composition lives in `core.remote_exec.sudo`, not here: this module runs a
 command string, it does not decide what escalation that string needs.
 """
 
@@ -51,7 +51,7 @@ class _PinnedHostKeySSHClient(asyncssh.SSHClient):
 
     asyncssh calls this during key exchange (`connection.py:1359-1367`) and turns a `False`
     into `HostKeyNotVerifiable`, which `ssh_exec` maps to `ssh_host_key_mismatch`. It is only
-    reached when `known_hosts` is a list rather than `None` (V82).
+    reached when `known_hosts` is a list rather than `None`.
 
     `hmac.compare_digest` rather than `==` — fingerprints are public, but a constant-time
     compare costs nothing and keeps the comparison out of timing-oracle arguments.
@@ -102,7 +102,7 @@ def _connection_kwargs(config: SSHConnectionConfig, *, timeout_seconds: float) -
         "username": config.username,
         "password": config.password,
         "client_keys": _client_keys(config),
-        # `([], [], [])` — an *empty* trusted-key set, not `None` (B2, V82). asyncssh treats
+        # `([], [], [])` — an *empty* trusted-key set, not `None`. asyncssh treats
         # `known_hosts=None` as "validation off": `_trusted_host_keys` becomes `None` and the
         # whole comparison block, `validate_host_public_key` included, is skipped
         # (`asyncssh/connection.py:3509-3511,1359-1367`). An empty *list* keeps the block live
@@ -175,7 +175,7 @@ def command_from_argv(argv: list[str]) -> str:
 
     The only sanctioned way to build a command from operator- or LLM-supplied parts: every
     token goes through `shlex.quote`, so an argument containing `;` or `$(…)` stays one
-    argument. PMG's argv-only rule (V58) and the firewall builders (T16) both route here.
+    argument. PMG's argv-only rule and the firewall builders both route here.
     """
     if not argv:
         raise SSHExecutionError(

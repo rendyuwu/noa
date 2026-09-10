@@ -1,4 +1,4 @@
-"""An app carrying the real `/admin` and `/me` routes, over in-memory doubles (T51-T54).
+"""An app carrying the real `/admin` and `/me` routes, over in-memory doubles.
 
 Same split every route test in this suite uses: the router, `require_admin`,
 `require_session_user`, the real `AuthService`, the real `AuthorizationService`, the real
@@ -156,7 +156,7 @@ def registered_routes(router: APIRouter, *, id_param: str) -> set[tuple[str, str
     the table against this closes that, and it is the whole reason the walk can claim to cover a
     route nobody has written yet.
 
-    Shared by both admin route tests rather than copied into each (V66) — one rule about how a
+    Shared by both admin route tests rather than copied into each — one rule about how a
     route table is proved complete, in one place. The id segment is normalised so a table can
     carry one formattable template per address; `id_param` is the path parameter's real name,
     which differs per router.
@@ -178,7 +178,7 @@ class SignedInUser:
     """One actor, as both doubles see them.
 
     Held together so a test that flips `is_active` knows which row it is flipping: `session` is
-    what `require_session_user` re-reads (V6), `record` is what the admin routes read and write.
+    what `require_session_user` re-reads, `record` is what the admin routes read and write.
     """
 
     id: UUID
@@ -249,7 +249,7 @@ class AdminHarness:
         return record
 
     def mint_token(self, user_id: UUID, *, label: str | None = None) -> dict[str, object]:
-        """`POST /admin/users/{id}/tokens` → the whole body, plaintext included (T53)."""
+        """`POST /admin/users/{id}/tokens` → the whole body, plaintext included."""
         response = self.client.post(admin_tokens_path(user_id), json={"label": label})
         assert response.status_code == 200, response.text
         body = response.json()
@@ -257,7 +257,7 @@ class AdminHarness:
         return body
 
     def list_tokens(self, user_id: UUID) -> list[dict[str, object]]:
-        """`GET /admin/users/{id}/tokens` → the `tokens` array (T53)."""
+        """`GET /admin/users/{id}/tokens` → the `tokens` array."""
         response = self.client.get(admin_tokens_path(user_id))
         assert response.status_code == 200, response.text
         tokens = response.json()["tokens"]
@@ -280,7 +280,7 @@ class AdminHarness:
         return next(user for user in self.list_users() if user["email"] == email)
 
     def list_roles(self) -> list[str]:
-        """`GET /admin/roles` → the `roles` array (T52)."""
+        """`GET /admin/roles` → the `roles` array."""
         response = self.client.get(ROLES_PATH)
         assert response.status_code == 200, response.text
         roles = response.json()["roles"]
@@ -288,7 +288,7 @@ class AdminHarness:
         return roles
 
     def role_tools(self, role_name: str) -> list[str]:
-        """`GET /admin/roles/{name}/tools` → the `tools` array (T52)."""
+        """`GET /admin/roles/{name}/tools` → the `tools` array."""
         response = self.client.get(f"{ROLES_PATH}/{role_name}/tools")
         assert response.status_code == 200, response.text
         tools = response.json()["tools"]
@@ -296,7 +296,7 @@ class AdminHarness:
         return tools
 
     def list_servers(self, path: str) -> list[dict[str, object]]:
-        """`GET` one of the three server lists → the `servers` array (T54)."""
+        """`GET` one of the three server lists → the `servers` array."""
         response = self.client.get(path)
         assert response.status_code == 200, response.text
         servers = response.json()["servers"]
@@ -304,7 +304,7 @@ class AdminHarness:
         return servers
 
     def create_server(self, path: str, body: dict[str, object]) -> dict[str, object]:
-        """`POST` one of the three server lists → the created row (T54). Asserts 201."""
+        """`POST` one of the three server lists → the created row. Asserts 201."""
         response = self.client.post(path, json=body)
         assert response.status_code == 201, response.text
         server = response.json()["server"]

@@ -1,4 +1,4 @@
-"""Doubles for the PMG integration layer and the PMG tool path (T18, T30, T31, T29).
+"""Doubles for the PMG integration layer and the PMG tool path.
 
 `FakePMGServer` is a `PMGServerSecretLike`-shaped dataclass, for the layer that turns a row into
 an `SSHConnectionConfig`. Its credential defaults are plaintext, because those tests are about
@@ -13,13 +13,13 @@ crosses exactly one module that binds `ssh_exec` — the three-module install WH
 has no PMG counterpart.
 
 The SSH transport doubles are shared and sit in `support/remote_exec.py`; the cipher is in
-`support/secrets.py` (V66).
+`support/secrets.py`.
 
 `FakePMGWhitelist` is T29's addition and the one double here that is not a constant answer.
 It holds `mynetworks` as **state**: a `create` appends and a `delete` removes, so the `ls` the
 runner takes afterwards returns what the runner actually wrote. That is what makes the postflight
 worth running — a fixture replaying a canned "it is there now" would pass with the whole
-write-then-verify path deleted (V87) — and it is what lets a removal's *bytes* be asserted rather
+write-then-verify path deleted — and it is what lets a removal's *bytes* be asserted rather
 than its return value.
 
 No live host and no live PMG: everything under test is reference resolution, command
@@ -86,7 +86,7 @@ class FakePMGServer:
     """A `pmg_servers` row, structurally satisfying `PMGServerSecretLike`.
 
     Defaults describe a *usable* server — pinned, credentialed, root — so each test overrides
-    only the one field it is about. No `base_url` and no `verify_ssl`: PMG is SSH-only (V58), and
+    only the one field it is about. No `base_url` and no `verify_ssl`: PMG is SSH-only, and
     `core.db.models.PMGServer` carries neither.
     """
 
@@ -145,9 +145,9 @@ def whitelist_context(
     exactly one. `handler` is T29's seam: a CHANGE sends `ls`, then a mutation, then
     `pmgconfig sync`, then `ls` again, and each has to answer differently, so a
     `FakePMGWhitelist` dispatches on the command instead. One builder for both, because the
-    resolution, the cipher and the row are the same either way (V66).
+    resolution, the cipher and the row are the same either way.
 
-    `result_tables` is `pmg_whitelist_list`'s seam (T30): the default double records what was
+    `result_tables` is `pmg_whitelist_list`'s seam: the default double records what was
     parked, and a test passes its own to make the insert fail. The fixture always has one, so
     the listing tool works here without any test asking for it.
     """
@@ -311,8 +311,8 @@ def command_step(command: str) -> str:
     """Which step of the flow one composed command is: `ls`, `create`, `delete` or `sync`.
 
     Public because both of T29's lanes assert on the *sequence* — a mutation that skipped
-    `pmgconfig sync` looks applied and is not (V60, V61) — and two spellings of "which step is
-    this" are two chances to read the same command list differently (V66).
+    `pmgconfig sync` looks applied and is not — and two spellings of "which step is
+    this" are two chances to read the same command list differently.
     """
     argv = pmg_argv(command)
     if argv[:1] == ["pmgconfig"]:
@@ -336,7 +336,7 @@ def whitelist_change_context(
 
     Shared by both of T29's lanes — the tool that opens the card and the runner that runs after
     one is approved — because they need the same row, the same cipher and the same transport seam,
-    and two copies of this wiring are two things that can stop agreeing (V66).
+    and two copies of this wiring are two things that can stop agreeing.
     """
     resolved = box if box is not None else FakePMGWhitelist()
     fixture, _ = whitelist_context(
@@ -359,7 +359,7 @@ async def call_whitelist(
     """Call the tool inside a real request context; return its answer and the caller's id.
 
     The context is not decoration: `open_change_request` reads the requester from the
-    authenticated identity rather than from an argument (V23, V27), so a call outside it would be
+    authenticated identity rather than from an argument, so a call outside it would be
     asserting against an identity the test planted.
     """
     user, resolved = authenticated_caller()

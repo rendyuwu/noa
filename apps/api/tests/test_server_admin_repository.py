@@ -1,17 +1,17 @@
-"""The server-inventory write path against a live database (T54 — V48, V100).
+"""The server-inventory write path against a live database.
 
 `test_admin_server_routes.py` covers the HTTP surface over doubles and
 `test_server_admin_service.py` covers the validate branches. This file covers the two things a
 double cannot tell you:
 
-1. **The transaction boundary** (V100). An in-memory repository cannot roll back, so "flushed"
+1. **The transaction boundary**. An in-memory repository cannot roll back, so "flushed"
    and "committed" read identically through it — and identically *inside* one session, too,
    which is precisely what let B10 and B11 ship. Every case here observes from a **second**
    session, and every case ships the flush-only negative control beside it, so a green result
    cannot come from an observer that reads its own transaction or one that can see nothing
    (V100(c), V87).
 
-2. **What the columns actually hold** (V48, C7). The service encrypts; this asserts the stored
+2. **What the columns actually hold**. The service encrypts; this asserts the stored
    bytes are `enc:v1:fernet:…` on all six secret columns across the three tables — and that the
    host-key fingerprint, which is a public digest, is stored as typed.
 
@@ -213,7 +213,7 @@ async def test_every_secret_column_is_written_as_ciphertext(
     ).one()
     for stored in whm_row[:4]:
         assert stored.startswith(ENCRYPTED_PREFIX), stored
-    # No fingerprint was supplied for the WHM row: a first validate is what captures it (V82).
+    # No fingerprint was supplied for the WHM row: a first validate is what captures it.
     assert whm_row[4] is None
 
     proxmox_secret = (
@@ -397,7 +397,7 @@ async def test_validate_persists_the_captured_fingerprint(
     session_factory: async_sessionmaker[AsyncSession],
     cipher: SecretCipher,
 ) -> None:
-    """V100 on the one column the validate flow writes (V82).
+    """V100 on the one column the validate flow writes.
 
     The pin repository is the object the validation service holds, and it commits its own
     transaction — a pin that only flushed would leave the row unvalidated while the operator
@@ -491,7 +491,7 @@ async def test_the_unique_index_is_the_backstop_behind_the_service_check(
 
     The service's `name_taken` is a *pre*-check, so it cannot close the window between two
     concurrent creates. The constraint is what does, and this asserts it is really there rather
-    than assumed from the model declaration (T4).
+    than assumed from the model declaration.
     """
     repository = SQLWHMServerAdminRepository(session)
     await repository.create(whm_spec("duplicate"))
@@ -511,7 +511,7 @@ async def test_the_name_check_is_case_insensitive_in_sql(
 
     `core.servers.reference` records the harm this prevents: `Node1` and `node1` both satisfy a
     case-sensitive unique index and both match `NODE1`, which is a permanent `host_ambiguous`
-    for a reference an operator will keep typing (V18).
+    for a reference an operator will keep typing.
     """
     repositories = {
         "whm_servers": SQLWHMServerAdminRepository,
@@ -536,7 +536,7 @@ async def test_the_name_check_is_case_insensitive_in_sql(
 async def test_the_list_order_comes_from_the_database(
     session: AsyncSession, cipher: SecretCipher
 ) -> None:
-    """`ORDER BY name`, through the composed read repository (V66).
+    """`ORDER BY name`, through the composed read repository.
 
     Inserted out of order on purpose: a write repository that re-implemented `list_servers`
     without the `ORDER BY` would return insertion order and pass a `sorted()`-based double.
@@ -563,7 +563,7 @@ async def test_a_created_row_carries_its_server_generated_columns(
     """`id`, `created_at`, `updated_at` come back filled — the response shape needs all three.
 
     Asserted by property, not by value: two of them are clock-stamped, and comparing a timestamp
-    to a literal is a coin flip (V87).
+    to a literal is a coin flip.
     """
     created = await whm_service(session, cipher).create(whm_spec(), actor_email=ACTOR)
 

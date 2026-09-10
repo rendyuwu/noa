@@ -81,6 +81,6 @@ export async function setRoleTools(roleName: string, tools: string[]): Promise<v
 }
 
 // There is no direct-grant migration call. `noa-old` shipped one; NOA has no
-// per-user grant table for it to read and no endpoint for it to reach (T65).
+// per-user grant table for it to read and no endpoint for it to reach.
 // Permissions flow role → user only, and the withdrawn per-user route answers
-// 410 `direct_tool_grants_disabled` (V75).
+// 410 `direct_tool_grants_disabled`.

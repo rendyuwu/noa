@@ -17,7 +17,7 @@ export interface McpToken {
   // a LibreChat config, never enough to be one.
   token_prefix: string
   label: string | null
-  // NULL until TOFU binding happens (C20, V3) — the token has not yet been used
+  // NULL until TOFU binding happens — the token has not yet been used
   // by a LibreChat identity.
   librechat_user_id: string | null
   // NULL means it has never authenticated a request.
@@ -25,7 +25,7 @@ export interface McpToken {
   last_ldap_check_at: string | null
   // NULL means nothing retires the row but a revoke.
   expires_at: string | null
-  // Not nullable, unlike the four above: a server default (T4), so a row that
+  // Not nullable, unlike the four above: a server default, so a row that
   // exists has one.
   created_at: string
 }
@@ -35,7 +35,7 @@ export interface McpTokensResponse {
   tokens: McpToken[]
 }
 
-// `POST` answer: the row, plus the plaintext, once (V2). The only shape in this
+// `POST` answer: the row, plus the plaintext, once. The only shape in this
 // app that carries a credential. It is a return value and never controller
 // state — see `use-tokens.ts`.
 export interface MintedToken {

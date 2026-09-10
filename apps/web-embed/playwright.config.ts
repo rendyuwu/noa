@@ -3,7 +3,7 @@ import { defineConfig, devices } from '@playwright/test'
 // Same-origin browser checks against the embed's own dev server. The embed runs
 // on 3001 because that is the origin the API builds approval URLs from
 // (`NOA_EMBED_BASE_URL` in the repo-root `.env.example`), and the cookie the card
-// depends on is scoped `Domain=.noa.internal` (V40) — so the port here is part of
+// depends on is scoped `Domain=.noa.internal` — so the port here is part of
 // the contract, not a local preference.
 //
 // `webServer` boots both processes itself: a config that assumes a server someone
@@ -14,7 +14,7 @@ const BASE_URL = process.env.EMBED_BASE_URL ?? 'http://localhost:3001'
  * A port for one of the two servers this harness stands up itself.
  *
  * Overridable, unlike 3001 above. That one is the contract — the API builds approval URLs from it
- * and the cookie is domain-scoped (V40) — while these two are private to this file: the stub
+ * and the cookie is domain-scoped — while these two are private to this file: the stub
  * upstream and the stand-in parent are addressed only through the constants exported below, so a
  * different number changes nothing any spec asserts. They are overridable because `webServer`
  * refuses to start on a port something else holds, and a machine that has something else on 8099
@@ -58,7 +58,7 @@ export const OTHER_ORIGIN = `http://not-chat.noa.internal:${PARENT_PORT}`
 export const UPSTREAM_ORIGIN = `http://127.0.0.1:${UPSTREAM_PORT}`
 
 /**
- * The sandbox LibreChat was measured applying to this frame at pin `45cc53c4` (R13, R29).
+ * The sandbox LibreChat was measured applying to this frame at pin `45cc53c4`.
  *
  * `allow-forms` is **absent**, and that absence is the premise V80 rests on: a native form submit
  * dies silently in here, so the card's buttons are `fetch` handlers. Pinned as a constant because
@@ -87,7 +87,7 @@ export const SIGN_IN_URL = `${UPSTREAM_ORIGIN}/__popup-control`
 
 /**
  * One card id per outcome the approval page renders (§T.41), shared with the stub that serves them
- * (`env` below) so a spec cannot ask about a state the stub does not have (V66). Valid UUIDs: the
+ * (`env` below) so a spec cannot ask about a state the stub does not have. Valid UUIDs: the
  * real route's path parameter is UUID-typed, and an id shaped unlike a real one would exercise a
  * 422 the specs are not about.
  */
@@ -118,7 +118,7 @@ export const APPROVAL_IDS = {
 
 /**
  * One token per outcome the table surface renders (§T.56), shared with the stub that serves them
- * for `APPROVAL_IDS`' reason (V66).
+ * for `APPROVAL_IDS`' reason.
  *
  * Not UUID-shaped, deliberately: the real token is `secrets.token_urlsafe(32)` and the route takes
  * a plain string, so a UUID here would exercise a shape the surface never sees.
@@ -130,14 +130,14 @@ export const TABLE_TOKENS = {
   truncated: 'e2e-table-capped-000000000000000000000002',
   /** 401 forever: the state V38 renders and a retry cannot escape. */
   unauthorized: 'e2e-table-unauthorized-00000000000000401',
-  /** The one answer for unknown, foreign, orphaned and expired alike (V27). */
+  /** The one answer for unknown, foreign, orphaned and expired alike. */
   notFound: 'e2e-table-missing-00000000000000000000404',
   /**
    * A table the stub serves **only** to a request carrying a cookie, and 401s otherwise.
    *
    * The separator for "the operator's session reached the API through the page's own server-side
-   * read" (V22, V40): against a stub that answered 200 regardless, that spec would pass with the
-   * cookie dropped, which is a test that cannot fail for the reason it was written (V87).
+   * read": against a stub that answered 200 regardless, that spec would pass with the
+   * cookie dropped, which is a test that cannot fail for the reason it was written.
    */
   needsCookie: 'e2e-table-cookie-000000000000000000000003',
   /**
@@ -162,7 +162,7 @@ export const STUB_TABLE_STORED_ROWS = 2
  */
 export const STUB_TABLE_LONG_ROWS = 438
 
-/** The token the stub puts on a PENDING card. The real one is HMAC-signed (V39, T37). */
+/** The token the stub puts on a PENDING card. The real one is HMAC-signed. */
 export const STUB_CSRF = 'v1.1786000000.stub-signature'
 
 /** What the polling card's run reports once it finishes. Asserted, so it lives in one place. */
@@ -173,7 +173,7 @@ export const STUB_RUN_RESULT = 'Account acmeco suspended on alpha.'
  *
  * Its own value, sharing nothing with the before-state the stub's cards carry (`suspended: false`,
  * `domain: acme.example`): the browser assertion is that *both* halves render, and a value present
- * in both could not tell that from one of them rendered twice (V87).
+ * in both could not tell that from one of them rendered twice.
  */
 export const STUB_RECEIPT_AFTER = '2026-08-08T09:30:12+00:00'
 
@@ -191,7 +191,7 @@ export default defineConfig({
   webServer: [
     {
       command: 'node e2e/support/upstream-stub.mjs',
-      // The open socket again, one layer below the thing under test (V90).
+      // The open socket again, one layer below the thing under test.
       port: UPSTREAM_PORT,
       reuseExistingServer: false,
       timeout: 30_000,
@@ -227,7 +227,7 @@ export default defineConfig({
       command: 'pnpm dev',
       // Readiness is the open socket, deliberately not `/healthz`. Waiting on the
       // route under test turns a broken `/healthz` into a two-minute startup
-      // timeout instead of the assertion failure that names what broke (V90).
+      // timeout instead of the assertion failure that names what broke.
       port: 3001,
       // Not reused, deliberately. The proxy specs depend on `NOA_API_URL` pointing
       // at the stub above, and a server someone else started was given a different

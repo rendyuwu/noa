@@ -1,7 +1,7 @@
 # NOA embed image — approval card iframe + large-result tables (§T.60, C2, C12, §I.embed).
 #
 # Build context is THIS directory, not the repo root, for the reason in `apps/admin-web`'s copy:
-# the two web packages are independent deploy artifacts and share nothing (C12). This one has no
+# the two web packages are independent deploy artifacts and share nothing. This one has no
 # `.npmrc` and no `@gio/*` dependency at all — eslint refuses both (§T.40) — so unlike the admin
 # image it builds from the public registry alone.
 #

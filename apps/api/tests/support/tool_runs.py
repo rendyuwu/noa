@@ -1,4 +1,4 @@
-"""In-memory `tool_runs` writer for the audit tests (T73).
+"""In-memory `tool_runs` writer for the audit tests.
 
 The double records the rows a real `SQLToolRunRepository` would have written, so a test can
 assert on the audit trail without Postgres — and, more usefully, can make either write fail

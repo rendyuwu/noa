@@ -4,7 +4,7 @@ Revision ID: 0008_whm_reseller
 Revises: 0007_result_tables
 Create Date: 2026-09-09
 
-T77 (V109, C12). A WHM row may hold a *reseller* token rather than the root one, and a
+T77. A WHM row may hold a *reseller* token rather than the root one, and a
 reseller token may only write the accounts it owns (measured on a live host, §R.33). Two
 things read this column, and neither is an authorization check:
 
@@ -22,9 +22,9 @@ root rows are the majority.
 
 **`downgrade` drops the marks, and a later `upgrade` does not bring them back** — every row
 returns to `false` and each reseller row has to be marked again by hand. Nothing fails in the
-meantime, which is the reason to write it down: the flag gates nothing (V109), so what an
+meantime, which is the reason to write it down: the flag gates nothing, so what an
 operator gets is `whm_list_servers` quietly ceasing to filter and naming the credentials it used
-to hide — a listing that grew rather than an error (V110).
+to hide — a listing that grew rather than an error.
 
 One column, no index. Nothing filters or orders by it in SQL: the tool path reads the flag off
 rows it already selected, and the admin list returns every row regardless.

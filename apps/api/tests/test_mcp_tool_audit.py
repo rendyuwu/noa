@@ -71,7 +71,7 @@ SCRATCH_DB = "noa_tool_run_writer_test"
 # what LibreChat's `conversationId` is.
 CONVERSATION_ID = "1f0c2e5a-7b41-4d2e-9a3c-0b5d8e6f4a12"
 
-# Catalogued, unbuilt, and a CHANGE when it lands (T22). Used to drive the middleware's
+# Catalogued, unbuilt, and a CHANGE when it lands. Used to drive the middleware's
 # CHANGE branch, which has no registered tool behind it yet.
 CHANGE_TOOL = "whm_suspend_account"
 
@@ -164,7 +164,7 @@ def test_the_written_row_carries_every_v47_field(scenario) -> None:
 
 
 def test_timing_is_a_started_row_committed_before_the_tool_runs(scenario) -> None:
-    """V47 timing, and the reason `STARTED` exists at all (T35, T38).
+    """V47 timing, and the reason `STARTED` exists at all.
 
     Two commits in order — `STARTED`, then `COMPLETED`. One commit would mean the row only
     appears once the call ends, so a process that died mid-call would leave no evidence,
@@ -188,7 +188,7 @@ def test_a_read_is_refused_when_its_audit_row_cannot_be_written(scenario) -> Non
     """V45 held by mechanism rather than by prose.
 
     Running anyway would leave "every READ writes a row" asserted in the spec and enforced
-    by nothing — the shape B2 shipped (V69). The refusal reuses the tool envelope so a model
+    by nothing — the shape B2 shipped. The refusal reuses the tool envelope so a model
     sees one shape whichever gate closed.
     """
     sign_in, runs, tools = scenario
@@ -239,7 +239,7 @@ def test_risk_is_read_while_status_carries_the_lifecycle(scenario) -> None:
 def test_an_ok_false_result_is_recorded_as_a_failed_read(scenario, monkeypatch) -> None:
     """V20's whole point, over the real mount.
 
-    `sanitize_tool_errors` (V19) turns an exception into a *returned* `{"ok": False}`
+    `sanitize_tool_errors` turns an exception into a *returned* `{"ok": False}`
     payload, so a failure arrives as an ordinary result. Without the `ok` branch every
     failed READ would be filed as a success — the audit trail would say NOA did something
     it did not do.
@@ -262,7 +262,7 @@ def test_the_failure_summary_names_the_sanitized_code_not_the_cause(scenario, mo
     """T35 left out an `error` column because a sanitized code fits `result_summary`.
 
     The raw exception text must not land there: the audit row is read by the admin surface
-    and may name hosts and paths (V8). What is stored is what the model was told.
+    and may name hosts and paths. What is stored is what the model was told.
     """
     sign_in, runs, tools = scenario
     session, _ = sign_in()
@@ -321,7 +321,7 @@ def test_a_call_refused_by_rbac_writes_no_row(scenario) -> None:
 def test_an_unregistered_name_writes_no_row(scenario) -> None:
     """V10's refusal is not an execution either, and the risk map is the second guard.
 
-    `proxmox_reset_vm_password` is catalogued but unbuilt (T27), so an `admin` bypass reaches
+    `proxmox_reset_vm_password` is catalogued but unbuilt, so an `admin` bypass reaches
     the gate with it. Neither the gate nor the risk map knows it, and it must not become an
     audit row for a tool that does not exist yet.
     """
@@ -336,7 +336,7 @@ def test_an_unregistered_name_writes_no_row(scenario) -> None:
 def test_the_second_read_tool_is_audited_with_its_arguments(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V45, V83b: the row comes from the gate, so a *new* tool inherits it (T21).
+    """V45, V83b: the row comes from the gate, so a *new* tool inherits it.
 
     Every other test here drives `whm_list_servers`, the tool that shipped beside the
     middleware — which cannot distinguish "audits every READ" from "audits that one". This
@@ -378,13 +378,13 @@ def test_the_second_read_tool_is_audited_with_its_arguments(
 async def test_a_large_read_is_recorded_completed_with_its_counts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V20, V45: a READ that answers with a *surface* is still a READ that succeeded (T20).
+    """V20, V45: a READ that answers with a *surface* is still a READ that succeeded.
 
     The third shape of tool result, and the one this middleware could not read. Status and
     summary both come off `structured_content`, and `status_for_payload` treats a missing
     envelope as FAILED on purpose — a result that cannot be read as a success is not evidence
     of one. `whm_list_accounts` answers with content blocks, because the address and the frame
-    are what an operator is handed (V25, V64); a content-only result would therefore have gone
+    are what an operator is handed; a content-only result would therefore have gone
     into the audit trail as a failed call with an empty summary, for the one tool whose answer
     is thousands of rows. So the table surface carries a counts envelope beside its blocks, and
     this is the test that says why it exists.
@@ -429,7 +429,7 @@ async def test_a_large_read_is_recorded_completed_with_its_counts(
 async def test_a_large_read_that_fails_is_recorded_failed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The negative control for the case above (V87).
+    """The negative control for the case above.
 
     Without it, "a table-answering READ is COMPLETED" would pass just as well against a
     middleware that recorded every call as a success. `whm_list_accounts` refused a server_ref
@@ -461,9 +461,9 @@ async def test_a_large_read_that_fails_is_recorded_failed(
 
 
 async def test_a_change_tool_writes_no_row_here() -> None:
-    """V46 belongs to the post-approval executor (T38), not to the gate call.
+    """V46 belongs to the post-approval executor, not to the gate call.
 
-    A CHANGE tool's `tools/call` opens the approval gate and executes nothing (T33), so a
+    A CHANGE tool's `tools/call` opens the approval gate and executes nothing, so a
     row written here would record a change that has not happened and may be denied. Driven
     through the middleware with a CHANGE risk map, because no CHANGE tool exists yet.
     """
@@ -503,7 +503,7 @@ def test_no_arguments_is_recorded_as_an_empty_object_not_a_null() -> None:
 
 
 def test_the_result_summary_carries_no_credential_material(scenario) -> None:
-    """The summary is a rendering of the tool result, which is transcript-adjacent (V26).
+    """The summary is a rendering of the tool result, which is transcript-adjacent.
 
     `whm_list_servers` already renders through `to_safe_dict()` and carries nothing secret,
     so this is the assertion that the *summary path* does not reintroduce one — it runs the
@@ -735,7 +735,7 @@ async def test_finishing_an_unknown_run_touches_nothing(session: AsyncSession) -
 
 
 async def test_a_terminal_run_is_never_re_finished(session: AsyncSession) -> None:
-    """The first terminal write wins; the second is a no-op (T38).
+    """The first terminal write wins; the second is a no-op.
 
     Two writers reach one run: the executor, finishing a change that took longer than the
     reaper's deadline, and the reaper, calling that same run abandoned. Without

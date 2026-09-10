@@ -1,4 +1,4 @@
-"""Run `pmgsh` / `pmgconfig` over SSH (T18, V55, V56, V58, V69).
+"""Run `pmgsh` / `pmgconfig` over SSH.
 
 Copied from `noa-old` branch `MCP` (`pmg/integrations/pmgsh_cli.py`). V58 is the whole design of
 this module: **argv-only, ⊥ shell string.** Every command is built from a token list through
@@ -38,7 +38,7 @@ Three structural changes from the source, all noted at their line:
 
 3. **`command_output_text` is imported, not defined.** `noa-old` carried it three times
    byte-identical, and this module held the third copy; T16 moved it to
-   `core.remote_exec.output` naming exactly this port as the reason (V66).
+   `core.remote_exec.output` naming exactly this port as the reason.
 
 `PMGSH_BINARY` is absolute. Under `sudo -n` the `PATH` is the sudoers `secure_path`, and
 `/usr/bin` is not always on the invoking user's own `PATH`. `PMGCONFIG_BINARY` is kept as the
@@ -56,7 +56,7 @@ Two success predicates, because PMG answers reads and writes differently:
 Both `SSHExecutionError` and a non-zero exit surface as `PMGSHCLIError`, so a caller catches one
 tree (see `core.integrations.pmg.errors`).
 
-**A resolved `SSHConnectionConfig` comes in, not a `pmg_servers` row** (T31). `noa-old` — and
+**A resolved `SSHConnectionConfig` comes in, not a `pmg_servers` row**. `noa-old` — and
 this module until T31 — took the row plus a `SecretCipher` and called `resolve_pmg_ssh_config`
 per command. The caller resolves it once instead, which is the change T24 made to
 `core.integrations.whm.csf_cli` for the same reason: the caller is a tool that has to close its
@@ -93,7 +93,7 @@ PMGSH_BINARY: Final[str] = "/usr/bin/pmgsh"
 # Bare name, verbatim from `noa-old` — see module docstring before making it absolute.
 PMGCONFIG_BINARY: Final[str] = "pmgconfig"
 
-# The single PMG config path NOA touches (V58). Whitelisting is PMG's `mynetworks` list; nothing
+# The single PMG config path NOA touches. Whitelisting is PMG's `mynetworks` list; nothing
 # in this layer reaches any other endpoint.
 MYNETWORKS_PATH: Final[str] = "/config/mynetworks"
 
@@ -103,7 +103,7 @@ _PMG_ENV: Final[dict[str, str]] = {"TERM": "dumb"}
 
 
 def build_pmgsh_command(args: list[str], *, config: SSHConnectionConfig) -> str:
-    """Compose one shell-safe `pmgsh` command, escalating iff the SSH user is not root (V55)."""
+    """Compose one shell-safe `pmgsh` command, escalating iff the SSH user is not root."""
     return build_remote_command([PMGSH_BINARY, *args], config=config, env=_PMG_ENV)
 
 
@@ -190,7 +190,7 @@ async def _run_command(
     """Compose → execute, converting SSH failures into this module's tree.
 
     The command is built from the same config that opens the connection, because the
-    composition reads the resolved username to decide escalation (V55) — a boolean parameter
+    composition reads the resolved username to decide escalation — a boolean parameter
     would let one call site disagree with the connection it is running over.
     """
     try:
@@ -235,7 +235,7 @@ async def run_pmg_mynetworks_probe(config: SSHConnectionConfig) -> dict[str, str
 
     The endpoint travels with the output so a validate receipt records *what* was probed, not
     only that something answered. Entry parsing is the tools' job — see
-    `core.integrations.pmg.mynetworks` (T31).
+    `core.integrations.pmg.mynetworks`.
     """
     result = await run_pmgsh_command(config, args=["ls", MYNETWORKS_PATH])
     output = require_pmgsh_success(
@@ -259,7 +259,7 @@ async def run_pmg_mynetworks_list(config: SSHConnectionConfig) -> str:
 
 
 async def run_pmg_mynetworks_add(config: SSHConnectionConfig, *, cidr: str) -> str:
-    """Add one CIDR to `mynetworks` (V60). `cidr` is already validated/normalised by the caller.
+    """Add one CIDR to `mynetworks`. `cidr` is already validated/normalised by the caller.
 
     `-cidr <value>` as two argv tokens, so a hostile value cannot become a second flag.
     """
@@ -271,7 +271,7 @@ async def run_pmg_mynetworks_add(config: SSHConnectionConfig, *, cidr: str) -> s
 
 
 async def run_pmg_mynetworks_delete(config: SSHConnectionConfig, *, cidr: str) -> str:
-    """Remove one CIDR from `mynetworks` (V61).
+    """Remove one CIDR from `mynetworks`.
 
     The CIDR is a *path segment* here (`/config/mynetworks/1.2.3.4/32`), not a flag value, and it
     stays one argv token — `command_from_argv` quotes it whole, so the embedded `/` cannot split
@@ -285,7 +285,7 @@ async def run_pmg_mynetworks_delete(config: SSHConnectionConfig, *, cidr: str) -
 
 
 async def run_pmgconfig_sync_restart(config: SSHConnectionConfig) -> str:
-    """Apply a `mynetworks` change: `pmgconfig sync --restart 1` (V60, V61).
+    """Apply a `mynetworks` change: `pmgconfig sync --restart 1`.
 
     Required after every add/remove — `pmgsh` writes PMG's config, and Postfix does not pick the
     change up until this runs. A mutation that skips it looks applied and is not.

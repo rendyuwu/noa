@@ -1,4 +1,4 @@
-"""The expiry service and its loop, without a database (T39 — V30, V32).
+"""The expiry service and its loop, without a database.
 
 Two claims live here and neither is about SQL:
 
@@ -91,7 +91,7 @@ async def running(sweeper: PendingExpirySweeper) -> AsyncIterator[PendingExpiryS
 
 
 # --------------------------------------------------------------------------------------
-# The service (V32)
+# The service
 # --------------------------------------------------------------------------------------
 
 
@@ -147,7 +147,7 @@ async def test_every_row_in_a_pass_is_judged_against_one_moment() -> None:
 
 
 async def test_a_pass_without_a_moment_uses_an_aware_utc_clock() -> None:
-    """Asserted as a bound and a property, not an equality: this value *is* the clock (V87)."""
+    """Asserted as a bound and a property, not an equality: this value *is* the clock."""
     repository = FakeActionRequestExpiryRepository()
     before = datetime.now(UTC)
 
@@ -232,7 +232,7 @@ async def test_check_on_read_cannot_expire_an_already_decided_request() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# The loop (V30, V32)
+# The loop
 # --------------------------------------------------------------------------------------
 
 

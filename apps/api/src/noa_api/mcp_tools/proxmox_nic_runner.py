@@ -1,8 +1,8 @@
-"""The half of `proxmox_vm_nic` that flips the link (T28).
+"""The half of `proxmox_vm_nic` that flips the link.
 
 Beside `proxmox_nic.py` rather than inside it, for C14 and on the boundary the design already
 draws — **nothing in the tool module can change anything, and nothing here is reachable without an
-approval** (V22). T27 made the same split for the same reason. The evidence keys, the action words
+approval**. T27 made the same split for the same reason. The evidence keys, the action words
 and the tool's name come from that module; nothing there imports this one, so `registry.py` reaches
 the tool and `change_runners.py` reaches the runner with no cycle between them.
 
@@ -33,10 +33,10 @@ Three ways that comparison can go, and only one of them is a failure:
 - the NIC is **gone** → `net_not_found`. A line that no longer exists cannot be edited, and
   guessing at a neighbouring one would be a change to an interface nobody approved.
 
-**The postflight asks the change's own question** (V97). It re-reads the config and recomputes the
+**The postflight asks the change's own question**. It re-reads the config and recomputes the
 link state off the `netN` line — not off the task's exit status, which says only that Proxmox
 accepted the write. A read that cannot answer is `unavailable`, never `false`: silence is not
-evidence of absence (V86), and V62's rule holds one system over —
+evidence of absence, and V62's rule holds one system over —
 **verification-unavailable is not verified, and it is not refuted either.**
 
 **V96 has no instance here, and that is worth stating rather than assuming.** This runner never
@@ -132,11 +132,11 @@ ERROR_TASK_FAILED: Final = "task_failed"
 ERROR_POSTFLIGHT_FAILED: Final = "postflight_failed"
 
 # One structured event per outcome an operator may have to act on. Identifiers and codes only
-# (V8) — and never `request.reason`, which this runner does not read at all.
+# — and never `request.reason`, which this runner does not read at all.
 LOG_NIC_RUN_NO_OP: Final = "proxmox_vm_nic_no_op"
 LOG_NIC_RUN_UNVERIFIED: Final = "proxmox_vm_nic_unverified"
 
-# `noa-old`'s numbers, kept (C13, V69). A `netN` write finishes in well under a second in practice.
+# `noa-old`'s numbers, kept. A `netN` write finishes in well under a second in practice.
 TASK_POLL_ATTEMPTS: Final = 30
 TASK_POLL_DELAY_SECONDS: Final = 0.5
 
@@ -182,14 +182,14 @@ class FreshNIC:
 
 
 def build_proxmox_vm_nic_runner(*, context: McpToolContext) -> ChangeRunner:
-    """The half that flips the link, once an operator approved (T28, T38 — V22, V46).
+    """The half that flips the link, once an operator approved.
 
     A closure over the tool context rather than a class, for T22's reason: what it needs is the
     same session factory, cipher and repositories the tool used, so the change goes through the
     production decrypt site and the production client rather than second copies of either.
 
     `request.reason` is on the request — the executor reads it off the row for every approved
-    change (V43) — and this runner never touches it. A `netN` line has no note field, so nothing
+    change — and this runner never touches it. A `netN` line has no note field, so nothing
     C8 keeps from the LLM leaves NOA here and V96's bound has no instance on this tool.
     """
 
@@ -198,10 +198,10 @@ def build_proxmox_vm_nic_runner(*, context: McpToolContext) -> ChangeRunner:
 
         Resolve from the evidence, re-read, decide, write, verify. Every refusal answers the
         ordinary tool envelope rather than raising, because the executor's own catch records
-        something coarser than what this knew (V19).
+        something coarser than what this knew.
 
         The resolution refusal carries **no delta** — nothing was read and nothing was written,
-        so there is nothing to state (V86). Everything below it carries one, and the **no-op**
+        so there is nothing to state. Everything below it carries one, and the **no-op**
         is the case worth naming: its delta reports an explicitly empty `changed_fields`, because
         a before→after taken from its payload would render the identity fields as new values and
         describe a change to an interface nothing touched.
@@ -259,7 +259,7 @@ def build_proxmox_vm_nic_runner(*, context: McpToolContext) -> ChangeRunner:
 
 
 def build_proxmox_nic_runners(*, context: McpToolContext) -> dict[str, ChangeRunner]:
-    """Tool name → runner for this module's CHANGE tool (T28)."""
+    """Tool name → runner for this module's CHANGE tool."""
     return {TOOL_PROXMOX_VM_NIC: build_proxmox_vm_nic_runner(context=context)}
 
 
@@ -269,7 +269,7 @@ def build_proxmox_nic_runners(*, context: McpToolContext) -> dict[str, ChangeRun
 async def _resolve_change_target(
     evidence: Mapping[str, Any], *, context: McpToolContext
 ) -> NICChangeTarget | ToolPayload:
-    """The endpoint, VM, interface and direction an approved change runs against (V33).
+    """The endpoint, VM, interface and direction an approved change runs against.
 
     **From the evidence, never from the arguments.** `server_ref` is a string a model supplied and
     inventory can be edited between a request and its approval; the evidence is the state the
@@ -504,7 +504,7 @@ async def _wait_for_terminal_task(target: NICChangeTarget, *, upid: str) -> Chan
 async def _verify_link_state(
     target: NICChangeTarget, *, request: ChangeExecutionRequest
 ) -> ChangeOutcome:
-    """Did the link actually move? Read off the `netN` line, ⊥ off the task (V97, V62, V86).
+    """Did the link actually move? Read off the `netN` line, ⊥ off the task.
 
     The task's exit status says Proxmox accepted a write; it does not say what the interface now
     is. So this re-reads the config and recomputes the link state from the line itself, which is
@@ -599,7 +599,7 @@ def _link_state_change(
     - `None` — the evidence carried no usable `old` side, so nothing was compared. An `old` side
       nobody recorded is not an `old` side of `up`, and an empty diff here would tell an operator
       the interface was checked against the card and had not moved, on the branch where the
-      postflight has just confirmed it did (V86).
+      postflight has just confirmed it did.
     - `()` — both sides were read and they match. Reachable and not a bug: an interface edited
       away and back while the request sat pending reads the same as the card described, and a
       delta claiming a move there would be describing one that did not happen. `ChangeDelta`
@@ -618,7 +618,7 @@ def _common(target: NICChangeTarget) -> ToolPayload:
     """The identifiers every answer from this runner carries.
 
     The interface's own line is deliberately not among them. This payload becomes
-    `tool_runs.result_summary` and `noa_get_action_result` hands that to a model (V45, V76), and
+    `tool_runs.result_summary` and `noa_get_action_result` hands that to a model, and
     what a model needs is which interface on which VM moved which way — not the MAC address and
     bridge of a machine it is describing to somebody.
     """

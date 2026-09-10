@@ -16,14 +16,14 @@
 # forces (a service name instead of `localhost`), and reads the rest from `.env`.
 #
 # Browsing this stack at `*.noa.internal` rather than `localhost` is not cosmetic: the
-# `noa_session` cookie is scoped `Domain=.noa.internal` (V40), so it does not ride to
+# `noa_session` cookie is scoped `Domain=.noa.internal`, so it does not ride to
 # `localhost` at all and every sign-in appears to succeed and then do nothing. The hosts line
 # and the three `.env` values are in `docs/deployment.md`.
 
 name: noa
 
 services:
-  # Postgres 16 (C3). The one service with no profile, so `docker compose up -d postgres` works
+  # Postgres 16. The one service with no profile, so `docker compose up -d postgres` works
   # in a fresh clone with nothing built.
   #
   # Credentials are the throwaway pair `.env.example`'s `POSTGRES_URL` already carries. They are
@@ -47,7 +47,7 @@ services:
       timeout: 3s
       retries: 12
 
-  # One Alembic history for the whole monorepo (C12). Runs to completion and exits; `api` waits
+  # One Alembic history for the whole monorepo. Runs to completion and exits; `api` waits
   # for that exit rather than running migrations itself, so a failed migration stops the stack
   # with the migration's own error instead of a web server that answers 500 on every route.
   migrate:
@@ -98,14 +98,14 @@ services:
   admin-web:
     profiles: ["apps"]
     # This app's own directory, never the repo root: the two web packages are separate deploy
-    # artifacts that share no source (C12), and a repo-root context would put each one's files
+    # artifacts that share no source, and a repo-root context would put each one's files
     # inside the other's image.
     build:
       context: apps/admin-web
     environment:
       # Named individually rather than via `env_file`, unlike the API above. This container
       # reads exactly one variable, and handing it the Fernet key, the JWT secret and the LDAP
-      # bind password as well would put three credentials somewhere nothing reads them (C7, V8).
+      # bind password as well would put three credentials somewhere nothing reads them.
       NOA_API_URL: http://api:8000
     ports:
       - "127.0.0.1:3000:3000"

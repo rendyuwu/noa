@@ -80,7 +80,7 @@ describe('isTerminal', () => {
 
 describe('pollIntervalMs', () => {
   it('waits longer while nothing is executing', () => {
-    // The only transition available to a PENDING request is the expiry sweep (V32), an hour out by
+    // The only transition available to a PENDING request is the expiry sweep, an hour out by
     // default. Nobody is standing by for it.
     expect(pollIntervalMs(approvalCard())).toBe(POLL_INTERVAL_PENDING_MS)
   })
@@ -134,7 +134,7 @@ describe('fetchApprovalCard', () => {
     vi.restoreAllMocks()
   })
 
-  it('reads a card back, with the cookie and no cache (V22, V40)', async () => {
+  it('reads a card back, with the cookie and no cache', async () => {
     const { calls } = stub(() => Response.json(approvedBody({ status: 'COMPLETED' })))
 
     const load = await fetchApprovalCard(CARD_ID)
@@ -148,7 +148,7 @@ describe('fetchApprovalCard', () => {
     expect(calls[0]?.cache).toBe('no-store')
   })
 
-  it('reports a 401 as its own state (V38)', async () => {
+  it('reports a 401 as its own state', async () => {
     // A session can expire under an open frame. That must become "cannot authenticate here", not a
     // card left standing with a live Approve button on it.
     stub(() => Response.json({ error_code: 'session_invalid' }, { status: 401 }))
@@ -156,7 +156,7 @@ describe('fetchApprovalCard', () => {
     expect((await fetchApprovalCard(CARD_ID)).kind).toBe('unauthenticated')
   })
 
-  it('reports a 404 as its own state (V27)', async () => {
+  it('reports a 404 as its own state', async () => {
     stub(() =>
       Response.json({ error_code: 'action_request_not_found' }, { status: 404 }),
     )
@@ -166,7 +166,7 @@ describe('fetchApprovalCard', () => {
 
   it.each([500, 502, 503])('reports a %d as unavailable, not as an answer', async (status) => {
     // Deliberately not terminal: the caller keeps asking. "NOA could not be reached just now" and
-    // "there is nothing more to wait for" are different facts (V34).
+    // "there is nothing more to wait for" are different facts.
     stub(() => new Response('', { status }))
 
     expect(await fetchApprovalCard(CARD_ID)).toEqual({ kind: 'unavailable', status })
@@ -194,7 +194,7 @@ describe('fetchApprovalCard', () => {
     expect(await fetchApprovalCard(CARD_ID)).toEqual({ kind: 'unavailable', status: 200 })
   })
 
-  it('never carries a reason back (C8, V15, V43)', async () => {
+  it('never carries a reason back', async () => {
     // The API sends none. This asserts that a body which smuggled one in still cannot reach a
     // render path through this door.
     stub(() => Response.json({ ...cardBody({ run: runBody() }), reason: 'smuggled' }))

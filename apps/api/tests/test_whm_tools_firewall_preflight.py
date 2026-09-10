@@ -1,4 +1,4 @@
-"""`whm_preflight_firewall_entries` — step 1 of the firewall flow (T24).
+"""`whm_preflight_firewall_entries` — step 1 of the firewall flow.
 
 The one exposed preflight (DECISIONS §6.5): the operator reads the verdict and decides whether
 to release, so it is an operator decision point rather than a gate, and §3's "preflight goes
@@ -550,7 +550,7 @@ async def test_a_row_that_cannot_become_a_connection_names_the_row(  # type: ign
     monkeypatch, row: dict[str, Any], expected_code: str
 ) -> None:
     """These used to reach `check_firewall_binaries` and come back as "no firewall backends",
-    which sends an operator to install software when the fix is an admin field (T24).
+    which sends an operator to install software when the fix is an admin field.
 
     `resolve_whm_ssh_config` raises an `SSHExecutionError`, which is a `NoaError`, so
     `sanitize_tool_errors` hands the model the code that names the remedy (§V.19).
@@ -682,7 +682,7 @@ REASON_WRITTEN_OUT = "customer confirmed, ticket NOC-4471"
 
 
 def noa_commented_line(action_request_id: UUID, *, reason: str = REASON_WRITTEN_OUT) -> str:
-    """A `csf.allow` line as csf echoes one NOA created (T25)."""
+    """A `csf.allow` line as csf echoes one NOA created."""
     comment = noa_firewall_comment(action_request_id, reason=reason)
     return f"Found {TARGET} in /etc/csf/csf.allow ({comment})"
 

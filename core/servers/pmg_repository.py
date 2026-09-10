@@ -1,11 +1,11 @@
-"""SQL behind PMG server inventory (T31, C13).
+"""SQL behind PMG server inventory.
 
 The PMG sibling of `core.servers.whm_repository`, and it makes the same two calls that module
 made at T19, for the same reasons.
 
 **Reads only.** `noa-old`'s `storage/postgres/pmg_servers.py` also had `create`/`update`/
 `delete`, and their only caller in this design is the admin routes of T54. Porting them now
-would land ~130 lines of unreachable code a reviewer has to treat as live (V67).
+would land ~130 lines of unreachable code a reviewer has to treat as live.
 
 **`get_by_name` is not a query.** `resolve_pmg_server_ref` already holds the whole list to
 answer the host case, and a second round trip that can disagree with the list a tie was judged
@@ -37,7 +37,7 @@ class PMGServerRowLike(Protocol):
 
     No `to_safe_dict()` either, unlike the WHM view. That method is on the WHM row because
     `whm_list_servers` renders rows into a transcript and needs exactly one sanctioned way to
-    do it (V2, V8). Nothing exposed over MCP renders a PMG row — `pmg_list_servers` is an
+    do it. Nothing exposed over MCP renders a PMG row — `pmg_list_servers` is an
     internal function (I.mcp) and the whitelist tools answer about CIDRs — so requiring it here
     would be a rule with no rule-breaker to catch.
     """
@@ -91,7 +91,7 @@ class SQLPMGServerRepository:
         """One server by primary key, or `None`.
 
         `None` rather than a raise: "no server with that id" is a `host_not_found` *result* the
-        model can act on (V18), not an exception.
+        model can act on, not an exception.
         """
         result = await self._session.execute(select(PMGServer).where(PMGServer.id == server_id))
         return result.scalar_one_or_none()

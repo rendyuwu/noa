@@ -1,4 +1,4 @@
-"""Scaffold smoke tests (T3)."""
+"""Scaffold smoke tests."""
 
 from fastapi.testclient import TestClient
 

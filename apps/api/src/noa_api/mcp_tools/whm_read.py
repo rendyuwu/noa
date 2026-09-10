@@ -1,4 +1,4 @@
-"""WHM READ tools: `whm_list_servers` (T19), `whm_list_accounts` (T20), `whm_search_accounts` (T21).
+"""WHM READ tools: `whm_list_servers`, `whm_list_accounts`, `whm_search_accounts`.
 
 `whm_list_servers` is exposed on purpose and it is the only `*_list_servers` that is
 (DECISIONS §6.6, owner-decided 2026-08-04): the model has to know which servers exist before
@@ -8,21 +8,21 @@ it can name one, while Proxmox and PMG nodes are few and named directly by the o
 `whm_search_accounts` is the discovery step in front of every account CHANGE: T22 and T23 take
 an exact `user`, and the operator has a domain or half a username. It answers over `listaccts`
 because WHM has no server-side account search — see `fetch_whm_accounts`, which is internal
-(C9, V17) and which `whm_list_accounts` shares.
+and which `whm_list_accounts` shares.
 
-**The two account tools split by size, not by subject** (V64). A bounded search answers in the
+**The two account tools split by size, not by subject**. A bounded search answers in the
 transcript; a whole listing does not, so `whm_list_accounts` parks its rows and answers with a
 summary and the address of the page that holds them (`noa_api.mcp_tools.table_surface`). That
 is the only tool here whose result is content blocks rather than the `{"ok": ...}` envelope —
-the order of those blocks is part of what the operator is told (V25) — and it is why
+the order of those blocks is part of what the operator is told — and it is why
 `sanitize_tool_errors` widens a return type rather than fixing one.
 
 **What leaves the process for `whm_list_servers` is `describe()`, never the row.** That
 function is `core.servers.whm_ref`'s and answers id, name and `base_url` only — the three
 fields that let a model construct a `server_ref` — and none of `to_safe_dict()`'s admin
 extras (`api_username`, presence booleans, the SSH fields, two timestamps), which is a
-different render for a different reader (V110). The result lands in a LibreChat transcript
-that persists in their MongoDB (V26), which is the reason the rule is "no credential
+different render for a different reader. The result lands in a LibreChat transcript
+that persists in their MongoDB, which is the reason the rule is "no credential
 material and no admin metadata either", not "no plaintext password".
 
 Two split responsibilities, both deliberate:
@@ -33,7 +33,7 @@ Two split responsibilities, both deliberate:
 - `sanitize_tool_errors` wraps the function, not the registration. A caller that reaches
   the function some other way (a future internal call, C9/V17) gets the same V19 guarantee.
 
-Registration also declares the tool's `ToolRisk` (T73, V20). Nothing in this module records
+Registration also declares the tool's `ToolRisk`. Nothing in this module records
 anything: the `tool_runs` row is written by `ToolRunAuditMiddleware` beside the RBAC gate
 (V83b), and the risk it stamps on that row comes from here, where the tool is defined,
 rather than from a list somewhere else that a new tool can be absent from.
@@ -91,12 +91,12 @@ DESCRIPTION_WHM_LIST_ACCOUNTS = (
     "when the operator is looking for one account. Read-only: it changes nothing."
 )
 
-# The columns of a parked account listing, in the order they are rendered (T20, V64).
+# The columns of a parked account listing, in the order they are rendered.
 #
 # Beside the whitelist they are read from rather than derived from a row: `listaccts` rows are
 # sparse — `normalize_whm_account_summary` omits a field WHM did not send — so a column list
 # built from the first row would drop a column every later row has. A test pins these keys
-# against what the normaliser can emit, so the two lists cannot drift apart (V66).
+# against what the normaliser can emit, so the two lists cannot drift apart.
 WHM_ACCOUNT_TABLE_COLUMNS: list[TableColumn] = [
     TableColumn(key="user", label="Account"),
     TableColumn(key="domain", label="Primary domain"),
@@ -109,13 +109,13 @@ WHM_ACCOUNT_TABLE_COLUMNS: list[TableColumn] = [
     TableColumn(key="suspendreason", label="Suspend reason"),
 ]
 
-# The account fields a *model* may not read, dropped from `whm_search_accounts`' rows (C8, T22).
+# The account fields a *model* may not read, dropped from `whm_search_accounts`' rows.
 #
 # `suspendreason` is WHM's suspension note, and as of T22 NOA writes the operator's approval
 # reason into it — C8's single field, typed on the card. WHM echoes it back on every later
 # `listaccts`, so a search result carrying the field would put that reason in the transcript and
 # hand the LLM the one string C8 says it must never see. The parked table above keeps the column
-# on purpose: `/tables/{token}` is behind the operator's own cookie (V27), not in front of a
+# on purpose: `/tables/{token}` is behind the operator's own cookie, not in front of a
 # model.
 ACCOUNT_FIELDS_WITHHELD_FROM_MODEL = frozenset({"suspendreason"})
 
@@ -129,12 +129,12 @@ DESCRIPTION_WHM_SEARCH_ACCOUNTS = (
 
 @sanitize_tool_errors(TOOL_WHM_LIST_SERVERS)
 async def whm_list_servers(*, context: McpToolContext) -> ToolPayload:
-    """Every configured WHM server a model may pick from, credential-free (T19, V110).
+    """Every configured WHM server a model may pick from, credential-free.
 
     Answers `describe()` — id, `name`, `base_url` — not `to_safe_dict()`. The latter is the
     **admin** view (11 fields: `api_username`, `has_api_token`, `verify_ssl`, 3 SSH fields, 2
     presence bools, 2 timestamps) and not one of those extras is read by a model choosing a
-    server; at scale the gap is thousands of tokens spent on fields nobody here uses (V110).
+    server; at scale the gap is thousands of tokens spent on fields nobody here uses.
 
     A row with `is_reseller_credential = true` is left out (V109(a)) — visibility only, not
     authorization: the same row stays a valid `resolve_whm_server_ref` candidate by id, name
@@ -152,20 +152,20 @@ async def whm_list_servers(*, context: McpToolContext) -> ToolPayload:
 
 
 async def fetch_whm_accounts(*, server_ref: str, context: McpToolContext) -> ToolPayload:
-    """Every account on the named WHM server, normalised. Internal — ⊥ an MCP tool (C9, V17).
+    """Every account on the named WHM server, normalised. Internal — ⊥ an MCP tool.
 
     Not exposed and not decorated with `sanitize_tool_errors`: its callers are exposed tools
     that already are, and a second boundary would turn a `NoaError` into a payload the caller
-    then has to unwrap twice. `whm_list_accounts` (T20) is the other caller.
+    then has to unwrap twice. `whm_list_accounts` is the other caller.
 
-    **The resolved server's name and id come back with the accounts** (T20, T22). `server_ref`
+    **The resolved server's name and id come back with the accounts**. `server_ref`
     is whatever the operator typed — an id, a hostname, a name in another case — and the tool
     that reports "these are the accounts on X" has to name the machine it actually read, not the
     string it was handed. Resolution already happened here, so returning the answer costs
     nothing; re-reading it in the caller would be a second resolution that could disagree with
     this one. The id is what T22's CHANGE gate persists as evidence, so the change an operator
     approves runs against the machine the card described rather than against a string resolved
-    again minutes later (V33).
+    again minutes later.
 
     **The resolved row's `api_username` and host come back too, for the same reason** (§V106,
     §V108). V106's preflight compare needs `api_username` to check against the account's
@@ -177,13 +177,13 @@ async def fetch_whm_accounts(*, server_ref: str, context: McpToolContext) -> Too
     one carrying the raw string (V86: silence is not evidence).
 
     Only `fetch_whm_accounts` itself carries these two: `whm_list_accounts` and
-    `whm_search_accounts` (T20, T21) pick `accounts` and `server` out of this payload and
+    `whm_search_accounts` pick `accounts` and `server` out of this payload and
     build their own `tool_ok(...)`, so today neither exposed tool forwards `api_username` or
     `host` into a transcript. That is a property of those two callers, not of this function,
     and it is pinned by test rather than assumed.
 
     Three refusals travel back as a payload rather than an exception, all of them information
-    the model can act on (V18, V19):
+    the model can act on:
 
     - the `server_ref` named nothing, or named several things → the resolver's own code, with
       `choices` when it was a tie;
@@ -235,7 +235,7 @@ async def fetch_whm_accounts(*, server_ref: str, context: McpToolContext) -> Too
 
 @sanitize_tool_errors(TOOL_WHM_LIST_ACCOUNTS)
 async def whm_list_accounts(*, server_ref: str, context: McpToolContext) -> ToolAnswer:
-    """Every cPanel account on one WHM server, parked on a page (T20 — V64, V85).
+    """Every cPanel account on one WHM server, parked on a page.
 
     **The rows never enter the transcript.** A dense server carries thousands of accounts, and
     a listing in front of the model costs tokens for a body no human reads there anyway — so
@@ -255,11 +255,11 @@ async def whm_list_accounts(*, server_ref: str, context: McpToolContext) -> Tool
     `listaccts` order is WHM's own and undocumented, so a capped page would otherwise be an
     arbitrary subset that changes between two identical calls (V85, T21's rule).
 
-    A failure comes back as the ordinary envelope, `choices` and all (V18, V19): a `server_ref`
+    A failure comes back as the ordinary envelope, `choices` and all: a `server_ref`
     that named nothing or several things, or a WHM that refused, is information the model can
     act on. A table that cannot be *parked* raises instead, and `sanitize_tool_errors` turns it
     into `result_table_unavailable` — fail-closed, because a result carrying the address of a
-    table that was never stored is a dead link in a transcript that persists (V26).
+    table that was never stored is a dead link in a transcript that persists.
     """
     listed = await fetch_whm_accounts(server_ref=server_ref, context=context)
     if listed.get("ok") is not True:
@@ -290,7 +290,7 @@ def _list_accounts_summary(server: object) -> str:
     """The tool's own one-line answer; the surface adds the counts and the address.
 
     The server is named because an operator with several WHM boxes needs to know which one was
-    read, and `whm_list_servers` already publishes every name to the same transcript (V26). A
+    read, and `whm_list_servers` already publishes every name to the same transcript. A
     resolution that somehow returned no name degrades to the generic sentence rather than
     printing `None` at the top of an operator's page.
     """
@@ -307,7 +307,7 @@ async def whm_search_accounts(
     limit: int = DEFAULT_SEARCH_LIMIT,
     context: McpToolContext,
 ) -> ToolPayload:
-    """Accounts on one WHM server whose username or domain contains `query` (T21).
+    """Accounts on one WHM server whose username or domain contains `query`.
 
     **Filtered here, not by WHM.** `listaccts` takes no search parameter, so the whole list
     comes back and the match runs in this process. That is the ported behaviour and it is also
@@ -318,11 +318,11 @@ async def whm_search_accounts(
 
     Two guards before any I/O, so a malformed call costs no round trip:
 
-    - a blank or whitespace-only `query` is refused (V21). The schema cannot express it —
+    - a blank or whitespace-only `query` is refused. The schema cannot express it —
       `min_length` counts whitespace — so this is the gate, and returning every account for
       `"   "` would be the opposite of a search.
     - `limit` outside 1-100 is refused. The schema bounds it too, and over MCP that is what
-      answers first; this branch is the one that holds for a direct in-process call (C9, V17)
+      answers first; this branch is the one that holds for a direct in-process call
       and it is what makes the bound a property of the tool rather than of its registration.
 
     **Truncation is stated, not implied** (V85, and this tool is where that invariant was
@@ -335,7 +335,7 @@ async def whm_search_accounts(
     reproducible, and `listaccts` order is WHM's own and not documented as stable, which would
     make a truncated answer an arbitrary subset that changes between calls.
 
-    **One field is withheld from the rows** (C8, T22): `suspendreason`. NOA writes the
+    **One field is withheld from the rows**: `suspendreason`. NOA writes the
     operator's approval reason into WHM's suspension note when it suspends an account, and WHM
     returns it on every later `listaccts` — so a search that reported the field would hand the
     model, by round trip, the one string C8 says it must never see. See
@@ -372,7 +372,7 @@ async def whm_search_accounts(
 
 
 def _without_withheld_fields(account: WHMAccount) -> WHMAccount:
-    """One account row as a model may read it (C8, V26).
+    """One account row as a model may read it.
 
     See `ACCOUNT_FIELDS_WITHHELD_FROM_MODEL`. Dropped here rather than in
     `normalize_whm_account_summary`, because the normaliser feeds three callers and only this
@@ -402,7 +402,7 @@ def register_whm_read_tools(server: FastMCP, *, context: McpToolContext) -> dict
         description=DESCRIPTION_WHM_LIST_SERVERS,
         # `readOnlyHint` is the MCP-standard way to say "this cannot change anything". It is
         # a hint to the client and nothing NOA relies on: the READ/CHANGE split that matters
-        # is enforced by the approval gate (V16), not by an annotation a client may ignore.
+        # is enforced by the approval gate, not by an annotation a client may ignore.
         annotations={"readOnlyHint": True},
     )
     async def whm_list_servers_tool() -> ToolPayload:

@@ -1,4 +1,4 @@
-"""Proxmox Mail Gateway integration layer (T18).
+"""Proxmox Mail Gateway integration layer.
 
 Copied from `noa-old` branch `MCP` (`noa_api/pmg/integrations/`) rather than rewritten
 (C13, V69). One transport, and it is SSH: PMG's API is not exposed to NOA, so everything runs
@@ -8,15 +8,15 @@ for PMG and never used them; `core.db.models.PMGServer` dropped both at T4).
 
 Modules:
 
-- `errors`     — `PMGSHCLIError`, a `NoaError` so the one shared handler shapes it (V73).
+- `errors`     — `PMGSHCLIError`, a `NoaError` so the one shared handler shapes it.
 - `ssh`        — `pmg_servers` row → pinned `SSHConnectionConfig`, with the four refusals that
                  happen before a socket opens. Stricter host validation than WHM's, because PMG
                  stores a bare host that nothing has parsed.
 - `pmgsh_cli`  — build and run `pmgsh` / `pmgconfig` over SSH: argv-only, `TERM=dumb`,
-                 `sudo -n` iff the resolved user is not root (V55), and the two success
+                 `sudo -n` iff the resolved user is not root, and the two success
                  predicates PMG needs (a mutation reports `200 OK` in its output, not its exit
                  code).
-- `mynetworks` — that command output → normalised CIDR entries (T31, V59). `1.2.3.4` and
+- `mynetworks` — that command output → normalised CIDR entries. `1.2.3.4` and
                  `1.2.3.4/32` are one whitelist entry, so both the operator's target and every
                  stored line are normalised before anything is compared.
 
@@ -26,10 +26,10 @@ resolves once, closes its database session, and only then reaches the box (T21's
 change T24 made on the WHM side). A row that cannot produce a usable config is refused by the
 caller, where the refusal names the PMG server.
 
-`mynetworks` is the only PMG endpoint this layer touches (V58). Everything it exposes is a read
+`mynetworks` is the only PMG endpoint this layer touches. Everything it exposes is a read
 or a write against `/config/mynetworks`, plus the version probe T54's validate route uses.
 
-Consumers: the PMG READ tools `pmg_whitelist_search` (T31) and `pmg_whitelist_list` (T30),
+Consumers: the PMG READ tools `pmg_whitelist_search` and `pmg_whitelist_list`,
 which share one read of `mynetworks` and differ only in what they do with the entries; the
 CHANGE tool `pmg_whitelist` (T29, still to come); and the admin server CRUD + validate routes
 (T54). Reference doc: `docs/integrations/pmg.md`.

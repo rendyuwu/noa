@@ -1,4 +1,4 @@
-"""SQL behind the RBAC engine (T9, V10, V11, V13).
+"""SQL behind the RBAC engine.
 
 Ported from `noa-old` branch `MCP` (`core/auth/authorization_repository.py` +
 `role_repository.py`, C13). Two departures:
@@ -8,18 +8,18 @@ Ported from `noa-old` branch `MCP` (`core/auth/authorization_repository.py` +
    per-user grants. V75 disables direct grants (410, T65), so those paths are gone. What
    survives is the *preservation* rule: `replace_user_assignable_roles` never touches a
    `user:`-prefixed assignment, because internal roles are NOA's own bookkeeping and an
-   admin replacing a user's roles must not clear them (V13, V75).
+   admin replacing a user's roles must not clear them.
 2. **The three shared role operations are delegated, not copied.** `ensure_role` and
    `get_role_names` already exist on `SQLAuthRepository` (T8 put them there precisely so
    T9 could read them, V66). `noa-old` used a mixin; composition keeps T8's class
    untouched and reads the same.
 
 Every method takes the caller's `AsyncSession` and flushes rather than commits, so a role
-rename and everything that follows it land together or not at all. `commit()` (T51) is the
+rename and everything that follows it land together or not at all. `commit()` is the
 one method that ends the transaction, and `AuthorizationService` is its only caller: T9
 shipped without it because it had no HTTP caller, which meant the first route to reach this
 class would have answered 200 and persisted nothing. `SQLAuthRepository.commit` is the same
-method one taxonomy over, for the same reason (T8).
+method one taxonomy over, for the same reason.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ from core.db.models import (
     UserRole,
 )
 
-# `LIKE 'user:%'` — the pattern for "is an internal role" (V13, V75).
+# `LIKE 'user:%'` — the pattern for "is an internal role".
 _INTERNAL_ROLE_PATTERN = f"{INTERNAL_ROLE_PREFIX}%"
 
 
@@ -49,7 +49,7 @@ class SQLAuthorizationRepository:
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
-        # Composition, not duplication (V66): T8 owns these three queries.
+        # Composition, not duplication: T8 owns these three queries.
         self._auth_repository = SQLAuthRepository(session)
 
     # --- Reads on the permission path ---
@@ -90,14 +90,14 @@ class SQLAuthorizationRepository:
         return list(result.scalars().all())
 
     async def list_user_ids_with_role(self, role_name: str) -> list[UUID]:
-        """Ids of the users holding `role_name` — T66's notification audience (V74).
+        """Ids of the users holding `role_name` — T66's notification audience.
 
         Not a permission read, despite the shape: nothing decides anything from this. It
         answers "whose tool catalog did a grant change move?", so the emit reaches the
         operators it concerns rather than every open session.
 
         No `is_active` filter, and no join to `users` at all. A disabled operator holds no
-        permissions (V11) but may still hold a live MCP session until their next request, and
+        permissions but may still hold a live MCP session until their next request, and
         their catalog moved too — telling them is the point. Filtering here would make the
         emit's audience disagree with the set of sessions that could be showing stale rows.
 
@@ -114,7 +114,7 @@ class SQLAuthorizationRepository:
     # --- Roles and grants ---
 
     async def list_assignable_role_names(self) -> list[str]:
-        """Roles an admin may assign: everything except internal `user:` roles (V13)."""
+        """Roles an admin may assign: everything except internal `user:` roles."""
         result = await self._session.execute(
             select(Role.name)
             .where(~Role.name.like(_INTERNAL_ROLE_PATTERN))
@@ -134,7 +134,7 @@ class SQLAuthorizationRepository:
         """Delete the role. False when it did not exist.
 
         Its grants and assignments go with it through the `ON DELETE CASCADE` on
-        `role_tool_permissions.role_id` and `user_roles.role_id` (T4), so no orphan grant
+        `role_tool_permissions.role_id` and `user_roles.role_id`, so no orphan grant
         can later resolve for a role nobody holds.
         """
         result = await self._session.execute(select(Role).where(Role.name == role_name))
@@ -190,7 +190,7 @@ class SQLAuthorizationRepository:
 
         The delete is scoped by a subquery on the role table rather than by the names
         passed in, so a `user:` assignment survives replacement even when the caller sends
-        an empty list (V13, V75).
+        an empty list.
 
         Names that do not resolve to a role are skipped, not inserted as dangling
         assignments; `AuthorizationService` rejects them up front with `UnknownRoleError`,
@@ -241,7 +241,7 @@ class SQLAuthorizationRepository:
         return user
 
     async def count_active_admin_users(self) -> int:
-        """How many active users hold `admin` (V12).
+        """How many active users hold `admin`.
 
         `DISTINCT` on the user id: the join multiplies rows per matching role, and without
         it a user holding `admin` twice — impossible today, cheap to be wrong about
@@ -258,7 +258,7 @@ class SQLAuthorizationRepository:
     async def delete_user(self, user_id: UUID) -> bool:
         """Delete the user. False when the row was already gone.
 
-        Role assignments and MCP tokens cascade from the foreign keys (T4). The session
+        Role assignments and MCP tokens cascade from the foreign keys. The session
         cookie does not: V6 records that a session JWT cannot be revoked before `exp`,
         which is why `AuthService.resolve_session_user` treats a missing row as
         `session_invalid` on the next request.
@@ -272,15 +272,15 @@ class SQLAuthorizationRepository:
         return True
 
     async def delete_mcp_tokens_for_user(self, user_id: UUID) -> int:
-        """Revoke every MCP token this operator holds; return how many (V4, T11).
+        """Revoke every MCP token this operator holds; return how many.
 
         Called when an admin disables the account. `is_active=False` already zeroes their
-        permissions (V11) and the verify path already refuses them (V1), so this is not
+        permissions and the verify path already refuses them, so this is not
         what stops them acting — it is what makes the credential itself dead, so a token
         pasted into a LibreChat config cannot come back to life the day someone re-enables
         the row for an unrelated reason.
 
-        A plain `DELETE`, matching T10: revocation is the row's absence (V2). Flushed, not
+        A plain `DELETE`, matching T10: revocation is the row's absence. Flushed, not
         committed — the disable, this revoke and the audit event share the request's
         transaction, so a failure part-way leaves none of the three.
         """
@@ -288,7 +288,7 @@ class SQLAuthorizationRepository:
         await self._session.flush()
         return int(result.rowcount or 0)
 
-    # --- Transaction boundary (T51) ---
+    # --- Transaction boundary ---
 
     async def commit(self) -> None:
         """End the transaction every method above flushed into.

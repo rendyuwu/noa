@@ -3,7 +3,7 @@
 Three claims live here because they are claims about **SQL**, and a check made after the rows
 arrive would leave every payload test green while being no check at all:
 
-- every filter lands in the `WHERE` (V93). One applied after the fetch also breaks paging, because
+- every filter lands in the `WHERE`. One applied after the fetch also breaks paging, because
   the `LIMIT` would have cut rows the filter was about to remove and the page would come back
   short while `nextCursor` insisted there was more;
 - the order carries its tie-break, `created_at DESC, id DESC` (V92(c));
@@ -73,8 +73,8 @@ FILTER_COLUMNS: tuple[tuple[str, str], ...] = (
 )
 
 # The reads the surface may make, taken off the Protocol rather than hand-listed, so a method
-# added there and not driven below is caught by name (V119). `vars()` rather than
-# `__protocol_attrs__`: that attribute arrived in Python 3.12 and this project pins `<3.13` (C1),
+# added there and not driven below is caught by name. `vars()` rather than
+# `__protocol_attrs__`: that attribute arrived in Python 3.12 and this project pins `<3.13`,
 # so the attribute lookup would fall back to an empty set and the comparison would pass vacuously
 # — the exact defect this binding exists to close.
 PROTOCOL_METHODS: frozenset[str] = frozenset(
@@ -176,7 +176,7 @@ def test_the_email_filter_escapes_its_like_metacharacters() -> None:
     """A bare `%` must not widen the filter to the whole trail while the response reads as filtered.
 
     The escaping itself is `core.audit.tool_run_reads.escape_like`, shared rather than written
-    twice (V66); what is asserted here is that this statement uses it. `test_tool_run_audit_read.py`
+    twice; what is asserted here is that this statement uses it. `test_tool_run_audit_read.py`
     owns the escaper's own behaviour and the live file settles it against Postgres.
     """
     sql = page_sql(requested_by_email="a%b")
@@ -372,7 +372,7 @@ async def test_the_reader_never_commits() -> None:
 async def test_the_recording_session_would_catch_a_commit() -> None:
     """The negative control for the test above.
 
-    An assertion nobody watched fail is not evidence (V119). `commit` is reached for here on the
+    An assertion nobody watched fail is not evidence. `commit` is reached for here on the
     same object the reader was handed, and it is recorded — so the green above is green because
     the reader did not call it, not because the instrument cannot see one.
     """

@@ -3,13 +3,13 @@
 Three routes, and the asymmetry between them is the design:
 
 - `POST /auth/login` — the only route that authenticates. The session token leaves in
-  an httpOnly cookie and **not** in the response body (V8): a body-borne token is
+  an httpOnly cookie and **not** in the response body: a body-borne token is
   reachable from JavaScript, which is the whole reason V6 specifies httpOnly.
 - `POST /auth/logout` — no dependencies at all. V6 makes logout idempotent and callable
   without authentication, so requiring a valid session here would mean an operator whose
   token just expired cannot clear their own cookie.
 - `GET /auth/me` — cookie-only, and it re-reads the row through
-  `deps.require_session_user` (V6).
+  `deps.require_session_user`.
 
 Failures raise `AuthError` subclasses; `api.errors` owns the status mapping and the
 body shape, so no route here builds an `HTTPException`.
@@ -46,7 +46,7 @@ class LoginRequest(BaseModel):
 
 
 class SessionUserResponse(BaseModel):
-    """Who the caller is. Carries no token and no credential (V8)."""
+    """Who the caller is. Carries no token and no credential."""
 
     id: str
     email: str
@@ -79,7 +79,7 @@ async def login(
     auth_service: AuthServiceDep,
     jwt_service: JWTServiceDep,
 ) -> SessionResponse:
-    """LDAP authenticate → provision/activate → set the session cookie (V6, V7, V9).
+    """LDAP authenticate → provision/activate → set the session cookie.
 
     Rejections all travel as `AuthError`: 429 with `Retry-After` when rate limited, 401
     for bad credentials, 403 when NOA has not activated the row, 503 when the directory
@@ -100,7 +100,7 @@ async def login(
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(jwt_service: JWTServiceDep) -> Response:
-    """Clear the session cookie (V6).
+    """Clear the session cookie.
 
     No session dependency and no DB access: idempotent, and it works for a caller whose
     token already expired — that operator most needs the stale cookie gone.
@@ -117,7 +117,7 @@ async def logout(jwt_service: JWTServiceDep) -> Response:
 
 @router.get("/me", response_model=SessionResponse)
 async def me(current_user: SessionUserDep) -> SessionResponse:
-    """Current operator, read fresh from the database on every call (V6).
+    """Current operator, read fresh from the database on every call.
 
     Cookie-only per I.admin-api. The row read is in `require_session_user`, shared with
     every other session-authed route so the check cannot be forgotten on one of them.

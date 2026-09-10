@@ -1,9 +1,9 @@
-"""`SQLMcpTokenRepository` against a live database (T10 — C5, V2).
+"""`SQLMcpTokenRepository` against a live database.
 
 `test_mcp_token_service.py` covers policy with in-memory doubles; this covers the SQL.
 Anything asserted here is something a fake cannot tell you: that the row really holds only
 a digest, that the scoped delete really deletes, that `ON DELETE CASCADE` from `users`
-(T4) really takes the tokens with it, and that ordering really comes from the column.
+really takes the tokens with it, and that ordering really comes from the column.
 
 A scratch database is created, migrated with `alembic upgrade head`, and dropped — skipped
 (never failed) when Postgres is unreachable, exactly as the other repository tests do.
@@ -11,7 +11,7 @@ A scratch database is created, migrated with `alembic upgrade head`, and dropped
 One end-to-end case sits at the bottom: the real `McpTokenService` over this repository, so
 V2's mint→list→revoke cycle is proved once against real SQL and not only against a double.
 
-Below that, the two cases T53 added (V100). They are here rather than with the route tests
+Below that, the two cases T53 added. They are here rather than with the route tests
 because the property is invisible to a double: an in-memory repository cannot roll back, so
 "flushed" and "committed" read identically. Only a second connection separates them, and that
 is what B10 turned out to hinge on.
@@ -142,7 +142,7 @@ async def test_insert_leaves_the_tofu_and_usage_columns_null(
 async def test_duplicate_hash_is_refused_by_the_unique_constraint(
     session: AsyncSession, repository: SQLMcpTokenRepository
 ) -> None:
-    """`uq_mcp_tokens_token_hash` (T4): one digest resolves to at most one operator."""
+    """`uq_mcp_tokens_token_hash`: one digest resolves to at most one operator."""
     user = await make_user(session, EMAIL)
     digest = hash_mcp_token(generate_mcp_token())
     await repository.insert(
@@ -261,7 +261,7 @@ async def test_delete_of_a_missing_token_returns_false(
 async def test_deleting_the_user_deletes_their_tokens(
     session: AsyncSession, repository: SQLMcpTokenRepository
 ) -> None:
-    """`ON DELETE CASCADE` (T4): no token may outlive the operator it authenticates."""
+    """`ON DELETE CASCADE`: no token may outlive the operator it authenticates."""
     user = await make_user(session, EMAIL)
     await repository.insert(
         user_id=user.id,
@@ -278,7 +278,7 @@ async def test_deleting_the_user_deletes_their_tokens(
     assert count.scalar_one() == 0
 
 
-# --- End to end over real SQL (V2) ---
+# --- End to end over real SQL ---
 
 
 async def test_service_mints_lists_and_revokes_over_real_sql(session: AsyncSession) -> None:
@@ -310,7 +310,7 @@ async def test_service_mints_lists_and_revokes_over_real_sql(session: AsyncSessi
     assert await service.list_for_user(user.id) == []
 
 
-# --- T53: the transaction boundary, with a witness (V100) ---
+# --- T53: the transaction boundary, with a witness ---
 
 
 async def test_commit_makes_a_mint_outlive_the_request(

@@ -1,4 +1,4 @@
-"""`/admin/roles` and `/admin/tools` over HTTP (T52 — V6, V8, V10, V13, V14, V73, V75, V100).
+"""`/admin/roles` and `/admin/tools` over HTTP.
 
 `test_rbac_engine.py` owns the policy: what the role-name validator accepts, what the reserved
 `admin` role refuses, how a grant set is normalized. This file owns what only a request can
@@ -15,7 +15,7 @@ asserted against Postgres in
 
 **`last_active_admin` cannot reach these routes at all**, unlike T51's: no role route touches a
 user's admin status. The nearest thing, deleting the `admin` role itself, is refused earlier by
-`reserved_role` (V13).
+`reserved_role`.
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ from support.admin import (
 from support.rbac import INTERNAL_ROLE, ROLE_NOC, ROLE_SUPPORT, TOOL_CHANGE, TOOL_READ, TOOL_UNKNOWN
 
 # The six routes T52 ships, as (method, path template, body). Parametrized rather than repeated
-# so a seventh route added without its own gate test fails the ones below (V13).
+# so a seventh route added without its own gate test fails the ones below.
 ROUTES: tuple[tuple[str, str, dict[str, Any] | None], ...] = (
     ("GET", ROLES_PATH, None),
     ("POST", ROLES_PATH, {"name": ROLE_NOC}),
@@ -144,7 +144,7 @@ def test_a_disabled_admin_loses_the_role_routes_on_the_next_request() -> None:
     assert response.json()["error_code"] == "user_pending_approval"
 
 
-# --- GET /admin/roles (V13, V75) ---
+# --- GET /admin/roles ---
 
 
 def test_the_list_carries_assignable_roles_and_admin() -> None:
@@ -176,7 +176,7 @@ def test_the_list_omits_internal_roles() -> None:
 def test_the_wire_shapes_are_the_ones_the_panel_reads() -> None:
     """§I.admin-api, field for field: `{roles}`, `{name}`, `{tools}`, `{ok}`.
 
-    The ported panel (T48) already parses these, so a renamed key is a broken page rather than
+    The ported panel already parses these, so a renamed key is a broken page rather than
     a caught type error — its reader is `roles-api.ts`, not a generated client.
     """
     with admin_harness() as harness:
@@ -192,7 +192,7 @@ def test_the_wire_shapes_are_the_ones_the_panel_reads() -> None:
         assert set(harness.client.get(TOOLS_PATH).json()) == {"tools"}
 
 
-# --- POST /admin/roles (V13, V14) ---
+# --- POST /admin/roles ---
 
 
 def test_a_created_role_is_in_the_next_list() -> None:
@@ -299,7 +299,7 @@ def test_the_admin_role_reports_the_whole_catalog() -> None:
         assert harness.repository.role_tools.get(ADMIN_ROLE_NAME) is None
 
 
-# --- DELETE /admin/roles/{name} (V13, V14) ---
+# --- DELETE /admin/roles/{name} ---
 
 
 def test_deleting_a_role_removes_it_and_its_assignments() -> None:
@@ -331,7 +331,7 @@ def test_deleting_an_absent_role_is_404() -> None:
     assert response.json()["error_code"] == "admin_role_not_found"
 
 
-# --- GET/PUT /admin/roles/{name}/tools (V10, V13, V14) ---
+# --- GET/PUT /admin/roles/{name}/tools ---
 
 
 def test_the_grant_set_is_read_back_as_stored() -> None:
@@ -420,12 +420,12 @@ def test_a_malformed_role_name_is_400_not_404_on_the_grant_routes(method: str) -
     assert response.json()["error_code"] == "invalid_role_name"
 
 
-# --- GET /admin/tools (V10) ---
+# --- GET /admin/tools ---
 
 
 def test_the_tools_route_answers_the_catalog() -> None:
     """The vocabulary `PUT .../tools` validates against, read off the same set — so what the
-    allowlist editor offers and what the service accepts cannot drift (V66)."""
+    allowlist editor offers and what the service accepts cannot drift."""
     with admin_harness() as harness:
         harness.sign_in()
 
@@ -493,7 +493,7 @@ def test_every_mutating_role_route_commits_once(
     method: str, path: str, body: dict[str, Any] | None, event_type: str, target: str
 ) -> None:
     """V100: `get_db_session` never commits, so a write that does not end its transaction
-    answers 200 over a rollback (B10). One commit per request, not one per statement."""
+    answers 200 over a rollback. One commit per request, not one per statement."""
     with admin_harness() as harness:
         harness.sign_in()
         harness.grant(ROLE_SUPPORT)

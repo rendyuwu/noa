@@ -1,4 +1,4 @@
-"""`action_requests` table and the decision enum (T34, V20, V32, V33, V43).
+"""`action_requests` table and the decision enum.
 
 Two levels, for two different claims:
 
@@ -184,7 +184,7 @@ def test_status_is_a_checked_varchar_not_a_native_postgres_enum() -> None:
 
 
 def test_status_defaults_to_pending() -> None:
-    """The gate (T33) inserts before anyone has decided anything, so PENDING is truthful.
+    """The gate inserts before anyone has decided anything, so PENDING is truthful.
 
     A server-side default, not an ORM-side one: V23 reads this column as the authorization,
     and a row that reached the table by any route must not read as APPROVED.
@@ -234,7 +234,7 @@ def test_decided_at_is_nullable_and_is_the_only_mutation_timestamp() -> None:
 
 
 def test_the_link_to_a_run_lives_here_and_only_here() -> None:
-    """One edge, one column (T38).
+    """One edge, one column.
 
     NULL until an approval starts a run, and NULL forever on deny or expiry. `tool_runs`
     deliberately has no `action_request_id` pointing back — two columns describing one
@@ -252,7 +252,7 @@ def test_the_link_to_a_run_lives_here_and_only_here() -> None:
 def test_both_foreign_keys_set_null_rather_than_cascading() -> None:
     """The decision record outlives its subjects.
 
-    `noa-old` cascaded the requester. Here an approved CHANGE is an audit artifact (V46)
+    `noa-old` cascaded the requester. Here an approved CHANGE is an audit artifact
     and T36's receipts hang off this row, so a cascade would let one user deletion erase
     both the record of what was authorised and the receipt proving it ran. Fails closed
     against V27: NULL matches no caller, so a requester-match lookup 404s.
@@ -267,7 +267,7 @@ def test_conversation_ref_is_a_nullable_label() -> None:
     """DECISIONS §3.2: an audit/grouping label, never a security scope.
 
     Same column and same caveat as `tool_runs.conversation_ref` — LibreChat sends no
-    conversation id in the call, so it arrives as an optional header (R27, R28) and is
+    conversation id in the call, so it arrives as an optional header and is
     absent whenever the operator's YAML does not supply one.
     """
     conversation_ref = ACTION_REQUESTS.c.conversation_ref
@@ -448,7 +448,7 @@ async def test_a_request_cannot_be_created_without_a_deadline(session: AsyncSess
 async def test_an_approval_records_reason_decision_time_and_run(session: AsyncSession) -> None:
     """V15, V28, T38: the full APPROVED shape survives a round trip.
 
-    The reason arrives here and nowhere else (C8) — the column is NULL at insert and holds
+    The reason arrives here and nowhere else — the column is NULL at insert and holds
     the operator's own words after the decision.
     """
     user_id = await insert_user(session, "operator@example.com")
@@ -563,7 +563,7 @@ async def test_database_refuses_a_decided_row_without_a_reason(
 
 
 async def test_a_decided_row_with_a_reason_is_accepted(session: AsyncSession) -> None:
-    """The negative control for the case above (V87).
+    """The negative control for the case above.
 
     A constraint that refused everything would pass every parametrisation there while
     breaking every real approval, and nothing in that test could tell the difference.

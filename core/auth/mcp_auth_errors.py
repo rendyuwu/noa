@@ -1,4 +1,4 @@
-"""MCP authentication denial taxonomy (T11, C5, C20, V2, V3, V4).
+"""MCP authentication denial taxonomy.
 
 A fourth taxonomy alongside `core.auth.errors` (session login), `core.auth.errors`'
 authorization sibling `core.auth.authorization_errors` (RBAC), and
@@ -6,7 +6,7 @@ authorization sibling `core.auth.authorization_errors` (RBAC), and
 justifying, because both modules are about `mcp_tokens`:
 
 - `mcp_token_errors` answers *"does this row exist for this admin operation?"* — raised by
-  mint/list/revoke (T10), read by the admin panel.
+  mint/list/revoke, read by the admin panel.
 - this module answers *"may this presented bearer act right now?"* — raised on the MCP
   request path, one class per distinguishable denial.
 
@@ -23,20 +23,20 @@ binding indistinguishable in the logs, and those two have completely different r
 Deliberately NOT here: `LdapUnavailableError` (`core.auth.errors`). V4 says a directory
 outage fails closed *without* concluding anything about the user, and that class already
 carries the retry-friendly message and the 503 mapping. Inventing an MCP-flavoured copy
-would be two classes for one condition (V66).
+would be two classes for one condition.
 
 Statuses live in `noa_api.api.errors`. 401 for "this credential does not authenticate you",
 403 for "it does, and you still may not act" — re-presenting the token changes nothing for
 a disabled operator or one the directory has dropped — and 429 for "stop asking", the one
-answer that is about the caller's rate rather than their credential (T12, V9).
+answer that is about the caller's rate rather than their credential.
 
 V2/V8 throughout: no message and no `detail` in this module carries a token plaintext, a
 digest, or a prefix. `detail` names ids and reasons, and stays in the logs.
 
 Who raises what: `core.auth.mcp_identity.McpIdentityResolver`, in gate order, plus
 `McpAuthRateLimitedError` from `core.auth.mcp_auth_rate_limiter` before the gates run.
-`verify_token` (T11) turns every one of these into `None`, because the fastmcp/SDK contract
-has no body hook (R2); `noa_api.mcp_request_auth.McpAuthErrorMiddleware` (T12) is what puts
+`verify_token` turns every one of these into `None`, because the fastmcp/SDK contract
+has no body hook; `noa_api.mcp_request_auth.McpAuthErrorMiddleware` is what puts
 the code in the response body.
 """
 
@@ -70,7 +70,7 @@ class McpTokenMissingError(McpAuthError):
 
 
 class McpTokenInvalidError(McpAuthError):
-    """No `mcp_tokens` row for the presented digest (V2).
+    """No `mcp_tokens` row for the presented digest.
 
     One message for "never existed", "mistyped" and "revoked": revocation is a row delete
     (V2), so after the fact NOA genuinely cannot tell them apart, and a message that
@@ -82,11 +82,11 @@ class McpTokenInvalidError(McpAuthError):
 
 
 class McpTokenExpiredError(McpAuthError):
-    """The row exists but `expires_at` has passed (C5).
+    """The row exists but `expires_at` has passed.
 
     Split from `McpTokenInvalidError` so an operator whose token simply aged out is told to
     re-mint rather than sent hunting for a typo. Only reachable when
-    `MCP_TOKEN_TTL_SECONDS` is configured — the default mints non-expiring tokens (V2).
+    `MCP_TOKEN_TTL_SECONDS` is configured — the default mints non-expiring tokens.
     """
 
     error_code: str = "mcp_token_expired"
@@ -94,7 +94,7 @@ class McpTokenExpiredError(McpAuthError):
 
 
 class LibreChatUserHeaderMissingError(McpAuthError):
-    """`X-Noa-LibreChat-User` absent (C20, C24, V3).
+    """`X-Noa-LibreChat-User` absent.
 
     Required for bound *and* unbound tokens: C24 makes LibreChat the sole client, so a
     request without the header is not a client NOA supports rather than a client that has
@@ -108,7 +108,7 @@ class LibreChatUserHeaderMissingError(McpAuthError):
 
 
 class LibreChatUserMismatchError(McpAuthError):
-    """Token bound to a different `librechat_user_id` (C20, V3).
+    """Token bound to a different `librechat_user_id`.
 
     The TOFU failure that matters: the token authenticated, but it is pinned to another
     LibreChat account, which is what a copied credential looks like. Code string fixed by
@@ -124,7 +124,7 @@ class LibreChatUserMismatchError(McpAuthError):
 
 
 class McpUserInactiveError(McpAuthError):
-    """`users.is_active` is False (V1, V11).
+    """`users.is_active` is False.
 
     403, not 401: the credential is genuine and re-presenting it changes nothing. Same
     condition the session path reports as `user_pending_approval`, but with its own code —
@@ -137,7 +137,7 @@ class McpUserInactiveError(McpAuthError):
 
 
 class McpUserNotInDirectoryError(McpAuthError):
-    """LDAP no longer has the operator, or has them disabled (C4, V4).
+    """LDAP no longer has the operator, or has them disabled.
 
     Employment ended, so this is terminal and NOA cannot override it. Raised only *after*
     the cascade revoke has committed, so the message is accurate: by the time anyone reads
@@ -152,7 +152,7 @@ class McpUserNotInDirectoryError(McpAuthError):
 
 
 class McpAuthRateLimitedError(RetryAfterMixin, McpAuthError):
-    """Too many failed MCP authentications for this client or token (V9, T12).
+    """Too many failed MCP authentications for this client or token.
 
     429, and the only class here that is not a verdict about the credential: the token
     presented may well be fine, and the caller is being told to stop asking for a while.

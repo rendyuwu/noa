@@ -1,18 +1,18 @@
-"""A Proxmox VM that answers the password-reset workflow, and the calls into it (T27, T69).
+"""A Proxmox VM that answers the password-reset workflow, and the calls into it.
 
 `support/proxmox.py` owns the client-level double — a `ProxmoxClient` over an
 `httpx.MockTransport` — which is what `test_proxmox_client*.py` need. This owns what a *tool*
 test needs: a VM with state that the reset workflow actually changes, the two call helpers for
 the tool and its runner, and the fixture shapes both lanes share. Its own module because those
 lanes are two test files, split so neither runs past C14's line budget, and helpers duplicated
-across files are helpers that drift (V66).
+across files are helpers that drift.
 
 **`FakeProxmoxVM` holds state rather than replaying canned answers**, and that is what makes the
 happy path worth running. Writing `cipassword` recomputes the VM's stored crypt hash with the
 **real** `crypt(3)`, so the rendered user-data the runner then reads is a document the real
 `verify_cloudinit_password` really has to agree with. A fixture that returned a pre-baked
 "matching" dump would make the crypt compare a formality and would pass with the comparison
-deleted (V87).
+deleted.
 
 Every knob is a *failure* knob, and each names one step of the workflow, because what the runner
 tests are actually about is which failure ships the yopass URL and which does not.
@@ -215,7 +215,7 @@ def reset_context(
     """A tool context whose Proxmox endpoint is reachable only through `vm`.
 
     The row's `api_token_secret` is real ciphertext under the fixture's own cipher, so the
-    production decrypt site runs on the way to every call (C7, T15) — a plaintext-shaped literal
+    production decrypt site runs on the way to every call — a plaintext-shaped literal
     would let the client work with the one thing this path is supposed to exercise removed.
     """
     box = vm or FakeProxmoxVM()
@@ -238,7 +238,7 @@ async def reset(
     """Call the tool inside a real request context; return its answer and the caller's id.
 
     The context is not decoration: `open_change_request` reads the requester from the
-    authenticated identity rather than from an argument (V23, V27), so a call outside it would be
+    authenticated identity rather than from an argument, so a call outside it would be
     asserting against an identity the test planted.
     """
     user, resolved = authenticated_caller()

@@ -1,27 +1,27 @@
 """Admin audit: query the `tool_runs` trail (T55, I.admin-api — V45, V47).
 
 **Two routes, read-only, and there is nothing here to decide.** The audit trail is append-only by
-construction — its writers are the MCP tool path (T73) and the approval executor (T37, T38) — so
+construction — its writers are the MCP tool path and the approval executor — so
 this router has no POST, no PATCH and no DELETE, and the service behind it can write nothing at
 all (`core.audit.tool_run_reads`: no `commit`, no statement that is not a `SELECT`). That is the
 same split T56's table surface makes, and the reason a prompt-injected tool name can never reach
 this file: the MCP mount cannot see it.
 
 **`require_admin` is a parameter on both handlers**, not a router dependency, for the reason
-`admin_users.py` gives: the gate and the actor are one read (V13), and it inherits V6's row
+`admin_users.py` gives: the gate and the actor are one read, and it inherits V6's row
 re-read with it, so a demoted or disabled admin loses these routes on their next request rather
 than at cookie expiry.
 
 **This closes V45's last clause.** "Every MCP READ writes a `tool_runs` row … queryable in admin
 audit" — the row has been written since T73 and until now nothing could ask about it, which made
-half that invariant prose (V69). `test_admin_audit_live.py` reads a row written by the real writer
+half that invariant prose. `test_admin_audit_live.py` reads a row written by the real writer
 through the real reader, which is the only shape that proves the clause rather than agreeing with
 it.
 
 **Nothing here redacts, and nothing here un-redacts.** `args` and `result_summary` were redacted
 by their writers (`noa_api.mcp_audit.redacted_args`; `core.approvals.decisions` passes
 `redacted_arguments`), so what this surface serves is what was stored. A second redactor on the
-read would be a quieter second home for one rule (V66) — see the module docstring in
+read would be a quieter second home for one rule — see the module docstring in
 `core.audit.tool_run_reads`.
 
 **Query params are camelCase, the body is camelCase, and both are the panel's spelling.** Unlike
@@ -59,16 +59,16 @@ router = APIRouter(prefix="/admin/audit", tags=["admin", "audit"])
 
 
 class AuditToolRunListItemResponse(BaseModel):
-    """One run in the list (V47).
+    """One run in the list.
 
     Every field V47 names except `args`: a fifty-row page would otherwise carry fifty JSONB
     payloads to draw five columns, and the arguments are one click away on the detail route.
 
-    `risk` and `status` are separate fields because they are separate columns (V20) — that is what
+    `risk` and `status` are separate fields because they are separate columns — that is what
     makes a *failed READ* representable, and this list is where an operator sees one.
 
     `conversationRef` is `null` unless `librechat.yaml` supplies the header T57 writes: the tool
-    call carries no conversation id (R27), and the label is a grouping aid, never a scope.
+    call carries no conversation id, and the label is a grouping aid, never a scope.
     """
 
     toolRunId: str
@@ -100,7 +100,7 @@ class AuditToolRunDetailResponse(AuditToolRunListItemResponse):
 
     `args` is a loose type on purpose — the keys are whichever tool's own parameters, so a model
     that flattened them here would have to be widened by every tool ever added. `{}` means the
-    call took no arguments; the column's server default says the same thing (T35), because "took
+    call took no arguments; the column's server default says the same thing, because "took
     none" and "not recorded" must not read alike in an audit view.
 
     One key in there is **not** a parameter: an approved CHANGE that acts as a named credential
@@ -111,7 +111,7 @@ class AuditToolRunDetailResponse(AuditToolRunListItemResponse):
     `api_username`, which today is every tool but the WHM account pair: a firewall or Proxmox
     change records the machine it acted on and no identity, and a block labelled `credential`
     holding a machine name would be worse than no block. Never the API token, which is redacted
-    by key name before any write and is not on that whitelist in the first place (V8).
+    by key name before any write and is not on that whitelist in the first place.
 
     `requestedByUserId` is `null` once the operator's row is deleted (`SET NULL`, T35) — the run
     survives its requester, which is the whole reason that FK is not a cascade.
@@ -135,17 +135,17 @@ async def list_tool_runs(
     created_from: Annotated[datetime | None, Query(alias="from")] = None,
     created_to: Annotated[datetime | None, Query(alias="to")] = None,
 ) -> AuditToolRunListResponse:
-    """Tool runs, newest first, filtered and cursor-paged (T55 — V45, V47).
+    """Tool runs, newest first, filtered and cursor-paged.
 
     READ and CHANGE alike: `risk` filters, it does not scope, so the default answer is the whole
-    trail. Every filter is applied inside the statement (V93) — one applied after the fetch would
+    trail. Every filter is applied inside the statement — one applied after the fetch would
     also break paging, because the `LIMIT` would have cut rows the filter was about to remove and
     the page would come back short while `nextCursor` claimed there was more.
 
     `limit` is bounded here *and* in the service: this route is one caller, and a ceiling that only
     a query-string validator holds is one a future caller does not have.
 
-    Refusals: 403 (V13), 422 for an out-of-range `limit` or an unknown `status`/`risk`, 400
+    Refusals: 403, 422 for an out-of-range `limit` or an unknown `status`/`risk`, 400
     `invalid_audit_cursor` for a token that does not decode.
     """
     del admin_user

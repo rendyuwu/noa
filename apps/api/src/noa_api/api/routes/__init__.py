@@ -1,4 +1,4 @@
-"""Route modules: `auth` (T8), `action_requests` (T37, T41), `result_tables` (T56).
+"""Route modules: `auth`, `action_requests`, `result_tables`.
 
-`admin` (T51-T55) next.
+`admin` next.
 """

@@ -1,4 +1,4 @@
-"""The CSRF token that guards a decision POST (T37 — V22, V39, V79, V87).
+"""The CSRF token that guards a decision POST.
 
 V39 says the token is server-minted, signed and session-bound, and that a double-submit
 cookie is not enough. Each of those is a separate claim and each gets its own case here:
@@ -159,7 +159,7 @@ def test_malformed_tokens_are_refused(settings, token: str) -> None:
 
 
 def test_a_token_signed_with_the_raw_session_secret_is_refused(settings) -> None:
-    """Domain separation is real, not a comment (V39).
+    """Domain separation is real, not a comment.
 
     The key is `HMAC(jwt_secret, CSRF_KEY_LABEL)`. This mints the same message under the raw
     `jwt_secret` — what an attacker who learned the session secret's *use* but not the label
@@ -235,7 +235,7 @@ def test_a_token_past_the_ttl_is_refused(settings) -> None:
 
 
 def test_the_ttl_follows_the_configured_pending_window(settings) -> None:
-    """One number, not two (V32). A CSRF lifetime of its own would drift from the request's.
+    """One number, not two. A CSRF lifetime of its own would drift from the request's.
 
     Asserted by *changing* the setting: a token that is stale under a 60-second window is
     fresh under an hour-long one, with nothing else different.

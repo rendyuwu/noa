@@ -1,4 +1,4 @@
-"""`SQLAuthorizationRepository` against a live database (T9).
+"""`SQLAuthorizationRepository` against a live database.
 
 `test_rbac_engine.py` covers policy with in-memory doubles; this covers the SQL. Anything
 asserted here is something a fake cannot tell you: that replacing a role's grants really
@@ -101,7 +101,7 @@ async def make_user(
     return user
 
 
-# --- Grant reads (V10) ---
+# --- Grant reads ---
 
 
 async def test_get_role_tool_names_unions_across_roles(
@@ -130,7 +130,7 @@ async def test_get_role_tool_names_ignores_unknown_role_names(
     assert await repository.get_role_tool_names(["role-that-never-existed"]) == []
 
 
-# --- Role CRUD (V13) ---
+# --- Role CRUD ---
 
 
 async def test_ensure_role_is_idempotent(repository: SQLAuthorizationRepository) -> None:
@@ -183,7 +183,7 @@ async def test_list_existing_role_names_names_only_what_exists(
     assert await repository.list_existing_role_names([]) == []
 
 
-# --- Grant writes (V14) ---
+# --- Grant writes ---
 
 
 async def test_replace_role_tool_permissions_deletes_the_old_rows(
@@ -223,7 +223,7 @@ async def test_replace_role_tool_permissions_for_missing_role_is_a_no_op(
 async def test_grants_can_hold_a_tool_the_catalog_no_longer_knows(
     repository: SQLAuthorizationRepository,
 ) -> None:
-    """`tool_name` is a plain string (T4), which is why V10's filter lives in the service."""
+    """`tool_name` is a plain string, which is why V10's filter lives in the service."""
     await repository.ensure_role(ROLE_SUPPORT)
 
     await repository.replace_role_tool_permissions(ROLE_SUPPORT, [TOOL_UNKNOWN])
@@ -231,7 +231,7 @@ async def test_grants_can_hold_a_tool_the_catalog_no_longer_knows(
     assert await repository.get_role_tool_names_for_role(ROLE_SUPPORT) == [TOOL_UNKNOWN]
 
 
-# --- Role assignment (V13, V75) ---
+# --- Role assignment ---
 
 
 async def test_replace_user_assignable_roles_sets_exactly_those_roles(
@@ -280,13 +280,13 @@ async def test_replace_user_assignable_roles_skips_names_with_no_role(
     assert await repository.get_role_names(user.id) == []
 
 
-# --- T66's notification audience (V74) ---
+# --- T66's notification audience ---
 
 
 async def test_list_user_ids_with_role_finds_exactly_the_holders(
     session: AsyncSession, repository: SQLAuthorizationRepository
 ) -> None:
-    """The join really selects by role name, against real SQL (T66, V74).
+    """The join really selects by role name, against real SQL.
 
     Two holders and a non-holder, so the query is a selection rather than "every row in
     `user_roles`" — which is what a `SELECT` missing its `WHERE` would return, and what an
@@ -305,7 +305,7 @@ async def test_list_user_ids_with_role_finds_exactly_the_holders(
 async def test_list_user_ids_with_role_includes_a_disabled_holder(
     session: AsyncSession, repository: SQLAuthorizationRepository
 ) -> None:
-    """No `is_active` filter, deliberately (V11, V74).
+    """No `is_active` filter, deliberately.
 
     A disabled operator holds no permissions, but may still hold an open MCP session until their
     next request — and their catalog moved too. Filtering here would make the notification's
@@ -334,7 +334,7 @@ async def test_list_user_ids_with_role_is_empty_for_an_absent_role(
 async def test_a_deleted_roles_holders_are_gone_from_the_join(
     session: AsyncSession, repository: SQLAuthorizationRepository
 ) -> None:
-    """The cascade this query races, proved against real SQL (T66, V74).
+    """The cascade this query races, proved against real SQL.
 
     `AuthorizationService.delete_role` reads its audience before the delete precisely because of
     this: `ON DELETE CASCADE` takes the `user_roles` rows with the role, so afterwards the join
@@ -349,7 +349,7 @@ async def test_a_deleted_roles_holders_are_gone_from_the_join(
     assert await repository.list_user_ids_with_role(ROLE_SUPPORT) == []
 
 
-# --- User administration (V12) ---
+# --- User administration ---
 
 
 async def test_update_user_active_writes_the_row(
@@ -405,7 +405,7 @@ async def test_delete_missing_user_returns_false(repository: SQLAuthorizationRep
     assert await repository.delete_user(uuid4()) is False
 
 
-# --- V4 cascade revoke on disable (T11) ---
+# --- V4 cascade revoke on disable ---
 
 
 async def test_delete_mcp_tokens_removes_only_that_users_rows(
@@ -475,7 +475,7 @@ async def test_list_users_is_ordered_by_email(
     assert [user.email for user in await repository.list_users()] == [ADMIN_EMAIL, EMAIL]
 
 
-# --- End to end over real SQL (V10, V11) ---
+# --- End to end over real SQL ---
 
 
 async def test_service_resolves_permissions_over_real_sql(session: AsyncSession) -> None:
@@ -542,13 +542,13 @@ async def test_commit_makes_a_role_grant_outlive_the_request(
 ) -> None:
     """T52: `PUT /admin/roles/{name}/tools` is the write V14's "immediately" is about.
 
-    The same shape as the disable above and for the same reason (B10, V100): the repository
+    The same shape as the disable above and for the same reason: the repository
     flushes, `noa_api.api.deps.get_db_session` never commits, and inside one session a flushed
     grant reads back exactly like a committed one. So the observer is a *separate* session.
 
     `noc` is the negative control — the identical write through the repository alone, checked
     before anything commits — because "the observer saw no grant" also passes for an observer
-    that can see nothing at all (V87).
+    that can see nothing at all.
     """
     service = AuthorizationService(
         repository=SQLAuthorizationRepository(session), audit_sink=RecordingAuditSink()

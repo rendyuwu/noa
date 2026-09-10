@@ -4,7 +4,7 @@ Revision ID: 0006_action_receipts
 Revises: 0005_decided_reason_check
 Create Date: 2026-08-09
 
-T36 (V46). V46 names three artifacts for an approved change — the `tool_runs` row (what
+T36. V46 names three artifacts for an approved change — the `tool_runs` row (what
 ran), this receipt (what it did), and the audit log. The run says a change completed; the
 receipt is the two-part story DECISIONS §6.5 requires an operator to read back:
 before-state and after-state, each verified separately, never collapsed into one "done".
@@ -12,7 +12,7 @@ before-state and after-state, each verified separately, never collapsed into one
 Nothing writes this table yet. T38's executor does; T42's card and T63's
 `noa_get_action_result` read it beside the run.
 
-Ported from `noa-old` `MCP:apps/api/alembic/versions/0006_action_receipts.py` (C13) with
+Ported from `noa-old` `MCP:apps/api/alembic/versions/0006_action_receipts.py` with
 three departures, each named because a port carries the code and not the defect:
 
 - `receipt_data`, not `payload` — §T.36's name.

@@ -1,10 +1,10 @@
-"""Shaping a `listaccts` row into what NOA speaks about (T21 — V8, V26, V66).
+"""Shaping a `listaccts` row into what NOA speaks about.
 
 Pure functions, no transport — same split as `test_whm_csf_parsing.py`. Three properties, and
 the first two are the ones a live WHM would otherwise decide for us.
 
 **The field set is a whitelist.** Everything WHM sends that no NOA surface reads is dropped,
-because the result lands in a LibreChat transcript that persists in their MongoDB (V26).
+because the result lands in a LibreChat transcript that persists in their MongoDB.
 
 **WHM's booleans are not Python's.** `suspended` arrives as `0`/`1` or `"0"`/`"1"` depending on
 the cPanel version, and `"0"` is truthy — a tool branching on the raw value would report a live
@@ -59,7 +59,7 @@ def test_it_keeps_the_fields_noa_speaks_about() -> None:
 
 
 def test_it_drops_the_fields_no_noa_surface_reads() -> None:
-    """`listaccts` sends far more than this; the extra never reaches a transcript (V26)."""
+    """`listaccts` sends far more than this; the extra never reaches a transcript."""
     summary = normalize_whm_account_summary(
         whm_account("acme", ip="10.0.0.9", plan="business", diskused="4096M", theme="jupiter")
     )

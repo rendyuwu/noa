@@ -1,4 +1,4 @@
-"""The table surface's GET (T56 — V6, V27, V64, V73, V85).
+"""The table surface's GET.
 
 No Postgres: `support.result_tables.table_harness` swaps the reader for an in-memory double
 and leaves the router, the error handler, `JWTService`, the real `AuthService` behind
@@ -54,7 +54,7 @@ def body(response: Response) -> dict:
 
 
 # --------------------------------------------------------------------------------------
-# What the surface says (V64, V85)
+# What the surface says
 # --------------------------------------------------------------------------------------
 
 
@@ -89,7 +89,7 @@ def test_a_capped_table_reports_the_total_and_the_flag(harness: TableHarness) ->
 
 
 def test_an_uncapped_table_says_so(harness: TableHarness) -> None:
-    """The negative control (V87): the flag separates, rather than always reading `True`."""
+    """The negative control: the flag separates, rather than always reading `True`."""
     harness.add_table(token=TOKEN)
 
     payload = body(harness.get_table(TOKEN))
@@ -122,7 +122,7 @@ def test_the_body_carries_no_decision_affordance(harness: TableHarness) -> None:
 
 
 # --------------------------------------------------------------------------------------
-# Who may read it (V6, V27)
+# Who may read it
 # --------------------------------------------------------------------------------------
 
 
@@ -143,7 +143,7 @@ def test_an_unknown_and_a_foreign_token_answer_one_body(harness: TableHarness) -
     """V27: existence does not leak, and the bound is the *body*, not the status.
 
     A code that differed by cause would be a 403 spelled differently, and a status-only
-    assertion could not see it (B1). Only `request_id` may differ (V73).
+    assertion could not see it. Only `request_id` may differ.
     """
     stranger = harness.add_operator(OTHER_EMAIL)
     harness.add_table_for(stranger.id, token="stranger-token")
@@ -222,7 +222,7 @@ def test_a_disabled_operator_loses_the_table_on_the_next_request(
 
 
 # --------------------------------------------------------------------------------------
-# Failures (V73)
+# Failures
 # --------------------------------------------------------------------------------------
 
 

@@ -1,4 +1,4 @@
-"""Operator word → one Proxmox server, or a structured refusal (T27, V18, V21).
+"""Operator word → one Proxmox server, or a structured refusal.
 
 Ported from `noa-old` branch `MCP` (`proxmox/server_ref.py`, C13). Error codes are verbatim
 (`host_required`, `host_not_found`, `host_ambiguous`), which is why they live in
@@ -8,12 +8,12 @@ Ported from `noa-old` branch `MCP` (`proxmox/server_ref.py`, C13). Error codes a
 per-system resolver and left the question open: is the third one two parameters or a third
 shape? It is two parameters, and Proxmox is `whm_ref`'s shape exactly — the host is parsed out
 of `base_url`, and a candidate is recognised by id, name and that URL. So T27 extracted
-`core.servers.reference` instead of writing a third copy of ~130 lines (V66), and this file is
+`core.servers.reference` instead of writing a third copy of ~130 lines, and this file is
 what a Proxmox row is and nothing else.
 
 `noa-old`'s own version differed from its WHM sibling in one way that is *not* carried: it
 answered a resolution whose `server` was typed `object`, so every caller cast. Here the row keeps
-its type (T21) — `resolve_proxmox_server_ref` is generic, so a
+its type — `resolve_proxmox_server_ref` is generic, so a
 `ProxmoxServerReadRepository[ProxmoxServer]` hands back a `ProxmoxServer` with its credentials,
 which is what `proxmox_reset_vm_password` then builds a client from without a second read by id
 that could disagree with the list a tie was judged against.
@@ -61,11 +61,11 @@ def describe(server: ProxmoxServerRowLike) -> dict[str, str]:
 async def resolve_proxmox_server_ref(
     server_ref: str, *, repository: ProxmoxServerReadRepository[RowT]
 ) -> ServerRefResolution[RowT]:
-    """Resolve `server_ref` to one Proxmox server, or refuse with a named code (V18, V21).
+    """Resolve `server_ref` to one Proxmox server, or refuse with a named code.
 
     Never raises for a bad reference: every outcome is a resolution the tool layer turns into a
     structured result, because "I could not tell which server" is information the model can act
-    on, while an exception is not (V19). It matters more here than on a READ path — the caller is
+    on, while an exception is not. It matters more here than on a READ path — the caller is
     a CHANGE tool, and a resolver that guessed would open an approval card for a machine the
     operator never named.
     """

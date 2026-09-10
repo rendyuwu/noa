@@ -14,7 +14,7 @@
 import type { DecisionKind } from '@/lib/approvals/decide'
 
 export type DecisionOutcome =
-  /** The API accepted it. 202 for an approve (V29), 200 for a deny — both mean "recorded". */
+  /** The API accepted it. 202 for an approve, 200 for a deny — both mean "recorded". */
   | { kind: 'recorded'; decision: DecisionKind }
   /** The API answered, and said no. `errorCode` is theirs, never invented here. */
   | { kind: 'refused'; decision: DecisionKind; errorCode: string; message: string }

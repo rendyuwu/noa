@@ -1,9 +1,9 @@
-"""SQL behind the `tool_runs` audit trail (T73 — V20, V45, V47).
+"""SQL behind the `tool_runs` audit trail.
 
 T35 built the table and wrote nothing to it. This is the writer, and it has four callers:
 `noa_api.mcp_audit` on the READ path; `core.approvals.decisions`, opening the `STARTED` row an
-approval authorises inside the decision's own transaction (T37, V46); `core.approvals.execution`,
-moving that row to a terminal state once the change has run (T38); and `core.approvals.reaper`,
+approval authorises inside the decision's own transaction; `core.approvals.execution`,
+moving that row to a terminal state once the change has run; and `core.approvals.reaper`,
 moving one nobody ever finished. Each composes this class on its own session — one writer per
 table, four transactions, because they are four different moments.
 
@@ -15,14 +15,14 @@ for (T35's model docstring; T38's reaper sweeps them).
 
 **This repository owns its session and commits**, unlike `SQLWHMServerRepository` and
 `SQLAuthorizationRepository`, which flush into a caller's transaction. Same split, same
-reason, as `SQLMcpIdentityRepository` (T11): the MCP tool path runs outside FastAPI's
+reason, as `SQLMcpIdentityRepository`: the MCP tool path runs outside FastAPI's
 dependency graph, so there is no request transaction to join, and an audit row that rolls
 back with the thing it was recording is not an audit row. `commit()` is on the Protocol for
 that reason, so a double has to acknowledge the boundary rather than silently not have one.
 
 Nothing here redacts. `args` and `result_summary` arrive already redacted from
 `noa_api.mcp_audit`, which is the layer that knows what a tool argument *is* — a redactor
-sitting under the SQL would be a second, quieter place for the rule to live (V66) and the
+sitting under the SQL would be a second, quieter place for the rule to live and the
 one an audit reader would have to trust without seeing.
 """
 
@@ -40,7 +40,7 @@ from core.db.models import ToolRun
 
 
 class ToolRunRepository(Protocol):
-    """What the tool path needs to record a run (V45, V47)."""
+    """What the tool path needs to record a run."""
 
     async def start_run(
         self,
@@ -78,7 +78,7 @@ class SQLToolRunRepository:
         conversation_ref: str | None,
         args: dict[str, Any],
     ) -> UUID:
-        """Insert the `STARTED` row and return its id (V45).
+        """Insert the `STARTED` row and return its id.
 
         Flushed rather than committed here: `commit()` is a separate call so the caller
         decides when the row becomes durable, and `noa_api.mcp_audit` makes that decision

@@ -1,4 +1,4 @@
-"""Doubles and an app builder for the large-READ table surface (T56, V64).
+"""Doubles and an app builder for the large-READ table surface.
 
 Two halves, matching the two the production code has: the MCP path parks rows
 (`FakeToolResultTableWriter`) and the HTTP path reads one back for its requester
@@ -78,7 +78,7 @@ class StoredTableRecord:
 
 @dataclass
 class FakeToolResultTableWriter:
-    """In-memory `ToolResultTableWriter` (T56).
+    """In-memory `ToolResultTableWriter`.
 
     `fail_with` makes the insert raise, which is how the fail-closed path is exercised: a
     parked table that could not be written must refuse the READ rather than hand out an
@@ -128,7 +128,7 @@ class FakeToolResultTableWriter:
 
 
 # --------------------------------------------------------------------------------------
-# The read half: the surface an operator opens (T56 — V27, V64, V85)
+# The read half: the surface an operator opens
 # --------------------------------------------------------------------------------------
 
 # What a parked WHM account listing looks like. Small on purpose — the counts a test asserts
@@ -150,7 +150,7 @@ READ_TOOL = "whm_list_accounts"
 # credential, and it is neither — the real one is 32 random bytes minted by the writer.
 DEFAULT_TOKEN = "table-token-1"
 
-# Fixed, because nothing judges it: pinning it keeps payload equality exact (V87). The
+# Fixed, because nothing judges it: pinning it keeps payload equality exact. The
 # *deadline* is always offset from the real clock — see `table_view`.
 CREATED_AT = datetime(2026, 8, 9, 9, 0, tzinfo=UTC)
 
@@ -201,7 +201,7 @@ class FakeToolResultTableReader:
 
     Unknown token, another operator's, one whose requester was deleted, one past its deadline:
     all `None`, because the production statement carries all four predicates in one `WHERE`
-    and the surface has one refusal for the lot (V27).
+    and the surface has one refusal for the lot.
 
     `fail` exists for the reason its approval-card twin does: a read is the one place on this
     route's path that can raise for reasons nobody predicted, and V73 says what reaches the
@@ -211,7 +211,7 @@ class FakeToolResultTableReader:
     def __init__(self) -> None:
         self.rows: dict[str, StoredTable] = {}
         # One entry per call, so a test can assert *which* requester was asked about — the
-        # cookie's identity, never anything off the request (V27).
+        # cookie's identity, never anything off the request.
         self.lookups: list[tuple[str, UUID]] = []
         self.fail: BaseException | None = None
 
@@ -262,7 +262,7 @@ class TableHarness:
         self.client.cookies.delete(COOKIE_NAME)
 
     def add_operator(self, email: str) -> FakeUserRow:
-        """A second active operator, for the requester-match cases (V27)."""
+        """A second active operator, for the requester-match cases."""
         return self.auth_repository.add_active_user(email)
 
     def add_table(self, **overrides: Any) -> ResultTableView:
@@ -301,7 +301,7 @@ def table_harness(*, settings: Settings | None = None) -> Iterator[TableHarness]
 
     One dependency override beyond auth: the table service. `AuthService` is overridden with
     `support.auth`'s own factory over a *real* `AuthService`, so the `users.is_active` re-read
-    behind `require_session_user` is production code here (V6) and the route's 401 path is real.
+    behind `require_session_user` is production code here and the route's 401 path is real.
     """
     resolved_settings = settings or build_settings()
     jwt_service = JWTService(resolved_settings)

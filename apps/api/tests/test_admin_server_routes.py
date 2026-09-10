@@ -7,9 +7,9 @@ shipped 403, a 422 is the shipped 422, and encrypt-on-write really runs.
 
 What this file owns, and what it deliberately does not:
 
-- **owns** the HTTP surface: the admin gate on every route (V13), the absence of every secret
-  from every response (V2, V8), the refusals V21's field rules produce, the shared error
-  envelope (V73), and the audit event per mutation (V14).
+- **owns** the HTTP surface: the admin gate on every route, the absence of every secret
+  from every response, the refusals V21's field rules produce, the shared error
+  envelope, and the audit event per mutation.
 - **does not own** the trust-on-first-use rule. `POST …/validate` here goes through a stub
   (`support.server_admin.RecordingValidationService`), because when a pin is written is a
   property of a real key exchange — `test_server_host_key_validation.py` asserts it against a
@@ -395,7 +395,7 @@ def test_a_duplicate_name_is_409_and_stores_nothing(
 
 
 def test_a_name_differing_only_by_case_is_refused(harness: AdminHarness) -> None:
-    """`core.servers.reference`'s warning, closed on the write side (V18).
+    """`core.servers.reference`'s warning, closed on the write side.
 
     Postgres uniqueness is case-sensitive, so `EXISTING-WHM` would insert beside
     `existing-whm` and every reference to either would resolve ambiguously forever.
@@ -447,7 +447,7 @@ def test_a_reseller_row_not_named_after_its_api_username_is_409(harness: AdminHa
 
 
 def test_a_reseller_row_named_after_its_api_username_round_trips(harness: AdminHarness) -> None:
-    """The accepting twin, and the field the panel's checkbox is drawn from (V109).
+    """The accepting twin, and the field the panel's checkbox is drawn from.
 
     Without this the refusal above passes against a route that answers 409 to every reseller
     save, and the form would have no value to render.

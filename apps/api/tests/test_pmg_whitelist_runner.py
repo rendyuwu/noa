@@ -1,4 +1,4 @@
-"""`pmg_whitelist`'s runner — the half that edits `mynetworks` (T29).
+"""`pmg_whitelist`'s runner — the half that edits `mynetworks`.
 
 Reachable only after an operator approved (§V.22's far side), so nothing here goes through the
 tool. `core.approvals.execution` hands a runner a `ChangeExecutionRequest`, and that is what these
@@ -682,7 +682,7 @@ async def test_the_payload_carries_both_spellings_and_not_the_rest_of_the_whitel
 
 
 async def test_a_successful_run_classifies_as_completed(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The envelope this runner answers is the one `core.audit.summaries` reads (V20, V46)."""
+    """The envelope this runner answers is the one `core.audit.summaries` reads."""
     fixture, _ = whitelist_change_context(monkeypatch)
 
     payload = await build_runner(fixture)(execution_request(server_id=server_id(fixture)))
@@ -691,7 +691,7 @@ async def test_a_successful_run_classifies_as_completed(monkeypatch: pytest.Monk
 
 
 async def test_the_runner_map_is_keyed_by_the_tool_name(monkeypatch: pytest.MonkeyPatch) -> None:
-    """What `change_runners` merges and what `registry` checks coverage against (T38, V46)."""
+    """What `change_runners` merges and what `registry` checks coverage against."""
     fixture, _ = whitelist_change_context(monkeypatch)
 
     runners = build_pmg_whitelist_runners(context=fixture.context)

@@ -1,23 +1,23 @@
-"""`proxmox_reset_vm_password` — the call that opens a question (T27).
+"""`proxmox_reset_vm_password` — the call that opens a question.
 
 The first Proxmox CHANGE tool, and the first CHANGE of any system whose whole point is a value
-NOA generates and the model must never see (C15, V49).
+NOA generates and the model must never see.
 
-**Two halves, and only the first is here.** This module runs the in-process preflight (C9, V17)
+**Two halves, and only the first is here.** This module runs the in-process preflight
 and opens an `action_requests` row; it executes nothing, and the LLM can reach it. The half that
 performs the reset is `proxmox_password_runner.py`, reachable only from
-`core.approvals.execution` after an operator approved (V22). They are two files for C14 — a
+`core.approvals.execution` after an operator approved. They are two files for C14 — a
 CHANGE tool with a delivery hop, a task poll and a crypt compare runs past 900 lines — and the
 split falls on the boundary the design already draws. The dependency runs one way: the runner
 imports this module's evidence keys and tool name, and nothing here imports the runner, so
 `registry.py` and `change_runners.py` reach the two halves without a cycle.
 
-**No reason parameter, and nowhere to add one** (C8, V15, V43). The word is typed by an operator
+**No reason parameter, and nowhere to add one**. The word is typed by an operator
 on the approval card after this tool's result has been rendered and forgotten, and
 `open_change_request` refuses a reason-shaped argument even for a caller that reaches the
 function directly.
 
-**No `new_password` parameter either**, which is the same rule one field over (C15, V49). That
+**No `new_password` parameter either**, which is the same rule one field over. That
 was `noa-old`'s bug (GH #91): its reset tool took the password from the model and echoed it back,
 putting the plaintext in the prompt, the model context and the stored transcript. NOA generates it
 in the runner's frame, and the schema gives a model nowhere to put one.
@@ -89,7 +89,7 @@ MESSAGE_INVALID_VMID: Final = "A VM id must be a positive whole number."
 # an operator has already typed a reason and pressed Approve.
 #
 # Here rather than in `proxmox_password_runner`, where T27 first wrote it, because T28 made a
-# second Proxmox runner and this is the module both already import (V66) — and it is where
+# second Proxmox runner and this is the module both already import — and it is where
 # `change_target`'s docstring says the Proxmox pair lives. `proxmox_password_runner` re-exports
 # both names, so callers that reach for them there keep one import path.
 ERROR_SERVER_UNAVAILABLE: Final = "proxmox_server_unavailable"
@@ -122,7 +122,7 @@ SERVER_REF_DESCRIPTION: Final = (
     "have not named one."
 )
 
-# --- The tool: it opens a question and changes nothing (V16, V22, V23) ---
+# --- The tool: it opens a question and changes nothing ---
 
 
 @sanitize_tool_errors(TOOL_PROXMOX_RESET_VM_PASSWORD)
@@ -134,9 +134,9 @@ async def proxmox_reset_vm_password(
     username: str,
     context: McpToolContext,
 ) -> ToolAnswer:
-    """Ask for one VM's cloud-init password to be reset; change nothing (T27 — V16, V17, V23).
+    """Ask for one VM's cloud-init password to be reset; change nothing.
 
-    Three guards run before any I/O, so a malformed call costs no round trip (V21): a blank or
+    Three guards run before any I/O, so a malformed call costs no round trip: a blank or
     whitespace-only `node` or `username` is refused — the schema cannot express it, because
     `min_length` counts whitespace — and a `vmid` that is not a positive whole number is refused
     here as well as by the schema, because a caller reaching this function directly bypasses
@@ -146,7 +146,7 @@ async def proxmox_reset_vm_password(
     never a pick) and turn that row into a client — and the session closes before the HTTP hops,
     which is T21's rule.
 
-    The preflight is this call's own and runs in-process (C9, V17): the VM's config, its
+    The preflight is this call's own and runs in-process: the VM's config, its
     cloud-init values and its run state, born here, milliseconds old, same user, reaching the
     operator through `approval_context` rather than through a transcript.
 
@@ -224,12 +224,12 @@ async def proxmox_reset_vm_password(
     )
 
 
-# --- The preflight (C9, V17) ---
+# --- The preflight ---
 
 
 @dataclass(frozen=True)
 class VMCloudInitState:
-    """The before-state an operator authorises a password reset against (V33, V35).
+    """The before-state an operator authorises a password reset against.
 
     **A fixed set of fields, and that is the point.** It is built by naming what goes in rather
     than by sanitizing what came out of Proxmox — the same structural argument V26 makes about
@@ -239,7 +239,7 @@ class VMCloudInitState:
     an omission nobody noticed (V93's shape).
 
     `unavailable_reads` names any preflight read that could not answer, rather than letting an
-    absent field read as a measured absence (V86). Only the run state is allowed to be missing:
+    absent field read as a measured absence. Only the run state is allowed to be missing:
     the config and the cloud-init values are what the decision rests on, so a failure there is a
     refusal, not a gap.
     """
@@ -264,7 +264,7 @@ class VMCloudInitState:
 async def collect_vm_state(
     client: ProxmoxClient, *, node: str, vmid: int
 ) -> VMCloudInitState | ToolPayload:
-    """Read one VM's cloud-init before-state, or refuse. Internal — ⊥ an MCP tool (C9, V17).
+    """Read one VM's cloud-init before-state, or refuse. Internal — ⊥ an MCP tool.
 
     Two required reads and one tolerated. The config says who the cloud-init user is and whether
     a password is set at all; the cloud-init endpoint is the second opinion on the password,
@@ -275,7 +275,7 @@ async def collect_vm_state(
     The run state is tolerated because it changes nothing about what the reset *does*: it tells
     an operator when the new password will take effect (a running VM reads its cloud-init drive
     at next boot), and losing that is worth less than refusing the change over it. It is named in
-    `unavailable_reads` rather than silently absent (V86).
+    `unavailable_reads` rather than silently absent.
     """
     config_result = await client.get_qemu_config(node, vmid)
     if config_result.get("ok") is not True:
@@ -318,7 +318,7 @@ def register_proxmox_password_tools(
     """Register the Proxmox password CHANGE tool; return its name and risk (I.mcp, V20).
 
     `ToolRisk.CHANGE` is what tells `ToolRunAuditMiddleware` to write no `tool_runs` row for this
-    call (T73) — it opens an approval request and executes nothing, and V46's row belongs to the
+    call — it opens an approval request and executes nothing, and V46's row belongs to the
     executor that runs after a decision. It is also what makes
     `registry.assert_change_runners_cover` demand a runner for the name at startup, rather than
     letting an operator discover the gap after typing a reason and pressing Approve.
@@ -328,7 +328,7 @@ def register_proxmox_password_tools(
         name=TOOL_PROXMOX_RESET_VM_PASSWORD,
         description=DESCRIPTION_PROXMOX_RESET_VM_PASSWORD,
         # Standard MCP hints, and nothing NOA relies on — a client may ignore them. The split
-        # that matters is the approval gate (V16); the classification that matters is the risk
+        # that matters is the approval gate; the classification that matters is the risk
         # returned below. `destructiveHint` is True because the old password stops working, and
         # `idempotentHint` is False because every run mints a different password.
         annotations={"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False},
@@ -394,7 +394,7 @@ def text_or_none(value: Any) -> str | None:
     """A stripped non-empty string, or `None`. Non-strings are `None`, ⊥ stringified.
 
     Public because the runner half reads the same Proxmox payloads back and "absent" has to mean
-    the same thing on both sides of the approval (V66).
+    the same thing on both sides of the approval.
     """
     if not isinstance(value, str):
         return None

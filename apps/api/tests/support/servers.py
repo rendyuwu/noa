@@ -1,4 +1,4 @@
-"""Doubles for the server-inventory read path (T19, T31).
+"""Doubles for the server-inventory read path.
 
 Both systems' inventory lives here, because inventory is one subject: a row of the mapped
 class, an in-memory repository that answers the way the SQL one does, and the `McpToolContext`
@@ -58,12 +58,12 @@ from support.tool_runs import FakeToolRunRepository
 # Fixed, so `to_safe_dict` output is comparable across runs.
 CREATED_AT = datetime(2026, 8, 6, 9, 0, tzinfo=UTC)
 
-# Ciphertext-shaped, because that is what the column holds (C7, V48). The point of these
+# Ciphertext-shaped, because that is what the column holds. The point of these
 # literals is that they must not appear in any tool result.
 API_TOKEN = "enc:v1:fernet:whm-api-token"
 SSH_PASSWORD = "enc:v1:fernet:whm-ssh-password"
 SSH_PRIVATE_KEY = "enc:v1:fernet:whm-ssh-private-key"
-# Proxmox's own, distinct from WHM's so a leak assertion says which table it came off (T27).
+# Proxmox's own, distinct from WHM's so a leak assertion says which table it came off.
 PROXMOX_API_TOKEN_SECRET = "enc:v1:fernet:proxmox-api-token-secret"
 
 # Every credential literal above, for a single "none of these leaked" assertion.
@@ -71,18 +71,18 @@ SECRETS = (API_TOKEN, SSH_PASSWORD, SSH_PRIVATE_KEY, PROXMOX_API_TOKEN_SECRET)
 
 FINGERPRINT = "SHA256:l3Rz6cS0nOtASecret+ItIsAPublicKeyDigest"
 
-# The pending-request TTL these fixtures hand the tool path (T33, V32). Not `Settings`'
+# The pending-request TTL these fixtures hand the tool path. Not `Settings`'
 # 3600: a deadline asserted against the production default cannot separate a gate that read
 # the configured value from one that hardcoded it.
 PENDING_TTL_SECONDS = 900
 
-# The embed origin these fixtures hand the tool path (T32, V26). Not `Settings`'
+# The embed origin these fixtures hand the tool path. Not `Settings`'
 # `http://localhost:3001`, and for the same reason as the TTL above: an approval URL asserted
 # against the production default cannot separate a gate that read the configured value from
-# one that hardcoded a laptop address (V87).
+# one that hardcoded a laptop address.
 EMBED_BASE_URL = "https://embed.noa.test"
 
-# The parked-table lifetime and row cap these fixtures hand the tool path (T56, V64, V85).
+# The parked-table lifetime and row cap these fixtures hand the tool path.
 # Neither is `Settings`' value (86400 and 5000), for the reason the two above are not: a
 # deadline or a cap asserted against the production default cannot separate a tool that read
 # the configured value from one that hardcoded it. The cap is small enough that a truncation
@@ -90,13 +90,13 @@ EMBED_BASE_URL = "https://embed.noa.test"
 RESULT_TABLE_TTL_SECONDS = 1800
 RESULT_TABLE_MAX_ROWS = 25
 
-# The generated-password length these fixtures hand the tool path (T27, C15, V49). Not
+# The generated-password length these fixtures hand the tool path. Not
 # `Settings`' 24, for the reason the four values above are not their production defaults: a
 # length asserted against the configured number cannot separate a generator that read the setting
 # from one that fell back to `_DEFAULT_PASSWORD_LENGTH`, which is also 24.
 SECRET_PASSWORD_LENGTH = 31
 
-# What the delivery double answers with. Fragment-shaped like a real yopass URL (V50) so a test
+# What the delivery double answers with. Fragment-shaped like a real yopass URL so a test
 # asserting the link reaches the operator is asserting the thing that is actually handed over.
 YOPASS_URL = "https://yopass.noa.test/#/s/2f1c0b4a-0000-4000-8000-00000000beef/PassPhrase123"
 
@@ -118,8 +118,8 @@ def whm_server(
 
     `api_token` and `ssh_password` are overridable for the same reason: the defaults are
     ciphertext-*shaped* rather than real ciphertext, so they exist to be asserted absent from a
-    result and they do not decrypt. A test that actually reaches WHM over HTTP (T21) or over
-    SSH (T24) passes `cipher.encrypt_text(...)` so the real decrypt site runs — see
+    result and they do not decrypt. A test that actually reaches WHM over HTTP or over
+    SSH passes `cipher.encrypt_text(...)` so the real decrypt site runs — see
     `build_tool_context`.
 
     `ssh_private_key` and `ssh_host_key_fingerprint` are overridable to `None` so a test can
@@ -162,11 +162,11 @@ def pmg_server(
     ssh_private_key: str | None = SSH_PRIVATE_KEY,
     ssh_host_key_fingerprint: str | None = FINGERPRINT,
 ) -> PMGServer:
-    """One `pmg_servers` row, credentials included, ready to read (T31).
+    """One `pmg_servers` row, credentials included, ready to read.
 
     The same construction as `whm_server` and for the same reasons — a real mapped instance
     with the three server-defaulted columns filled by hand — over a narrower row: PMG is
-    SSH-only (V58), so there is no `base_url`, no API token and no `verify_ssl`.
+    SSH-only, so there is no `base_url`, no API token and no `verify_ssl`.
 
     The credential defaults are shared with the WHM row on purpose. They are ciphertext-*shaped*
     rather than real ciphertext, they exist to be asserted absent from a result, and one set of
@@ -200,7 +200,7 @@ def proxmox_server(
     api_token_secret: str = PROXMOX_API_TOKEN_SECRET,
     verify_ssl: bool = True,
 ) -> ProxmoxServer:
-    """One `proxmox_servers` row, credentials included, ready to read (T27).
+    """One `proxmox_servers` row, credentials included, ready to read.
 
     The same construction as `whm_server` and for the same reasons — a real mapped instance with
     the three server-defaulted columns filled by hand — over the narrowest row of the three:
@@ -252,7 +252,7 @@ class FakeWHMServerRepository:
 
 
 class FakePMGServerRepository:
-    """In-memory `PMGServerReadRepository` (T31).
+    """In-memory `PMGServerReadRepository`.
 
     Sorted by name for the reason its WHM twin is: the resolver's tie handling is asserted
     against this order, and a double that returned insertion order would let a test pass
@@ -277,7 +277,7 @@ class FakePMGServerRepository:
 
 
 class FakeProxmoxServerRepository:
-    """In-memory `ProxmoxServerReadRepository` (T27).
+    """In-memory `ProxmoxServerReadRepository`.
 
     Sorted by name for the reason its two siblings are: the resolver's tie handling is asserted
     against this order, and a double that returned insertion order would let a test pass against
@@ -302,16 +302,16 @@ class FakeProxmoxServerRepository:
 
 
 class RecordingSecretDelivery:
-    """A `SecretDelivery` that records what it was handed and answers a fixed URL (T27).
+    """A `SecretDelivery` that records what it was handed and answers a fixed URL.
 
     **A double of the delivery hop, and the one place these tests do not keep production code in
     the path.** `test_yopass_store.py` covers `_yopass_store` itself — the PGPy encrypt, the
     passphrase staying out of the request body, the fragment assembly — against an `httpx`
     transport, so what is left for a runner test is *ordering*: was the secret stored before the
-    VM was touched (V62), and was it stored at all when the change failed early.
+    VM was touched, and was it stored at all when the change failed early.
 
     It records the password so a test can assert the plaintext is absent from every payload,
-    receipt and summary the change produced (V49) — an assertion that needs the value and must
+    receipt and summary the change produced — an assertion that needs the value and must
     not get it from the production code under test.
     """
 
@@ -379,7 +379,7 @@ def build_tool_context(
     these tests run without Postgres.
 
     The `tool_runs` writer is a double here by default and in *every* test that mounts the
-    app, not only the audit ones (T73). That is deliberate: the middleware refuses a call it
+    app, not only the audit ones. That is deliberate: the middleware refuses a call it
     cannot record, so without a working writer in the shared fixture the RBAC tests would
     start failing for an unrelated reason — and a fixture that quietly disabled the audit
     path would let the whole suite pass with V45 unheld.
@@ -392,14 +392,14 @@ def build_tool_context(
     one because production has two classes: a reader that holds only `SELECT`s and a writer
     whose one reachable status is `EXPIRED`. Both are handed the same journal, so a test can
     assert the *order* the read path took them in — which is what pins "a request that is not
-    the caller's is never expired by this read" (V27). The SQL behind the reader has its own
+    the caller's is never expired by this read". The SQL behind the reader has its own
     coverage in `test_action_results_live.py`, where a NULL requester is a claim about the
     statement rather than about a Python comparison.
 
     `pending_ttl_seconds` is deliberately *not* the production default. `Settings` says 3600
     (`core.config`), so a test asserting a deadline against that number could not tell a gate
     that read the setting from one that hardcoded it; this value is a number nothing else in
-    the tree holds. `embed_base_url` is the same trick one field over (T32).
+    the tree holds. `embed_base_url` is the same trick one field over.
 
     `cipher` and `whm_transport` are T21's two seams, and neither replaces production code.
     The cipher is a real `SecretCipher` on a throwaway key, so a tool that decrypts an API
@@ -407,7 +407,7 @@ def build_tool_context(
     with). `whm_transport` reaches `build_whm_client` — the production factory — so the real
     `WHMClient` and the real cipher stay in the path and only the socket is doubled.
 
-    `proxmox_transport` is the same seam one system over (T27), reaching `build_proxmox_client`.
+    `proxmox_transport` is the same seam one system over, reaching `build_proxmox_client`.
     `secret_delivery` is the one exception to "only the socket is doubled", and
     `RecordingSecretDelivery` says why: `_yopass_store` has its own coverage against a transport,
     and what a CHANGE runner test needs from delivery is the *order* it happened in and the value
@@ -420,7 +420,7 @@ def build_tool_context(
     authorization_repository = authorization or FakeAuthorizationRepository()
     tool_run_repository = tool_runs or FakeToolRunRepository()
     action_request_repository = action_requests or FakeActionRequestRepository()
-    # One journal across both, so the read path's order is assertable (T63).
+    # One journal across both, so the read path's order is assertable.
     read_path_journal: list[str] = []
     action_result_repository = action_results or FakeActionResultRepository(read_path_journal)
     action_expiry_repository = action_expiry or FakeActionRequestExpiryRepository(read_path_journal)

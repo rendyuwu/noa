@@ -16,7 +16,7 @@ import { buildToolRunColumns } from './tool-run-columns'
 
 const TOOL_COLUMNS = buildToolRunColumns()
 
-// The audit administration page (T55). One view — the `tool_runs` trail, READ and
+// The audit administration page. One view — the `tool_runs` trail, READ and
 // CHANGE alike — server-filtered and cursor-paged: the controller owns the query
 // state, the DataTable stays presentational, and the standalone Pagination drives
 // server paging off the cursor the API returns.
@@ -24,7 +24,7 @@ const TOOL_COLUMNS = buildToolRunColumns()
 // It was ported with two tabs. The other one listed action requests and linked to
 // a receipt page, both against routes §I.admin-api does not name and NOA does not
 // serve, so every load 404'd; the tab went with the transports rather than being
-// stubbed (T55). With one view there is no tab strip and no URL/pushState dance
+// stubbed. With one view there is no tab strip and no URL/pushState dance
 // to keep in step with it — `/admin/audit` is the whole surface, which is where
 // the nav already pointed.
 //

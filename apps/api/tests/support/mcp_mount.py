@@ -1,4 +1,4 @@
-"""Driving the real mounted MCP endpoint from a test (T13, T19).
+"""Driving the real mounted MCP endpoint from a test.
 
 `create_app()` with T12's doubles behind the verifier and T19's doubles behind the tools.
 Two patches, both narrow: settings, so the lifespan reads explicit values rather than a
@@ -10,7 +10,7 @@ the wiring under test is not a copy of it.
 
 Shared between `test_mcp_mount.py` (the mount itself) and `test_mcp_tool_rbac.py` (V1 over
 that mount) rather than duplicated, because the harness *is* the thing both are asserting
-against and two copies would drift (V66).
+against and two copies would drift.
 
 `McpSession` exists because a Streamable HTTP tool call is not one request: `initialize`,
 then `notifications/initialized`, then the call, with `Mcp-Session-Id` carried between them
@@ -50,7 +50,7 @@ SESSION_HEADER = "mcp-session-id"
 # exactly 1.29.0 at pin `45cc53c4`, `Client.connect` sends that SDK's
 # `LATEST_PROTOCOL_VERSION` (`src/types.ts:4`, `src/client/index.ts:495`), and LibreChat
 # constructs a stock `Client` with no version knob (`packages/api/src/mcp/connection.ts:1276`).
-# So this is the era the deployment negotiates, not a value NOA chooses (T71, R9).
+# So this is the era the deployment negotiates, not a value NOA chooses.
 CLIENT_LATEST_PROTOCOL_VERSION = "2025-11-25"
 
 # An older v1.x client's era. Still in both SDKs' `SUPPORTED_PROTOCOL_VERSIONS`, so it has to
@@ -174,7 +174,7 @@ class McpSession:
     """An initialized MCP session over the mounted endpoint.
 
     Holds the negotiated `Mcp-Session-Id` and stamps it on every later request, which every
-    handshake era C23 admits requires (R8) — without it the transport answers 400 and a test
+    handshake era C23 admits requires — without it the transport answers 400 and a test
     would be asserting against a protocol error rather than a permission decision.
     """
 
@@ -201,7 +201,7 @@ class McpSession:
         return payload
 
     def tool_names(self) -> list[str]:
-        """The names `tools/list` returns for this caller (V1)."""
+        """The names `tools/list` returns for this caller."""
         return [tool["name"] for tool in self.result("tools/list")["tools"]]
 
     def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -218,7 +218,7 @@ def open_session(
     assert initialize.status_code == 200, initialize.text
 
     session_id = initialize.headers.get(SESSION_HEADER)
-    assert session_id, "server minted no `Mcp-Session-Id` (R8)"
+    assert session_id, "server minted no `Mcp-Session-Id`"
     headers[SESSION_HEADER] = session_id
 
     # The spec's post-handshake notification. Skipping it leaves the session uninitialized

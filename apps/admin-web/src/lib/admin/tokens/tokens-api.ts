@@ -21,7 +21,7 @@ export function tokenBasePath(scope: TokenScope): string {
 }
 
 // List. The API answers `{ tokens: [...] }` newest-first, ordered in the
-// statement (T10) — the order is not re-derived here.
+// statement — the order is not re-derived here.
 export async function fetchTokens(scope: TokenScope): Promise<McpToken[]> {
   const response = await fetchWithAuth(tokenBasePath(scope))
   const payload = await jsonOrThrow<McpTokensResponse>(response)
@@ -45,7 +45,7 @@ export async function mintToken(scope: TokenScope, label: string | null): Promis
   return jsonOrThrow<MintedToken>(response)
 }
 
-// Revoke = delete (V2). The endpoint answers `{ ok: true }`; there is no row to
+// Revoke = delete. The endpoint answers `{ ok: true }`; there is no row to
 // return, so a non-error response is the whole result. A token id belonging to
 // another operator answers 404 exactly as a fabricated one does — the caller
 // must not resolve which case it saw.

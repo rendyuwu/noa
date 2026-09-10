@@ -51,10 +51,10 @@ WEB_DEPLOYABLES = ("admin-web", "embed")
 MEASURED_PNPM_NODE_FLOOR = 22
 MEASURED_PNPM_MAJOR = 11
 
-# The variable that may only ever be a build argument (V41). Named once.
+# The variable that may only ever be a build argument. Named once.
 FRAMING_ORIGIN_VAR = "NOA_LIBRECHAT_ORIGIN"
 
-# Values `core/config.py` treats as secrets (C7, V8, V52, V53). None may appear as a container
+# Values `core/config.py` treats as secrets. None may appear as a container
 # environment key in compose: a service that does not read one should not be handed one.
 SECRET_ENV_VARS = frozenset(
     {
@@ -142,7 +142,7 @@ def host_of(origin: str) -> str:
 
 
 def under_session_cookie_domain(host: str) -> bool:
-    """Does `Domain=.noa.internal` reach this host (V40)?"""
+    """Does `Domain=.noa.internal` reach this host?"""
     return host == "noa.internal" or host.endswith(".noa.internal")
 
 
@@ -370,7 +370,7 @@ def test_documented_hosts_line_covers_every_operator_facing_origin() -> None:
     An origin the hosts line does not name is a URL that resolves nowhere; an origin outside
     `noa.internal` resolves fine and then drops the cookie, which is the worse failure because
     sign-in appears to succeed. Both are checked, and the predicate is exercised on a known-bad
-    origin below so that "every origin passed" cannot be vacuously true (V87).
+    origin below so that "every origin passed" cannot be vacuously true.
     """
     hosts_line = marked_block("hosts")
     assert len(hosts_line) == 1, "expected exactly one hosts entry"

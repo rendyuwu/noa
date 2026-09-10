@@ -16,7 +16,7 @@ import { SignInNotice } from './sign-in-notice'
  *
  * What jsdom cannot prove is the half that made the printed address necessary: that a
  * `target="_blank"` click opens nothing at all under the sandbox LibreChat applies at one of its two
- * render sites (R13, R29). A jsdom assertion about a sandbox would be a check that cannot fail, so
+ * render sites. A jsdom assertion about a sandbox would be a check that cannot fail, so
  * that one lives in `e2e/approvals.browser.e2e.ts` with its own negative control.
  */
 
@@ -59,7 +59,7 @@ describe('SignInNotice', () => {
     vi.restoreAllMocks()
   })
 
-  it('names the state, offers a way out, and no decision control (V38)', () => {
+  it('names the state, offers a way out, and no decision control', () => {
     // Never a blank card and never a live Approve button: the operator is told what is wrong and
     // given the two things that can fix it.
     const { onRetry } = retryStub('unauthenticated')
@@ -87,7 +87,7 @@ describe('SignInNotice', () => {
     expect(link.getAttribute('rel')).toContain('noreferrer')
   })
 
-  it('prints the address as text too, for the sandbox that blocks the link (R13, V25)', () => {
+  it('prints the address as text too, for the sandbox that blocks the link', () => {
     // `allow-popups` is absent at one of LibreChat's two render sites, and there the click above
     // opens nothing and says nothing. The printed address is the door that does not depend on it.
     const { onRetry } = retryStub('unauthenticated')
@@ -106,12 +106,12 @@ describe('SignInNotice', () => {
 
     expect(container.querySelector('a')).toBeNull()
     expect(container.textContent).not.toContain('copy this address')
-    // Still an explicit state with a way out (V38): the sentence, and the retry.
+    // Still an explicit state with a way out: the sentence, and the retry.
     expect(screen.getByRole('heading').textContent).toContain('Cannot authenticate here')
     expect(screen.getByRole('button', { name: /try again/i })).toBeTruthy()
   })
 
-  it('carries no form, no input and nothing that submits (V42, V80)', () => {
+  it('carries no form, no input and nothing that submits', () => {
     const { onRetry } = retryStub('unauthenticated')
     const { container } = render(<SignInNotice signInUrl={SIGN_IN} onRetry={onRetry} frameOrigin={null} />)
 
@@ -208,9 +208,9 @@ describe('SignInNotice', () => {
     await vi.waitFor(() => expect(screen.getByRole('status')).toBeTruthy())
   })
 
-  it('measures itself, so the printed address is not left below the fold (V94)', () => {
+  it('measures itself, so the printed address is not left below the fold', () => {
     // This state's way out is the address as TEXT, because the sandbox at one of LibreChat's two
-    // render sites withholds the link (R13, R32). At the 150px box the host opens with, that address
+    // render sites withholds the link. At the 150px box the host opens with, that address
     // began below the fold — reachable by scrolling, and off screen all the same. So the notice asks
     // for a frame it fits in, like the card and the table do.
     //

@@ -1,4 +1,4 @@
-"""Authorization error taxonomy (T9, V12, V13).
+"""Authorization error taxonomy.
 
 Ported from `noa-old` branch `MCP` (`core/auth/authorization_errors.py`, C13) with two
 changes, both to satisfy V73:
@@ -17,7 +17,7 @@ engine has no direct-grant path to refuse.
 
 Statuses the handler assigns, and the reasoning:
 
-- 403 `admin_access_required` — authenticated, not an admin (V13). Re-authenticating
+- 403 `admin_access_required` — authenticated, not an admin. Re-authenticating
   changes nothing, so 401 would loop a login redirect.
 - 403 `reserved_role` — the `admin` role exists and the caller may not edit or delete it
   (V13). Not 404: pretending it is absent would be a lie the UI then renders.
@@ -25,7 +25,7 @@ Statuses the handler assigns, and the reasoning:
 - 400 — the request itself is malformed: bad role name, unknown tool, unknown role, or an
   internal role the API may not assign.
 - 409 — the request is well-formed and refused because it would break an invariant: the
-  last active admin, or an admin acting on their own account (V12).
+  last active admin, or an admin acting on their own account.
 """
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ class AuthorizationError(NoaError):
 
 
 class AdminAccessRequiredError(AuthorizationError):
-    """Caller is authenticated but holds no `admin` role (V13).
+    """Caller is authenticated but holds no `admin` role.
 
     Message names the remedy — ask an admin — because the operator cannot fix this
     themselves and a bare "forbidden" sends them retrying.
@@ -86,7 +86,7 @@ class InvalidRoleNameError(AuthorizationError):
 
 
 class ReservedRoleError(AuthorizationError):
-    """The `admin` role is reserved: ⊥ edit its tools, ⊥ delete it (V13).
+    """The `admin` role is reserved: ⊥ edit its tools, ⊥ delete it.
 
     V10 gives `admin` every known tool by bypassing the grant table entirely, so its
     `role_tool_permissions` rows would be decoration that implies a limit NOA does not
@@ -98,7 +98,7 @@ class ReservedRoleError(AuthorizationError):
 
 
 class InternalRoleError(AuthorizationError):
-    """Caller tried to assign a `user:`-prefixed role through the API (V13, V75).
+    """Caller tried to assign a `user:`-prefixed role through the API.
 
     Internal roles are NOA's own bookkeeping. They are preserved across role replacement
     and never appear in the assignable list.
@@ -109,7 +109,7 @@ class InternalRoleError(AuthorizationError):
 
 
 class UnknownToolError(AuthorizationError):
-    """Grant requested for a tool that is not in the catalog (V10).
+    """Grant requested for a tool that is not in the catalog.
 
     Carries `unknown_tools` so the response can name them — an admin who mistyped one
     name in a list of twenty otherwise has to bisect it by hand.
@@ -139,7 +139,7 @@ class UnknownRoleError(AuthorizationError):
 
 
 class LastActiveAdminError(AuthorizationError):
-    """Refused: the change would leave NOA with no active admin (V12).
+    """Refused: the change would leave NOA with no active admin.
 
     Covers three paths — disable, delete, and removing the `admin` role — because all
     three reach the same end state. Recovery from that state needs
@@ -153,14 +153,14 @@ class LastActiveAdminError(AuthorizationError):
 
 
 class SelfDeactivateAdminError(AuthorizationError):
-    """An admin tried to disable their own account (V12)."""
+    """An admin tried to disable their own account."""
 
     error_code: str = "self_deactivate_admin"
     message: str = "You cannot disable your own admin account. Ask another admin."
 
 
 class SelfDeleteError(AuthorizationError):
-    """A user tried to delete their own account (V12).
+    """A user tried to delete their own account.
 
     Applies to non-admins too: account lifecycle is an admin action, and a self-delete
     would leave the caller holding a valid session cookie for a row that no longer exists
@@ -172,7 +172,7 @@ class SelfDeleteError(AuthorizationError):
 
 
 class SelfDeleteAdminError(SelfDeleteError):
-    """An admin tried to delete their own account (V12).
+    """An admin tried to delete their own account.
 
     Subclass, so a caller that only knows `SelfDeleteError` still catches it and the
     status mapping is inherited. Distinct `error_code` because the admin panel shows a
@@ -184,7 +184,7 @@ class SelfDeleteAdminError(SelfDeleteError):
 
 
 class SelfRemoveAdminRoleError(AuthorizationError):
-    """An admin tried to strip `admin` from themselves (V12).
+    """An admin tried to strip `admin` from themselves.
 
     Same shape as self-deactivate: it is the one demotion nobody else can undo for them
     if it was a mistake, and it can empty the admin set silently.

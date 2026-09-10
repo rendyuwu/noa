@@ -1,9 +1,9 @@
-"""WHM server → SSH connection config (T16, C7, V55, V69).
+"""WHM server → SSH connection config.
 
 Copied from `noa-old` branch `MCP` (`whm/integrations/ssh.py`), minus the half that T14 already
 hoisted: `SSH_SUDO_REQUIRED_CODE`, the sudo failure/missing-binary marker tables,
 `should_escalate` and `is_sudo_rights_failure` now live in `core.remote_exec.sudo` as shared
-code (V66), because PMG (T18) needs the same escalation rules. Importing them from two places
+code, because PMG needs the same escalation rules. Importing them from two places
 is how a marker list drifts.
 
 What remains is the WHM-specific translation: a `whm_servers` row is not a connection. Three
@@ -88,7 +88,7 @@ def build_whm_client(
 
 
 class WHMClientFactory(Protocol):
-    """How the tool path asks for a WHM client (T21).
+    """How the tool path asks for a WHM client.
 
     `build_whm_client` is the production implementation and the default everywhere. The
     Protocol exists so `McpToolContext` can name the seam in a type instead of a

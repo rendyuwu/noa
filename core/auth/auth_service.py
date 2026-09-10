@@ -1,9 +1,9 @@
-"""Login + session resolution (T8, V6, V7, V9, V79).
+"""Login + session resolution.
 
 Ported from `noa-old` branch `MCP` (`core/auth/auth_service.py`, C13). This is the
 one place the three auth mechanisms meet: LDAP says whether the operator is employed
 (C4, T6), the `users` row says whether NOA has activated them (V7), and `JWTService`
-mints the cookie credential (V6, T7).
+mints the cookie credential.
 
 Two entry points, and the second one is not an optimization:
 
@@ -24,7 +24,7 @@ Departures from `noa-old`, each with a test:
    for credential guesses only (`AuthInvalidCredentialsError`).
 2. **The transaction boundary is explicit.** `noa-old`'s FastAPI dependency inspected
    `getattr(exc, "error_code", None) == "user_pending_approval"` to decide whether to
-   commit, because a first login must persist its new row (V7) *and* raise 403. Here
+   commit, because a first login must persist its new row *and* raise 403. Here
    `authenticate()` commits after provisioning and before the activation gate, so the
    rule sits where the rule is, and no caller sniffs exception types.
 3. **A recorded failure is committed before the error propagates.** Otherwise the
@@ -57,14 +57,14 @@ from core.auth.ldap_service import LdapUser
 from core.auth.login_rate_limiter import UNKNOWN_IP, LoginRateLimiter
 from core.db.models import ADMIN_ROLE_NAME
 
-# Internal diagnostics for the `detail` slot: logs only, never a response body (V8).
+# Internal diagnostics for the `detail` slot: logs only, never a response body.
 DETAIL_BLANK_INPUT = "blank email or password; ⊥ directory bind attempted"
 DETAIL_PENDING_APPROVAL = "`users.is_active` is False; awaiting admin activation"
 DETAIL_SESSION_USER_GONE = "`uid` claim resolves to no `users` row"
 
 
 class DirectoryAuthenticator(Protocol):
-    """The slice of `LDAPService` the login path uses (T6)."""
+    """The slice of `LDAPService` the login path uses."""
 
     async def authenticate(self, email: str, password: str) -> LdapUser: ...
 
@@ -74,7 +74,7 @@ class SessionUser:
     """Who the caller is, as of this request.
 
     Built from a fresh row read every time, so `is_active` and `roles` reflect the
-    database rather than the cookie (V6, V11).
+    database rather than the cookie.
     """
 
     user_id: UUID
@@ -89,7 +89,7 @@ class AuthenticatedSession:
     """Result of a successful login: the cookie credential plus who it belongs to.
 
     `issued` goes to `JWTService.set_session_cookie` and nowhere near a response body
-    (V8) — the browser gets the token as an httpOnly cookie, the JSON gets the user.
+    — the browser gets the token as an httpOnly cookie, the JSON gets the user.
     """
 
     issued: IssuedToken
@@ -114,17 +114,17 @@ class AuthService:
         self._rate_limiter = rate_limiter
         self._bootstrap_admin_emails = {email.strip().lower() for email in bootstrap_admin_emails}
 
-    # --- Login (V7, V9) ---
+    # --- Login ---
 
     async def authenticate(
         self, *, email: str, password: str, source_ip: str | None = None
     ) -> AuthenticatedSession:
         """Authenticate against LDAP, provision/activate, mint the session token.
 
-        Raises, in the order the gates run: `AuthRateLimitedError` (V9),
+        Raises, in the order the gates run: `AuthRateLimitedError`,
         `AuthInvalidCredentialsError` / `AuthAccountDisabledError` /
-        `LdapUnavailableError` from the directory (C4), then
-        `AuthPendingApprovalError` when NOA has not activated the row (V7).
+        `LdapUnavailableError` from the directory, then
+        `AuthPendingApprovalError` when NOA has not activated the row.
         """
         normalized_email = email.strip().lower()
         if not normalized_email or not password:
@@ -142,7 +142,7 @@ class AuthService:
 
         user = await self._provision(normalized_email, ldap_user)
         # Commit BEFORE the activation gate: a first login provisions an inactive row
-        # and then raises (V7), and that row is what an admin enables. Rolling it back
+        # and then raises, and that row is what an admin enables. Rolling it back
         # would make first login a silent no-op the operator can only retry.
         await self._repository.commit()
 
@@ -159,7 +159,7 @@ class AuthService:
             user=self._to_session_user(user, roles),
         )
 
-    # --- Per-request session resolution (V6) ---
+    # --- Per-request session resolution ---
 
     async def resolve_session_user(self, user_id: UUID) -> SessionUser:
         """Re-read the row a verified session cookie points at.

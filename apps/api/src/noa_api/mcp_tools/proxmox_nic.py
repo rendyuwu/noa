@@ -1,17 +1,17 @@
-"""`proxmox_vm_nic` — one tool for two directions (T28 — V63).
+"""`proxmox_vm_nic` — one tool for two directions.
 
 The second Proxmox CHANGE tool, and the first of the two **enum collapses** DECISIONS §9 adopted:
 `proxmox_enable_vm_nic` and `proxmox_disable_vm_nic` become one tool with an `action` parameter.
 That is a schema decision with a recorded cost — RBAC gets coarser, because a role can no longer
 be granted one direction without the other (DECISIONS §9) — and it is not re-litigated here.
 
-**Two halves, and only the first is here.** This module runs the in-process preflight (C9, V17)
+**Two halves, and only the first is here.** This module runs the in-process preflight
 and opens an `action_requests` row; it executes nothing, and the LLM can reach it. The half that
 flips the link is `proxmox_nic_runner.py`, reachable only from `core.approvals.execution` after an
-operator approved (V22). Two files for C14, split on the boundary the design already draws, and
+operator approved. Two files for C14, split on the boundary the design already draws, and
 the dependency runs one way — T27's arrangement, one tool over.
 
-**No reason parameter, and nowhere to add one** (C8, V15, V43). `open_change_request` refuses a
+**No reason parameter, and nowhere to add one**. `open_change_request` refuses a
 reason-shaped argument even for a caller reaching this function directly.
 
 **No `digest` parameter either, and no digest on the evidence** — this is where T28 departs from
@@ -25,14 +25,14 @@ authored. So the runner re-reads and writes under a fresh digest, and the compar
 is its own read→write. What the approval window is checked against is the fact the operator
 actually approved — the NIC's **link state** — which the runner re-reads and compares.
 
-**One NIC is inferred; two without a name is `choices`** (C10, V18). A VM with a single NIC is not
+**One NIC is inferred; two without a name is `choices`**. A VM with a single NIC is not
 an ambiguity, and refusing it would make the common case a two-turn conversation. The inference is
 recorded on the evidence (`auto_selected`), so the card tells the operator NOA picked rather than
 hiding it behind a `netN` key they never typed.
 
 **A no-op branch, unlike T27.** A NIC already in the state being asked for has nothing to
 authorise, so this answers `no_op` and opens nothing — T22, T23 and T26's shape. That answer is
-transcript (V26), so it is built from the server name, the VM and one measured boolean rather than
+transcript, so it is built from the server name, the VM and one measured boolean rather than
 from the config it was decided from.
 
 **V96 has no instance here.** A `netN` line has no note field and NOA writes no `description`, so
@@ -74,7 +74,7 @@ from noa_api.mcp_tools.results import (
 
 TOOL_PROXMOX_VM_NIC: Final = "proxmox_vm_nic"
 
-# --- The action enum (V63) ---
+# --- The action enum ---
 #
 # Two words, and the pair is the whole of DECISIONS §9's collapse. They are constants rather than
 # literals at each site because they cross three boundaries: the published schema, the JSONB
@@ -121,7 +121,7 @@ MESSAGE_NO_NICS_FOUND: Final = (
     "This VM has no QEMU network interfaces, so there is no link to enable or disable."
 )
 
-# The two ambiguity codes (C10, V18). Both ship `choices`, because a refusal that does not say
+# The two ambiguity codes. Both ship `choices`, because a refusal that does not say
 # what the options were makes the model ask the operator a question NOA could have answered.
 ERROR_NET_SELECTION_REQUIRED: Final = "net_selection_required"
 ERROR_NET_NOT_FOUND: Final = "net_not_found"
@@ -143,7 +143,7 @@ SERVER_REF_DESCRIPTION: Final = (
 )
 
 
-# --- The tool: it opens a question and changes nothing (V16, V22, V23) ---
+# --- The tool: it opens a question and changes nothing ---
 
 
 @sanitize_tool_errors(TOOL_PROXMOX_VM_NIC)
@@ -156,23 +156,23 @@ async def proxmox_vm_nic(
     net: str | None = None,
     context: McpToolContext,
 ) -> ToolAnswer:
-    """Ask for one VM NIC's link to be enabled or disabled; change nothing (T28 — V16, V17, V23).
+    """Ask for one VM NIC's link to be enabled or disabled; change nothing.
 
-    Three guards run before any I/O, so a malformed call costs no round trip (V21): a blank or
+    Three guards run before any I/O, so a malformed call costs no round trip: a blank or
     whitespace-only `node` is refused — the schema cannot express it, because `min_length` counts
     whitespace — a `vmid` that is not a positive whole number is refused here as well as by the
     schema, because a caller reaching this function directly bypasses pydantic and this value goes
-    into a URL path, and an `action` outside the enum is refused for the same reason (V63).
+    into a URL path, and an `action` outside the enum is refused for the same reason.
 
     Then one database session — resolve the operator's word to a server (V18: a tie is `choices`,
     never a pick) — and the session closes before the HTTP hops, which is T21's rule.
 
-    The preflight is this call's own and runs in-process (C9, V17): the VM's interfaces and its run
+    The preflight is this call's own and runs in-process: the VM's interfaces and its run
     state, born here, milliseconds old, same user, reaching the operator through
     `approval_context` rather than through a transcript.
 
     Two of its answers are refusals rather than evidence, and both are ambiguity rather than
-    failure (C10, V18): a VM with several NICs and no `net` named, and a `net` that is not on this
+    failure: a VM with several NICs and no `net` named, and a `net` that is not on this
     VM. Each ships the interfaces it found, so the next call can name one.
 
     One is an answer rather than a question: a NIC already in the state being asked for is `no_op`,
@@ -256,23 +256,23 @@ async def proxmox_vm_nic(
 
 
 def link_state_for(action: str) -> str:
-    """The link state `action` asks for. One mapping, read by both halves (V66)."""
+    """The link state `action` asks for. One mapping, read by both halves."""
     return LINK_STATE_DOWN if action == ACTION_DISABLE else LINK_STATE_UP
 
 
-# --- The preflight (C9, V17) ---
+# --- The preflight ---
 
 
 @dataclass(frozen=True)
 class VMNICState:
-    """The before-state an operator authorises a NIC change against (V33, V35).
+    """The before-state an operator authorises a NIC change against.
 
     A fixed set of fields, built by naming what goes in rather than by sanitizing what came out of
     Proxmox — a VM config carries a hundred keys, and a structure with nowhere to put one cannot
     leak by an omission nobody noticed (V26, V93's shape).
 
     `unavailable_reads` names any preflight read that could not answer, rather than letting an
-    absent field read as a measured absence (V86). Only the run state is allowed to be missing:
+    absent field read as a measured absence. Only the run state is allowed to be missing:
     the config is what the decision rests on, so a failure there is a refusal, not a gap.
     """
 
@@ -313,7 +313,7 @@ class NICSelection:
 async def collect_nic_state(
     client: ProxmoxClient, *, node: str, vmid: int, requested_net: str | None
 ) -> VMNICState | ToolPayload:
-    """Read one VM's interfaces and run state, or refuse. Internal — ⊥ an MCP tool (C9, V17).
+    """Read one VM's interfaces and run state, or refuse. Internal — ⊥ an MCP tool.
 
     One required read and one tolerated. The config carries the `netN` lines the whole decision
     rests on, so a failure there is a refusal — a card that cannot describe what it is asking
@@ -363,7 +363,7 @@ async def collect_nic_state(
 def select_requested_nic(
     nics: list[NetworkInterface], *, requested_net: str | None
 ) -> NICSelection | ToolPayload:
-    """The NIC this call is about, or a refusal that lists the candidates (C10, V18).
+    """The NIC this call is about, or a refusal that lists the candidates.
 
     Three outcomes and only one of them is a pick:
 
@@ -404,7 +404,7 @@ def register_proxmox_nic_tools(server: FastMCP, *, context: McpToolContext) -> d
     from `tools/list` instead of from the description.
 
     `ToolRisk.CHANGE` is what tells `ToolRunAuditMiddleware` to write no `tool_runs` row for this
-    call (T73) — it opens an approval request and executes nothing — and what makes
+    call — it opens an approval request and executes nothing — and what makes
     `registry.assert_change_runners_cover` demand a runner for the name at startup, rather than
     letting an operator discover the gap after typing a reason and pressing Approve.
     """
@@ -413,7 +413,7 @@ def register_proxmox_nic_tools(server: FastMCP, *, context: McpToolContext) -> d
         name=TOOL_PROXMOX_VM_NIC,
         description=DESCRIPTION_PROXMOX_VM_NIC,
         # Standard MCP hints, and nothing NOA relies on — a client may ignore them. The split that
-        # matters is the approval gate (V16); the classification that matters is the risk returned
+        # matters is the approval gate; the classification that matters is the risk returned
         # below. `idempotentHint` is True because asking for a state the NIC is already in is a
         # `no_op` rather than a second change.
         annotations={"readOnlyHint": False, "destructiveHint": True, "idempotentHint": True},

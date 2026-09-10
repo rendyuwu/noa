@@ -1,4 +1,4 @@
-"""Parking one large READ result, and reading it back for its requester (T56 — V64, V85).
+"""Parking one large READ result, and reading it back for its requester.
 
 A READ that answers with a listing does three things here: it hands its rows over, gets a
 token, and puts the URL that token names into its tool result (`noa_api.mcp_tools`). Nothing
@@ -10,7 +10,7 @@ writer inserts and commits, the reader has no `commit` and no statement that is 
 `SELECT`. The MCP tool path holds the first; the HTTP surface an operator opens holds the
 second, and neither is reachable from the other's side.
 
-**The read is one statement, and all three guards are in it** (V27, V93). Token, requester
+**The read is one statement, and all three guards are in it**. Token, requester
 and deadline sit in the same `WHERE`, so a table that is not the caller's — or is past its
 lifetime — is never fetched into the process. A guard applied after the read is a projection
 away from being no guard at all: the row would be loaded, in front of the logger and the next
@@ -20,7 +20,7 @@ edit, and every existing test would stay green (V93, measured at T42(b)).
 nobody under SQL's NULL semantics — the fail-closed direction, the same one V27 names for
 approval requests.
 
-**The cap is applied where the row is written, and it reports itself** (V85). `cap_rows`
+**The cap is applied where the row is written, and it reports itself**. `cap_rows`
 returns the rows that survive, the count before the cut and whether there was one; all three
 are stored, so no reader has to infer a total from the rows it can see. A surface that
 rendered `len(rows)` as the total would be exactly the fabrication V85 exists to stop, and
@@ -31,9 +31,9 @@ hands it over is the one that knows which order is reproducible for its source �
 amended ordering clause, which T24 already had to bend for `csf -g`. What this module
 guarantees is that the cut is a prefix and never a re-sort.
 
-**Rows are redacted on the way in** (V8, V45). The same one-way `redact_sensitive_data` the
+**Rows are redacted on the way in**. The same one-way `redact_sensitive_data` the
 audit path uses, at any depth (B7's lesson: a guard that reads only the top level is not a
-guard). A parked table outlives the call, sits behind a URL in a persisted transcript (V26),
+guard). A parked table outlives the call, sits behind a URL in a persisted transcript,
 and is read by a browser — three reasons it must not be the one writer exempt from the rule.
 """
 
@@ -54,7 +54,7 @@ from core.db.models import ToolResultTable
 from core.secrets.redaction import redact_sensitive_data
 
 # 32 bytes, URL-safe: 43 characters, and unguessable by any margin that matters. The token is
-# not what authorises the read — the cookie and the requester-match are (V26, V27) — so this
+# not what authorises the read — the cookie and the requester-match are — so this
 # is defence beside the guard rather than instead of it. A shorter token would be a URL an
 # operator could mistype into somebody else's table only if the match were dropped, and that
 # is exactly the sort of "only if" a second layer exists to survive.
@@ -85,7 +85,7 @@ class TableColumn:
 
 @dataclass(frozen=True)
 class CappedRows:
-    """The rows a table will hold, and what the cap hid (V85).
+    """The rows a table will hold, and what the cap hid.
 
     `total_rows` is the count *before* the cut. It equals `len(rows)` exactly when
     `truncated` is false, which is what makes the flag checkable against the numbers instead
@@ -115,7 +115,7 @@ class ParkedTable:
 
 @dataclass(frozen=True)
 class ResultTableView:
-    """One parked table as the operator who produced it may read it (V27, V64, V85).
+    """One parked table as the operator who produced it may read it.
 
     No requester identity and no id: the caller is the requester by construction — the read
     matched on them — so echoing it back would be telling somebody their own name. The token
@@ -161,16 +161,16 @@ class ResultTableView:
 
 
 def cap_rows(rows: Sequence[Mapping[str, Any]], *, max_rows: int) -> CappedRows:
-    """The first `max_rows` rows, the count before the cut, and whether one happened (V85).
+    """The first `max_rows` rows, the count before the cut, and whether one happened.
 
     A prefix, never a re-sort: the caller ordered these, and only the caller knows which
     order is reproducible for its source (V85's amended ordering clause). Re-sorting here
     would scramble a grouping the evidence is read by, which is the deviation T24 had to make
     for `csf -g`.
 
-    Redaction runs over the rows that survive (V8). One-way, recursive, and the same function
+    Redaction runs over the rows that survive. One-way, recursive, and the same function
     the audit path uses — a per-writer exemption from one redaction rule is how one of them
-    eventually writes a credential (B8).
+    eventually writes a credential.
     """
     total_rows = len(rows)
     kept = rows[:max_rows]
@@ -183,7 +183,7 @@ def cap_rows(rows: Sequence[Mapping[str, Any]], *, max_rows: int) -> CappedRows:
 
 
 class ToolResultTableWriter(Protocol):
-    """The one write this path may make: park a table (T56)."""
+    """The one write this path may make: park a table."""
 
     async def store(
         self,
@@ -261,14 +261,14 @@ async def park_result_table(
     now: datetime | None = None,
     token: str | None = None,
 ) -> ParkedTable:
-    """Cap, redact, store and commit one large READ result (V8, V64, V85).
+    """Cap, redact, store and commit one large READ result.
 
     One function so the four steps cannot be done in three places in three orders. The token
     is minted here rather than taken from the caller — `token` exists for tests that need a
     known one — because a caller-supplied token is a caller-supplied identifier for somebody
     else's row.
 
-    Returns the counts as well as the token: the tool's text has to state them (V85), and
+    Returns the counts as well as the token: the tool's text has to state them, and
     re-reading the row it just wrote to find out would be a second answer to one question.
     """
     capped = cap_rows(rows, max_rows=max_rows)
@@ -297,17 +297,17 @@ async def park_result_table(
 
 
 def select_table_for_requester(*, token: str, requester_user_id: UUID, now: datetime) -> Any:
-    """The statement the read path issues, and the whole of its access control (V27, V93).
+    """The statement the read path issues, and the whole of its access control.
 
     Three predicates, one `WHERE`: the token names the row, the requester decides whether it
     may be seen, and the deadline decides whether it still exists. Built as a function rather
     than inline so a test can compile it and assert the guards are *in the statement* — a
     check the caller makes afterwards leaves the row loaded, and every payload test stays
-    green while it does (V93).
+    green while it does.
     """
     return select(ToolResultTable).where(
         ToolResultTable.token == token,
-        # The access control (V27). A NULL requester — the FK is `SET NULL` — matches nobody.
+        # The access control. A NULL requester — the FK is `SET NULL` — matches nobody.
         ToolResultTable.requested_by_user_id == requester_user_id,
         # The lifetime, judged in the same statement so an expired table is never fetched and
         # answers exactly as an absent one does.
@@ -316,7 +316,7 @@ def select_table_for_requester(*, token: str, requester_user_id: UUID, now: date
 
 
 class ToolResultTableReader(Protocol):
-    """The one read this path may make (V27)."""
+    """The one read this path may make."""
 
     async def get_for_requester(
         self,
@@ -332,7 +332,7 @@ class SQLToolResultTableReader:
 
     No `commit`, and nothing to commit: every statement here is a `SELECT`. A read past the
     deadline writes nothing either — unlike an approval, where a stale PENDING has to become
-    terminal because V23 answers "may this run?" from that column (V32). Nothing reads a
+    terminal because V23 answers "may this run?" from that column. Nothing reads a
     parked table's status, so there is none to correct: the row simply stops matching.
     """
 
@@ -346,7 +346,7 @@ class SQLToolResultTableReader:
         requester_user_id: UUID,
         now: datetime,
     ) -> ResultTableView | None:
-        """The caller's table, or `None` (V27).
+        """The caller's table, or `None`.
 
         `None` covers "no such token" *and* "not yours" *and* "its requester was deleted"
         *and* "past its deadline", which is the point — the caller cannot tell them apart,
@@ -376,7 +376,7 @@ class SQLToolResultTableReader:
 
 
 class ResultTableService:
-    """Read one parked table for the operator who produced it (T56 — V27, V64).
+    """Read one parked table for the operator who produced it.
 
     Thin on purpose. Its whole job is to read one clock so the deadline the statement judges
     against is a single moment rather than one the repository picks for itself — the rule

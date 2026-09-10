@@ -1,4 +1,4 @@
-"""RBAC on the MCP path: one gate for every tool (T19 — V1, V10, V11, V74).
+"""RBAC on the MCP path: one gate for every tool.
 
 V1 has two clauses and they are two different checks:
 
@@ -14,7 +14,7 @@ and leans on exactly this execution-time check as the backstop. So a tool revoke
 ago may still be *displayed*, and calling it still fails.
 
 **Nothing is cached, including within a request.** `AuthorizationService` re-reads the
-`users` row and the grant rows on every question (T9), which is what makes V14's
+`users` row and the grant rows on every question, which is what makes V14's
 "immediately" and V11's "disabled → zero permissions" true against a live session. Two DB
 reads per `tools/call` is the price of not having a revocation window.
 
@@ -54,7 +54,7 @@ from noa_api.mcp_tools.context import McpToolContext, build_authorization_servic
 from noa_api.mcp_tools.results import tool_failure
 
 # One structured event per refused call, so a "the model says it cannot do X" report is
-# answerable from the logs. Identifiers only, never the arguments (V8).
+# answerable from the logs. Identifiers only, never the arguments.
 LOG_TOOL_DENIED = "mcp_tool_denied"
 
 # Emitted when the gate could not identify the caller at all. Distinct from a denial: this
@@ -72,7 +72,7 @@ logger = structlog.get_logger(__name__)
 
 
 class RbacToolMiddleware(Middleware):
-    """Filter `tools/list` and re-check `tools/call` against the caller's grants (V1)."""
+    """Filter `tools/list` and re-check `tools/call` against the caller's grants."""
 
     def __init__(self, *, context: McpToolContext, registered_tools: frozenset[str]) -> None:
         self._context = context
@@ -83,7 +83,7 @@ class RbacToolMiddleware(Middleware):
         context: MiddlewareContext[mt.ListToolsRequest],
         call_next: CallNext[mt.ListToolsRequest, Sequence[Tool]],
     ) -> Sequence[Tool]:
-        """Show only what this caller may call (V1, V10, V11).
+        """Show only what this caller may call.
 
         Filtered after `call_next` rather than by asking the registry directly, so tool
         transformations and any future provider still pass through fastmcp's own resolution
@@ -98,7 +98,7 @@ class RbacToolMiddleware(Middleware):
         context: MiddlewareContext[mt.CallToolRequestParams],
         call_next: CallNext[mt.CallToolRequestParams, ToolResult],
     ) -> ToolResult:
-        """Refuse before the tool runs, whatever an earlier `tools/list` said (V1, V74)."""
+        """Refuse before the tool runs, whatever an earlier `tools/list` said."""
         tool_name = context.message.name
         if tool_name not in await self._permitted_tools():
             logger.warning(LOG_TOOL_DENIED, tool=tool_name, error_code=ERROR_TOOL_NOT_PERMITTED)
@@ -114,7 +114,7 @@ class RbacToolMiddleware(Middleware):
     # --- Internals ---
 
     async def _permitted_tools(self) -> set[str]:
-        """The caller's effective tool set, read fresh from the database (V1, V11, V14).
+        """The caller's effective tool set, read fresh from the database.
 
         `get_permitted_tools` already applies V11 (disabled → empty) and V10 (admin → every
         catalogued tool), so no policy is re-decided here — asking "is this caller an admin?"
@@ -126,7 +126,7 @@ class RbacToolMiddleware(Middleware):
             identity = current_mcp_identity()
         except McpAuthError as exc:
             # Unreachable through the mount: `RequireAuthMiddleware` answers 401 before a
-            # tool is dispatched (T13). Fail closed anyway — the alternative is an
+            # tool is dispatched. Fail closed anyway — the alternative is an
             # unauthenticated tool call whenever that assumption stops holding.
             logger.error(LOG_IDENTITY_UNRESOLVED, error_code=exc.error_code, detail=exc.detail)
             return set()

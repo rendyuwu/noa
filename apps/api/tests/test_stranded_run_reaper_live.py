@@ -1,4 +1,4 @@
-"""The reaper's SQL, against a real Postgres (T38 — V20, V30, V46).
+"""The reaper's SQL, against a real Postgres.
 
 What only Postgres can answer:
 
@@ -9,13 +9,13 @@ What only Postgres can answer:
 - **`<=`, matching both expiry doors** (T39(a)). A row exactly on its cutoff has to be one
   thing, and this is the file that can put one there.
 - **The join that decides which reaped run owes a receipt.** `action_receipts.action_request_id`
-  is NOT NULL (T36), and whether a run has a request is a fact about
+  is NOT NULL, and whether a run has a request is a fact about
   `action_requests.tool_run_id` — the same edge the card joins.
 - **`APPROVED` with no run is reachable at all.** T37 writes the run and the link in one
-  transaction (V29), so nothing NOA does produces that pair — but `tool_run_id` is `SET NULL`,
+  transaction, so nothing NOA does produces that pair — but `tool_run_id` is `SET NULL`,
   so deleting a run row does. Without this file the detector would be a predicate that has
   never once been true, which is a guard held by nothing (V69's shape).
-- **The batch, and the ordering it cuts on** (V85, V92). That a pass stops at `batch_size` is
+- **The batch, and the ordering it cuts on**. That a pass stops at `batch_size` is
   visible from a double; that the rows beyond it are never *loaded*, that the total behind the
   cut is counted in the same statement, and that `(created_at, id)` decides which rows the cut
   keeps, are all claims about the `SELECT`. `created_at` is not unique, so the tiebreaker is
@@ -129,7 +129,7 @@ async def insert_read_run(
     *,
     requested_by_user_id: UUID,
 ) -> UUID:
-    """A `STARTED` READ run, as `ToolRunAuditMiddleware`'s opening write leaves one (T73)."""
+    """A `STARTED` READ run, as `ToolRunAuditMiddleware`'s opening write leaves one."""
     async with factory() as session:
         repository = SQLToolRunRepository(session)
         run_id = await repository.start_run(
@@ -178,7 +178,7 @@ async def unlink_run(
 ) -> None:
     """Delete the run row, which nulls `action_requests.tool_run_id` through its `SET NULL` FK.
 
-    This is how the `APPROVED`-with-no-run pair is reachable in production at all (T34), and
+    This is how the `APPROVED`-with-no-run pair is reachable in production at all, and
     therefore the only honest way to seed the detector's population.
     """
     async with factory() as session:
@@ -248,7 +248,7 @@ async def test_a_run_past_the_deadline_is_reaped(factory) -> None:  # type: igno
 
 
 async def test_a_run_inside_the_deadline_is_left_alone(factory) -> None:  # type: ignore[no-untyped-def]
-    """The negative control for the predicate above (V87): a change that is merely slow is not
+    """The negative control for the predicate above: a change that is merely slow is not
     abandoned, and reaping it would report an outcome for something still running."""
     _request_id, run_id = await approved_change(factory)
     await age_run(factory, run_id, created_at=moment() - timedelta(seconds=REAP_AFTER_SECONDS - 1))
@@ -299,7 +299,7 @@ async def test_a_terminal_run_is_never_reaped(factory) -> None:  # type: ignore[
 
 
 class InterleavingStrandedRunRepository(SQLStrandedRunRepository):
-    """A reap pass with another writer's commit landing *inside* it (V89).
+    """A reap pass with another writer's commit landing *inside* it.
 
     The window between the pass's `SELECT` and its `UPDATE` is the one that matters, and a
     test that opened it after the pass had finished would prove nothing about the predicate.
@@ -318,7 +318,7 @@ class InterleavingStrandedRunRepository(SQLStrandedRunRepository):
 
 
 async def test_a_run_that_finishes_inside_the_pass_is_not_overwritten(factory) -> None:  # type: ignore[no-untyped-def]
-    """The executor and the reaper can both reach one run, and the first answer wins (T38).
+    """The executor and the reaper can both reach one run, and the first answer wins.
 
     A change slower than the deadline is read as stranded, finishes while the pass is still
     open, and must not then be re-written as "outcome never observed" — the receipt its own
@@ -361,7 +361,7 @@ async def test_a_run_that_finishes_inside_the_pass_is_not_overwritten(factory) -
 
 
 # --------------------------------------------------------------------------------------
-# The bound one pass is held to (V85, V92)
+# The bound one pass is held to
 # --------------------------------------------------------------------------------------
 
 
@@ -387,7 +387,7 @@ async def test_a_pass_reaps_its_batch_and_leaves_the_rest_started(factory) -> No
 
 
 async def test_a_pass_whose_batch_covers_everything_reports_nothing_left(factory) -> None:  # type: ignore[no-untyped-def]
-    """The negative control for the test above (V87).
+    """The negative control for the test above.
 
     Same three rows, a batch that fits them: every row terminal and `remaining` zero. Without
     this, "the pass left one behind" could be a count that is simply always non-zero.
@@ -416,7 +416,7 @@ async def test_the_next_pass_takes_what_the_last_one_left(factory) -> None:  # t
 
 
 async def test_the_batch_takes_the_oldest_runs_first(factory) -> None:  # type: ignore[no-untyped-def]
-    """Ordered before the cut, oldest first (V85).
+    """Ordered before the cut, oldest first.
 
     Oldest first because a stranded run spends its operator's V31 allowance until it is reaped,
     so the row that has waited longest is the one worth the batch's slot. An unordered cut
@@ -431,7 +431,7 @@ async def test_the_batch_takes_the_oldest_runs_first(factory) -> None:  # type: 
 
 
 async def test_runs_sharing_a_timestamp_are_cut_reproducibly(factory) -> None:  # type: ignore[no-untyped-def]
-    """`created_at` is not unique, so it cannot be the whole sort key (V85).
+    """`created_at` is not unique, so it cannot be the whole sort key.
 
     Two rows stamped identically and a batch of one: without a tiebreaker the cut falls
     wherever the scan happened to yield, so two identical calls can answer differently and a
@@ -467,7 +467,7 @@ async def test_runs_sharing_a_timestamp_are_cut_reproducibly(factory) -> None:  
 
 
 async def test_a_batched_pass_writes_a_receipt_only_for_the_changes_it_reaped(factory) -> None:  # type: ignore[no-untyped-def]
-    """The receipt half is inside the bound too (V46, V92).
+    """The receipt half is inside the bound too.
 
     A pass writes an UPDATE *and* a receipt insert per reaped change, so a bound that capped
     the rows it read but not the receipts it wrote would not be a bound on the transaction. The
@@ -489,7 +489,7 @@ async def test_a_batched_pass_writes_a_receipt_only_for_the_changes_it_reaped(fa
 
 
 async def test_the_detector_is_bounded_and_counts_what_it_did_not_name(factory) -> None:  # type: ignore[no-untyped-def]
-    """The read-only half takes the same treatment (V92).
+    """The read-only half takes the same treatment.
 
     Nothing is repaired here, but every id it finds goes into one log line — so an unbounded
     detector is an unbounded log entry and an unbounded tuple behind it. Bounded, it names a
@@ -507,7 +507,7 @@ async def test_the_detector_is_bounded_and_counts_what_it_did_not_name(factory) 
 
 
 # --------------------------------------------------------------------------------------
-# Which reaped runs owe a receipt (V46)
+# Which reaped runs owe a receipt
 # --------------------------------------------------------------------------------------
 
 
@@ -528,7 +528,7 @@ async def test_a_reaped_change_gets_a_receipt_pointing_at_its_request(factory) -
 
 
 async def test_a_reaped_read_run_gets_no_receipt(factory) -> None:  # type: ignore[no-untyped-def]
-    """A READ has no approval to be the receipt of, and the FK is NOT NULL (T36).
+    """A READ has no approval to be the receipt of, and the FK is NOT NULL.
 
     It is still reaped: T73's middleware swallows a failed closing write and names this reaper as
     what resolves the row, so a stranded READ has to become terminal too.
@@ -547,7 +547,7 @@ async def test_a_reaped_read_run_gets_no_receipt(factory) -> None:  # type: igno
 
 
 async def test_one_pass_reaps_a_read_and_a_change_and_writes_one_receipt(factory) -> None:  # type: ignore[no-untyped-def]
-    """The negative control for the pair above (V87): the join is what decides, not the order the
+    """The negative control for the pair above: the join is what decides, not the order the
     rows happen to be in."""
     _request_id, change_run = await approved_change(factory)
     user_id = await insert_user(factory, "reader@example.com")
@@ -584,9 +584,9 @@ async def test_a_second_pass_does_not_double_the_receipt(factory) -> None:  # ty
 async def test_an_approved_request_whose_run_was_deleted_is_detected(factory) -> None:  # type: ignore[no-untyped-def]
     """The detector's population, seeded the only way production can reach it.
 
-    `action_requests.tool_run_id` is `SET NULL` (T34), so deleting the run row leaves an
+    `action_requests.tool_run_id` is `SET NULL`, so deleting the run row leaves an
     `APPROVED` request pointing at nothing. Without this test the predicate would be one that has
-    never once been true — a guard asserted by prose (V69).
+    never once been true — a guard asserted by prose.
     """
     request_id, run_id = await approved_change(factory)
     await age_decision(factory, request_id, decided_at=moment() - timedelta(hours=2))
@@ -605,7 +605,7 @@ async def test_an_approved_request_whose_run_was_deleted_is_detected(factory) ->
 
 
 async def test_an_approval_with_its_run_intact_is_not_reported(factory) -> None:  # type: ignore[no-untyped-def]
-    """The negative control (V87): the healthy shape T37 produces must not read as an anomaly.
+    """The negative control: the healthy shape T37 produces must not read as an anomaly.
 
     This is the case that matters most — a detector that fires on every approval is one an
     operator learns to ignore.

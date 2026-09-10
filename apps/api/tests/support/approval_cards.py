@@ -1,4 +1,4 @@
-"""Doubles and an app builder for the approval card's GET (T41).
+"""Doubles and an app builder for the approval card's GET.
 
 Postgres is not required for a route test here, and the split is the one
 `support.action_decisions` draws next door: `card_harness` builds an app with the
@@ -15,7 +15,7 @@ different claims and only the second is V27.
 **The journal is the point.** The card repository appends `"read"` and the expiry double appends
 `"expire"`/`"commit"` to one shared list, so a test can assert that a request which is not the
 caller's produces `["read"]` and nothing else — the property that keeps an id an operator was
-handed by a model (V26) from making NOA write to a stranger's row (V27, V32).
+handed by a model from making NOA write to a stranger's row.
 
 Stored values are `ApprovalCardView`s rather than ORM instances, for the reason
 `support.action_decisions` gives: an `ActionRequest` carries its server-defaulted columns as
@@ -66,16 +66,16 @@ from support.auth import (
     override_auth_service_factory,
 )
 
-# The first CHANGE tool (T22). Named rather than built: this is about the card.
+# The first CHANGE tool. Named rather than built: this is about the card.
 CHANGE_TOOL = "whm_suspend_account"
 
-# What LibreChat fills from `{{LIBRECHAT_BODY_CONVERSATIONID}}` (T57, R28).
+# What LibreChat fills from `{{LIBRECHAT_BODY_CONVERSATIONID}}`.
 CONVERSATION_ID = "1f0c2e5a-7b41-4d2e-9a3c-0b5d8e6f4a12"
 
 # The gate's redacted arguments (T33's `build_approval_context`).
 ARGUMENTS: dict[str, Any] = {"server_ref": "alpha", "account": "acmeco"}
 
-# The in-process preflight the CHANGE tool ran (C9, V17). The card shows this; the model never
+# The in-process preflight the CHANGE tool ran. The card shows this; the model never
 # does (`core.approvals.results`), so it is a real value here rather than an empty dict — an
 # assertion about absence needs something present to be absent.
 EVIDENCE: dict[str, Any] = {"account": "acmeco", "suspended": False, "domain": "acme.example"}
@@ -83,7 +83,7 @@ EVIDENCE: dict[str, Any] = {"account": "acmeco", "suspended": False, "domain": "
 # The after-state half of a receipt: what the runner answered, already redacted by the writer
 # (T38's `build_receipt`). Deliberately shares no *value* with `EVIDENCE` above — the claim these
 # files make is that the card carries *both* halves, and a fixture whose halves held the same
-# values could not tell a card showing two from one showing the same one twice (V87). It does
+# values could not tell a card showing two from one showing the same one twice. It does
 # share the key `suspended`, and reads `False` on one side and `True` on the other.
 RECEIPT_AFTER: dict[str, Any] = {"suspended": True, "suspended_at": "2026-08-08T09:31:00+00:00"}
 
@@ -107,7 +107,7 @@ RECEIPT_DELTA: dict[str, Any] = {
 
 LIBRECHAT_USER_ID = "librechat-user-1"
 
-# Fixed, because nothing judges it: pinning it keeps payload equality exact (V87). The
+# Fixed, because nothing judges it: pinning it keeps payload equality exact. The
 # *deadline* is always offset from the real clock — see `card_view`.
 CREATED_AT = datetime(2026, 8, 8, 9, 0, tzinfo=UTC)
 
@@ -137,7 +137,7 @@ def receipt_view(
     error_code: str | None = None,
     delta: dict[str, Any] | None = None,
 ) -> ApprovalCardReceipt:
-    """What T38's writer recorded, as the card reader returns it (V46).
+    """What T38's writer recorded, as the card reader returns it.
 
     `before` defaults to the same `EVIDENCE` the gate persisted, because that is what the
     production writer copies onto the receipt — a fixture with a different before-state would
@@ -220,7 +220,7 @@ class FakeApprovalCardRepository:
         self.rows: dict[UUID, StoredCard] = {}
         self.journal = journal if journal is not None else []
         # One entry per call, so a test can assert *which* requester was asked about — the
-        # cookie's identity, never anything from the request (V27).
+        # cookie's identity, never anything from the request.
         self.lookups: list[tuple[UUID, UUID]] = []
         self.fail: BaseException | None = None
 
@@ -249,7 +249,7 @@ class FakeApprovalCardRepository:
         stored = self.rows.get(action_request_id)
         if stored is None or stored.requester_user_id != requester_user_id:
             # Absent, foreign, or its requester was deleted — one answer for all three, the way
-            # the production `WHERE` gives one (V27). Whether a real row behaves this way is
+            # the production `WHERE` gives one. Whether a real row behaves this way is
             # `test_approval_cards_live.py`'s claim, not this double's.
             return None
         return stored.view
@@ -281,7 +281,7 @@ class CardHarness:
         self.client.cookies.delete(COOKIE_NAME)
 
     def add_operator(self, email: str) -> FakeUserRow:
-        """A second active operator, for the requester-match cases (V27)."""
+        """A second active operator, for the requester-match cases."""
         return self.auth_repository.add_active_user(email)
 
     # --- Requests ---
@@ -341,7 +341,7 @@ def card_harness(*, settings: Settings | None = None) -> Iterator[CardHarness]:
 
     One dependency override beyond auth: the card service. `AuthService` is overridden with
     `support.auth`'s own factory over a *real* `AuthService`, so the `users.is_active` re-read
-    behind `require_session_user` is production code here (V6) and the route's 401 path is real.
+    behind `require_session_user` is production code here and the route's 401 path is real.
 
     The real `ApprovalCardService` sits over the doubles, so the ordering V32 depends on — the
     requester-matched read first, the expiry second — is the shipped ordering.

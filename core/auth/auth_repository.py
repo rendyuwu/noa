@@ -1,4 +1,4 @@
-"""Persistence behind the login flow (T8).
+"""Persistence behind the login flow.
 
 Ported from `noa-old` branch `MCP` (`core/auth/auth_service.py`'s
 `SQLAuthRepository`, `core/auth/role_repository.py`, and
@@ -13,7 +13,7 @@ against a live scratch database.
 
 `commit()` on the repository is deliberate. `noa-old` put the transaction boundary in
 a FastAPI dependency, which then had to inspect the *exception type* to decide
-whether to commit — a first login raises pending-approval (V7) yet its user row must
+whether to commit — a first login raises pending-approval yet its user row must
 persist. Giving the service an explicit commit lets it write that rule where the rule
 lives, and a test double counts the calls.
 
@@ -94,7 +94,7 @@ class SQLAuthRepository:
         return result.scalar_one_or_none()
 
     async def get_user_by_id(self, user_id: UUID) -> User | None:
-        """Primary-key read for the per-request `is_active` re-check (V6).
+        """Primary-key read for the per-request `is_active` re-check.
 
         By id, not email: the session cookie's `uid` claim is stable, while an LDAP
         address change would either 401 a live session or — if an address were ever
@@ -190,7 +190,7 @@ class SQLAuthRepository:
 
 
 class SQLLoginRateLimitRepository:
-    """`LoginRateLimitRepository` over one `AsyncSession` (V9)."""
+    """`LoginRateLimitRepository` over one `AsyncSession`."""
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session

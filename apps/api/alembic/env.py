@@ -1,7 +1,7 @@
-"""Alembic environment. One history for the whole monorepo (C12).
+"""Alembic environment. One history for the whole monorepo.
 
 Models live in `core.db` (shared), migrations live here (the API owns the runner).
-The URL comes from settings or `-x url=...`, never from `alembic.ini` (C11).
+The URL comes from settings or `-x url=...`, never from `alembic.ini`.
 """
 
 from __future__ import annotations
@@ -59,7 +59,7 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_migrations_online() -> None:
-    """Run migrations against a live DB over asyncpg (C3)."""
+    """Run migrations against a live DB over asyncpg."""
     connectable = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",

@@ -1,14 +1,14 @@
 /**
  * Reading one card again, until there is nothing left to wait for (§T.42 — V29, V34).
  *
- * **The state lives in the database, never in a connection** (V29). An approve returns 202 with a
+ * **The state lives in the database, never in a connection**. An approve returns 202 with a
  * `tool_run_id` and the change runs somewhere else entirely; the only way for this frame to learn
  * how it went is to ask again. So the card asks again — through the same-origin proxy, with the
  * same cookie, at the entry §T.44 planted for exactly this and §T.41 did not use (that page reads
  * its detail server-side).
  *
  * **Two speeds, because two different things are being waited on.** While a request is PENDING the
- * only thing that can change is the TTL sweep making it EXPIRED (V32), which nobody is standing by
+ * only thing that can change is the TTL sweep making it EXPIRED, which nobody is standing by
  * for — but which must land before an operator clicks an Approve the decision door would refuse
  * (V38's family). While a run is in flight somebody *is* watching, and 15 seconds of blank waiting
  * after clicking Approve reads as a card that broke.
@@ -85,10 +85,10 @@ export function pollIntervalMs(card: ApprovalCard): number {
 /**
  * Whether the card has watched one run for long enough and should stop asking.
  *
- * Only a run is capped — a PENDING request has a server-side terminator in the expiry sweep (V32),
+ * Only a run is capped — a PENDING request has a server-side terminator in the expiry sweep,
  * on a deadline the card is already showing. Giving up is reported as "still running, reload to
  * check", never as a failure: NOA has no evidence the change failed, only that it has not been told
- * the change finished, and the receipt that would say either way is not written yet (V46).
+ * the change finished, and the receipt that would say either way is not written yet.
  */
 export function isStalled(card: ApprovalCard, runPolls: number): boolean {
   return isRunning(card) && runPolls >= RUN_POLL_LIMIT
@@ -104,7 +104,7 @@ export function isStalled(card: ApprovalCard, runPolls: number): boolean {
  *
  * A transient failure is `unavailable` and is deliberately **not** terminal — the caller keeps
  * asking. "NOA could not be reached just now" and "there is nothing more to wait for" are different
- * facts, and only one of them ends the lifecycle this URL owns (V34).
+ * facts, and only one of them ends the lifecycle this URL owns.
  */
 export async function fetchApprovalCard(actionRequestId: string): Promise<ApprovalCardLoad> {
   let response: Response
@@ -112,7 +112,7 @@ export async function fetchApprovalCard(actionRequestId: string): Promise<Approv
     response = await fetch(pollPath(actionRequestId), {
       method: 'GET',
       headers: { accept: 'application/json' },
-      // The mechanism, stated: the cookie is what authenticates this (V22, V40).
+      // The mechanism, stated: the cookie is what authenticates this.
       credentials: 'same-origin',
       cache: 'no-store',
     })

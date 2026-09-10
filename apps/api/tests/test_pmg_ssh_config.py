@@ -1,4 +1,4 @@
-"""`pmg_servers` row → pinned SSH connection (T18, C7, V48, V55, V58, V69).
+"""`pmg_servers` row → pinned SSH connection.
 
 PMG has one transport, so `resolve_pmg_ssh_config` is the only door into a PMG box — every
 refusal below is the difference between a command running and not running at all.

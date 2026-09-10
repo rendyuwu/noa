@@ -4,20 +4,20 @@ Ported from `noa-old` branch `MCP` (`core/auth/ldap_service.py`, C13) with two
 additions this repo needs:
 
 - `user_exists_and_enabled(email)` — service-account bind + search, no operator
-  password. Drives MCP token revalidation (V4). Directory unreachable raises
+  password. Drives MCP token revalidation. Directory unreachable raises
   `LdapUnavailableError` so callers fail closed, and it is a *distinct* outcome
   from "user is gone": the latter cascade-revokes tokens, the former must not.
 - an injectable `connect` factory, so tests exercise bind/search/error paths
   without a live directory.
 
-LDAP is the source of truth for employment, not merely for login (C4). This module
+LDAP is the source of truth for employment, not merely for login. This module
 owns exactly one of the two gates that deny a login:
 
 - employment, here: no directory entry → `AuthInvalidCredentialsError`; entry
   present but flagged disabled → `AuthAccountDisabledError`. No NOA admin action
   overrides either.
 - NOA activation, not here: `users.is_active` starts False for every new LDAP user
-  and an admin enables it (V7). T8 owns that check and raises
+  and an admin enables it. T8 owns that check and raises
   `AuthPendingApprovalError`. `LDAPService` has no access to the row and no
   opinion about it.
 
@@ -39,7 +39,7 @@ inputs pass through `ldap.filter.escape_filter_chars` — an operator-supplied e
 reaches a filter string, so injection is a real path (`*)(uid=*` otherwise matches
 every entry).
 
-Passwords (V8): never logged, never returned, never placed in a message. On the
+Passwords: never logged, never returned, never placed in a message. On the
 credential path the raw `ldap` exception is dropped rather than chained (`from
 None`), so a directory that echoes the attempted bind back in its diagnostic
 cannot reach a traceback through `__cause__`. Non-credential paths keep the cause
@@ -157,7 +157,7 @@ def _default_connect(uri: str, *, timeout_seconds: int) -> LdapConnection:
 
 
 class LDAPService:
-    """Directory queries for login (T8) and token revalidation (T11)."""
+    """Directory queries for login and token revalidation."""
 
     def __init__(self, settings: Settings, *, connect: ConnectFactory | None = None) -> None:
         self._settings = settings
@@ -170,12 +170,12 @@ class LDAPService:
 
         Every returned `LdapUser` is employed: unknown user and wrong password both
         raise `AuthInvalidCredentialsError`, and a directory-disabled account raises
-        `AuthAccountDisabledError` (C4). `LdapUnavailableError` when the directory is
+        `AuthAccountDisabledError`. `LdapUnavailableError` when the directory is
         unreachable — a caller must not read that as "credentials rejected".
 
         NOA-side activation is a separate gate the caller still owes: a fresh LDAP
         user authenticates here and is still `is_active=False` until an admin
-        enables the row (V7, T8).
+        enables the row.
         """
         normalized_email = self._normalize_email(email)
         if not normalized_email or not password:
@@ -187,7 +187,7 @@ class LDAPService:
         return await asyncio.to_thread(self._authenticate_sync, normalized_email, password)
 
     async def user_exists_and_enabled(self, email: str) -> bool:
-        """True ⟺ directory has `email` and it is not disabled (C4, V4).
+        """True ⟺ directory has `email` and it is not disabled.
 
         Service-account bind + search only — no operator password, so this is
         callable on a background revalidation path. Unreachable directory raises
@@ -222,7 +222,7 @@ class LDAPService:
             try:
                 user_connection.simple_bind_s(found.dn, password)
             except ldap.INVALID_CREDENTIALS:
-                # `from None`: the cause could quote the attempted bind (V8).
+                # `from None`: the cause could quote the attempted bind.
                 raise AuthInvalidCredentialsError(DETAIL_BIND_REJECTED) from None
 
             # Post-bind only: pre-bind, this would answer "disabled?" to anyone
@@ -235,7 +235,7 @@ class LDAPService:
             return found
         except AuthError:
             raise
-        except Exception as exc:  # Classified below; raw detail never leaks (V8).
+        except Exception as exc:  # Classified below; raw detail never leaks.
             raise self._classify(exc) from exc
         finally:
             self._close(user_connection)
@@ -244,7 +244,7 @@ class LDAPService:
     def _find_user_sync(self, email: str) -> LdapUser | None:
         """Service-account search for `email`. None when the directory has no entry.
 
-        Password-free, so it serves background revalidation (V4). Not public: a
+        Password-free, so it serves background revalidation. Not public: a
         caller holding directory facts without a verified bind is one refactor away
         from treating "exists" as "authenticated".
         """
@@ -255,7 +255,7 @@ class LDAPService:
             return self._search_user(connection, email)
         except AuthError:
             raise
-        except Exception as exc:  # Classified below; raw detail never leaks (V8).
+        except Exception as exc:  # Classified below; raw detail never leaks.
             raise self._classify(exc) from exc
         finally:
             self._close(connection)
@@ -284,9 +284,9 @@ class LDAPService:
                 connection.simple_bind_s()
         except ldap.INVALID_CREDENTIALS:
             self._close(connection)
-            # `from None`: the cause could quote the service credential (V8).
+            # `from None`: the cause could quote the service credential.
             raise AuthConfigurationError(DETAIL_SERVICE_BIND_REJECTED) from None
-        except Exception as exc:  # Classified below; raw detail never leaks (V8).
+        except Exception as exc:  # Classified below; raw detail never leaks.
             self._close(connection)
             raise self._classify(exc) from exc
 
@@ -341,7 +341,7 @@ class LDAPService:
         return email.strip().lower()
 
     def _dev_bypass_user(self, email: str) -> LdapUser:
-        """Local-dev identity, no directory involved (C4).
+        """Local-dev identity, no directory involved.
 
         Reachable only in development/test: `core.config` rejects the flag
         elsewhere, so this cannot become a production authentication path.

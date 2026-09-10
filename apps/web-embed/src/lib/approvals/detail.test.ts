@@ -7,7 +7,7 @@ import { loadApprovalCard } from './detail'
  * app sends upstream and what it makes of the answer.
  *
  * Two of these are the same claims §T.44 makes about the proxy, re-proven against this loader
- * rather than cited from it (V69): the cookie is forwarded, and `Authorization` is not. They are
+ * rather than cited from it: the cookie is forwarded, and `Authorization` is not. They are
  * separate code paths — the proxy filters a browser's headers, this one builds its own — so a
  * guarantee held in one place says nothing about the other.
  */
@@ -74,7 +74,7 @@ describe('loadApprovalCard', () => {
     })
   })
 
-  it('forwards the browser’s session cookie (V22, V40)', async () => {
+  it('forwards the browser’s session cookie', async () => {
     // Without this the card authenticates as nobody and every operator sees the 401 state.
     const seen = stubFetch(Response.json(BODY))
 
@@ -94,7 +94,7 @@ describe('loadApprovalCard', () => {
   })
 
   it('never caches the answer', async () => {
-    // It is one operator's session state plus a freshly minted CSRF token (V39). A cached copy is
+    // It is one operator's session state plus a freshly minted CSRF token. A cached copy is
     // another operator's card, or a stale token, or both.
     const seen = stubFetch(Response.json(BODY))
 
@@ -121,7 +121,7 @@ describe('loadApprovalCard', () => {
     expect(seen[0]?.url).toBe('http://backend.test/action-requests/..%2Fauth%2Flogin')
   })
 
-  it('maps 401 to the “cannot authenticate here” state, and asks upstream first (V38)', async () => {
+  it('maps 401 to the “cannot authenticate here” state, and asks upstream first', async () => {
     // The `toHaveLength(1)` is the part worth keeping: this loader does not shortcut a missing
     // cookie into a 401 of its own. Whether a session is valid is the API's judgement — V6's row
     // re-read lives there — and a client-side guess would answer "not signed in" for reasons that
@@ -134,7 +134,7 @@ describe('loadApprovalCard', () => {
     expect(load).toEqual({ kind: 'unauthenticated' })
   })
 
-  it('maps 404 to one not-found state (V27)', async () => {
+  it('maps 404 to one not-found state', async () => {
     stubFetch(Response.json({ error_code: 'action_request_not_found' }, { status: 404 }))
 
     expect(await loadApprovalCard(ID, { cookie: 'noa_session=abc' })).toEqual({

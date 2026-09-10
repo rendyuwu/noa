@@ -1,4 +1,4 @@
-"""Request-scoped dependencies (T8).
+"""Request-scoped dependencies.
 
 Long-lived objects — `Settings`, `JWTService`, `LDAPService`, the engine, the session
 factory — are built once in the app lifespan and read off `app.state` here. T8 requires
@@ -12,7 +12,7 @@ Per-request objects — the DB session, the repositories, the rate limiter, `Aut
 
 `require_session_user` is the important export. Every session-authenticated route in
 this app depends on it, so the `users.is_active` re-read V6 demands happens once,
-centrally, and a new route cannot forget it. `require_admin` (T9) layers on top of it, so
+centrally, and a new route cannot forget it. `require_admin` layers on top of it, so
 the role check always happens *after* that re-read — a disabled admin loses the panel on
 their next request, not at cookie expiry. T37's decision routes depend on it for the same
 reason, one boundary over: a disabled operator cannot approve a change with a cookie that
@@ -114,22 +114,22 @@ def _from_state(request: Request, key: str, expected: type[T]) -> T:
 
 
 def get_settings_dep(request: Request) -> Settings:
-    """Process settings, resolved once at startup (T5)."""
+    """Process settings, resolved once at startup."""
     return _from_state(request, STATE_SETTINGS, Settings)
 
 
 def get_jwt_service(request: Request) -> JWTService:
-    """The single `JWTService`, constructed at startup (T8, V6)."""
+    """The single `JWTService`, constructed at startup."""
     return _from_state(request, STATE_JWT_SERVICE, JWTService)
 
 
 def get_ldap_service(request: Request) -> LDAPService:
-    """The single `LDAPService` (T6, C4)."""
+    """The single `LDAPService`."""
     return _from_state(request, STATE_LDAP_SERVICE, LDAPService)
 
 
 def get_session_factory(request: Request) -> async_sessionmaker[AsyncSession]:
-    """Session factory bound to the app's engine (C3)."""
+    """Session factory bound to the app's engine."""
     factory = _from_state(request, STATE_SESSION_FACTORY, async_sessionmaker)
     return cast("async_sessionmaker[AsyncSession]", factory)
 
@@ -161,10 +161,10 @@ def get_auth_service(
     jwt_service: JWTServiceDep,
     ldap_service: LDAPServiceDep,
 ) -> AuthService:
-    """`AuthService` wired to this request's session (T8).
+    """`AuthService` wired to this request's session.
 
     Repositories and the rate limiter share that one session, so a recorded login
-    failure and a provisioned user row commit or roll back together (V7, V9).
+    failure and a provisioned user row commit or roll back together.
     """
     return AuthService(
         repository=SQLAuthRepository(session),
@@ -188,7 +188,7 @@ async def require_session_user(
     jwt_service: JWTServiceDep,
     auth_service: AuthServiceDep,
 ) -> SessionUser:
-    """Resolve the caller from the `noa_session` cookie, re-reading the row (V6).
+    """Resolve the caller from the `noa_session` cookie, re-reading the row.
 
     Three gates, all raising `AuthError` subclasses the shared handler turns into
     responses: no cookie → 401 `session_invalid`; cookie that fails signature/claim
@@ -228,12 +228,12 @@ def get_action_decision_service(
     settings: SettingsDep,
     executor: Annotated[ApprovedChangeExecutor, Depends(get_approved_change_executor)],
 ) -> ActionDecisionService:
-    """The one writer of a terminal `action_requests.status` (T37, V22, V28, V31).
+    """The one writer of a terminal `action_requests.status`.
 
     Built per request on the request's session, like `AuthService`, so the decision, the
     `tool_runs` row it starts and their commit are one transaction — and so a handler that
     raises rolls all of it back together. V31's per-user count is taken on that same session
-    and inside that same transaction, which is what its advisory lock is holding open (T38).
+    and inside that same transaction, which is what its advisory lock is holding open.
 
     Deliberately absent from `McpToolContext`. `SQLActionRequestRepository` is what the tool
     path gets, and it can write only `PENDING`; this can write `APPROVED`, so it lives on the
@@ -250,7 +250,7 @@ ActionDecisionServiceDep = Annotated[ActionDecisionService, Depends(get_action_d
 
 
 def get_action_request_expiry_service(session: SessionDep) -> ActionRequestExpiryService:
-    """V32's check-on-read, for a path that renders a request rather than decides one (T39).
+    """V32's check-on-read, for a path that renders a request rather than decides one.
 
     Built per request on the request's session, like the decision service above, so the
     expiry and whatever the handler reads next are one transaction's worth of truth.
@@ -275,7 +275,7 @@ def get_approval_card_service(
     session: SessionDep,
     expiry: ActionRequestExpiryServiceDep,
 ) -> ApprovalCardService:
-    """What the approval card GET reads its request through (T41, V27, V32, V35).
+    """What the approval card GET reads its request through.
 
     A *reader*, and the type says so: `SQLApprovalCardRepository` has no `commit` and issues no
     statement that is not a `SELECT`. The only write this dependency can cause is an expiry, and
@@ -296,7 +296,7 @@ ApprovalCardServiceDep = Annotated[ApprovalCardService, Depends(get_approval_car
 
 
 def get_result_table_service(session: SessionDep) -> ResultTableService:
-    """What the large-READ table surface reads through (T56, V27, V64).
+    """What the large-READ table surface reads through.
 
     A *reader*, like the card service above and for the same reason spelled against another
     table: `SQLToolResultTableReader` has no `commit` and issues no statement that is not a
@@ -316,12 +316,12 @@ ResultTableServiceDep = Annotated[ResultTableService, Depends(get_result_table_s
 
 
 def get_tool_run_audit_service(session: SessionDep) -> ToolRunAuditService:
-    """What the admin audit surface reads `tool_runs` through (T55, V45, V47).
+    """What the admin audit surface reads `tool_runs` through.
 
     A *reader*, the third of them on this session dependency and for the same reason as the two
     above: `SQLToolRunAuditReader` has no `commit` and issues no statement that is not a `SELECT`.
-    The writers of that table sit on the other side of V22's boundary — the MCP tool path (T73)
-    and the approval executor (T37, T38) — and none of them is reachable from here.
+    The writers of that table sit on the other side of V22's boundary — the MCP tool path
+    and the approval executor — and none of them is reachable from here.
 
     No settings and no clock: the page bound is a module constant shared with the route's
     `Query(le=…)` (`core.audit.tool_run_reads.MAX_PAGE_SIZE`), and nothing on this path is judged
@@ -339,7 +339,7 @@ def get_action_request_admin_service(session: SessionDep) -> ActionRequestAdminS
     The fourth reader on this session dependency, and the same argument holds:
     `SQLActionRequestAdminReader` has no `commit` and issues no statement that is not a `SELECT`.
     The three writers of what it reads all sit elsewhere — `core.approvals.decisions` owns the one
-    terminal-status transition (V22, V28), `ActionRequestExpiryService` owns the other, and
+    terminal-status transition, `ActionRequestExpiryService` owns the other, and
     `core.audit.receipts` writes the receipt — and none of them is reachable from this object.
 
     No expiry service and no clock, unlike `get_approval_card_service`. V32's check-on-read is a
@@ -355,7 +355,7 @@ ActionRequestAdminServiceDep = Annotated[
 
 
 def get_tool_list_notifier(request: Request) -> ToolListChangedNotifier:
-    """T66's emitter, holding the MCP session register the mount writes (V74).
+    """T66's emitter, holding the MCP session register the mount writes.
 
     Long-lived and read off `app.state`, unlike the audit sink beside it: the register it reads
     is written by the MCP middleware over the life of the process, so a per-request notifier
@@ -374,7 +374,7 @@ def get_authorization_service(
     session: SessionDep,
     tool_list_notifier: Annotated[ToolListChangedNotifier, Depends(get_tool_list_notifier)],
 ) -> AuthorizationService:
-    """The RBAC engine wired to this request's session (T9, T66).
+    """The RBAC engine wired to this request's session.
 
     Built per request, like `AuthService`, so a role change and its audit event share one
     transaction. The audit sink is constructed here rather than kept on `app.state` because
@@ -388,7 +388,7 @@ def get_authorization_service(
     The notifier is the one collaborator that is *not* request-scoped, and the asymmetry is
     T66's whole shape: a permission change is a transaction, and telling the MCP sessions about
     it is not part of that transaction — it happens after the commit, over connections that
-    outlive this request (V74).
+    outlive this request.
     """
     return AuthorizationService(
         repository=SQLAuthorizationRepository(session),
@@ -401,18 +401,18 @@ AuthorizationServiceDep = Annotated[AuthorizationService, Depends(get_authorizat
 
 
 def get_mcp_token_service(session: SessionDep, settings: SettingsDep) -> McpTokenService:
-    """Mint / list / revoke for `mcp_tokens`, wired to this request's session (T10, T53).
+    """Mint / list / revoke for `mcp_tokens`, wired to this request's session.
 
     Built per request like `AuthorizationService` above, and for the same reason: the write and
     its audit event share one transaction, and the service commits that transaction itself
-    (V100) because `get_db_session` does not.
+    because `get_db_session` does not.
 
     No tool-list notifier, unlike the RBAC engine beside it. Minting or revoking a credential
     changes *who* a caller is, never *what* their roles permit, so there is no catalog for a
     connected client to refetch — and V1's per-call re-check is what makes a revoked token stop
     working, on the next request, with nothing to announce.
 
-    `mcp_token_ttl_seconds` is `None` by default (T5), which means the row lives until someone
+    `mcp_token_ttl_seconds` is `None` by default, which means the row lives until someone
     deletes it. That is the primary retirement path by design: V4's LDAP revalidation and admin
     revoke retire a credential, an expiry is only an extra bound.
     """
@@ -427,7 +427,7 @@ McpTokenServiceDep = Annotated[McpTokenService, Depends(get_mcp_token_service)]
 
 
 def get_secret_cipher(request: Request) -> SecretCipher:
-    """The app's one `SecretCipher`, built in `build_runtime` (C7, V48, V52).
+    """The app's one `SecretCipher`, built in `build_runtime`.
 
     Long-lived and read off `app.state` like `JWTService`: a per-request cipher would re-derive
     a Fernet key on every call, and a bad key would surface as a 500 on the first server save
@@ -445,11 +445,11 @@ def get_whm_server_admin_service(
     session: SessionDep,
     cipher: SecretCipherDep,
 ) -> WHMServerAdminService:
-    """WHM inventory CRUD, wired to this request's session (T54, V14, V100).
+    """WHM inventory CRUD, wired to this request's session.
 
     Built per request like `AuthorizationService` and `McpTokenService`, and for the same
     reason: the write and its audit event share one transaction, and the service commits that
-    transaction itself because `get_db_session` does not (V100).
+    transaction itself because `get_db_session` does not.
 
     `SQLWHMServerAdminRepository` — not the read repository the MCP tool path gets. The tool
     path resolves a server reference and must not hold an object that can delete one, which is
@@ -466,7 +466,7 @@ def get_proxmox_server_admin_service(
     session: SessionDep,
     cipher: SecretCipherDep,
 ) -> ProxmoxServerAdminService:
-    """Proxmox inventory CRUD, wired to this request's session (T54, V14, V100)."""
+    """Proxmox inventory CRUD, wired to this request's session."""
     return ProxmoxServerAdminService(
         repository=SQLProxmoxServerAdminRepository(session),
         cipher=cipher,
@@ -478,7 +478,7 @@ def get_pmg_server_admin_service(
     session: SessionDep,
     cipher: SecretCipherDep,
 ) -> PMGServerAdminService:
-    """PMG inventory CRUD, wired to this request's session (T54, V14, V100)."""
+    """PMG inventory CRUD, wired to this request's session."""
     return PMGServerAdminService(
         repository=SQLPMGServerAdminRepository(session),
         cipher=cipher,
@@ -497,7 +497,7 @@ def get_whm_server_validation_service(
     request: Request,
     cipher: SecretCipherDep,
 ) -> WHMServerValidationService:
-    """WHM's reachability probe (T54, V82).
+    """WHM's reachability probe.
 
     **Takes the session factory, not this request's session**, unlike the three CRUD services
     above — and this is the one dependency in this file that deliberately does not use
@@ -524,7 +524,7 @@ def get_proxmox_server_validation_service(
     request: Request,
     cipher: SecretCipherDep,
 ) -> ProxmoxServerValidationService:
-    """Proxmox's reachability probe (T54).
+    """Proxmox's reachability probe.
 
     Same session discipline as WHM's above, and a strictly weaker repository:
     `SQLProxmoxServerRepository` is the `SELECT`-only read repository, because Proxmox has no
@@ -543,7 +543,7 @@ def get_pmg_server_validation_service(
     request: Request,
     cipher: SecretCipherDep,
 ) -> PMGServerValidationService:
-    """PMG's reachability probe (T54, V58, V82). Same shape as WHM's, one table over."""
+    """PMG's reachability probe. Same shape as WHM's, one table over."""
     return PMGServerValidationService(
         session_factory=get_session_factory(request),
         repository_factory=SQLPMGHostKeyPinRepository,
@@ -564,7 +564,7 @@ PMGServerValidationServiceDep = Annotated[
 
 
 async def require_admin(current_user: SessionUserDep) -> SessionUser:
-    """Gate every `/admin` route on the `admin` role (V13).
+    """Gate every `/admin` route on the `admin` role.
 
     Depends on `require_session_user`, so the V6 row re-read runs first and the roles
     checked here are the ones in the database, never the cookie's claims — the session JWT

@@ -1,4 +1,4 @@
-"""Combined-stream view of a `CommandResult` (T16, V56, V66).
+"""Combined-stream view of a `CommandResult`.
 
 `noa-old` carried this function **three times**, byte-identical, on branch `MCP`:
 `whm/integrations/csf_cli.py:30`, `whm/integrations/imunify_cli.py:33`, and
@@ -12,7 +12,7 @@ explanation on stderr while `--json` output goes to stdout. A caller that reads 
 an empty error message roughly half the time, which is how a failure ends up reported as
 `… failed with exit code 1` and nothing else.
 
-**Reads `stdout`, ⊥ `raw_stdout` (V56).** This text is parsed and shown to an operator, so it
+**Reads `stdout`, ⊥ `raw_stdout`.** This text is parsed and shown to an operator, so it
 must be the banner-stripped stream — a CloudLinux LVE banner in front of a JSON document is
 exactly what `noa-old` GH #83 was. `raw_stdout`/`raw_stderr` stay on the result for audit.
 """

@@ -14,11 +14,11 @@ import { TableView } from './table-view'
  * its own that are *not* decisions, so a `getByRole('button')` count would go red for the right
  * rule spelled wrongly.
  *
- * **The bound is rendered on every table** (V85), not only on a capped one. A sentence that appeared
+ * **The bound is rendered on every table**, not only on a capped one. A sentence that appeared
  * only when rows were dropped is one a reader learns to skip, and the failure this guards is a
  * capped page read as a complete one.
  *
- * The 401 state is `SignInNotice`, shared with the approval card since this row (V66) — its own
+ * The 401 state is `SignInNotice`, shared with the approval card since this row — its own
  * lane (`src/components/sign-in-notice.test.tsx`) owns the link-plus-address rule V94 names; what
  * is asserted here is that this surface reaches it at all.
  */
@@ -77,7 +77,7 @@ describe('the table', () => {
     expect(screen.getByRole('heading', { name: 'whm_list_accounts' })).toBeDefined()
   })
 
-  it('states the bound when the page is capped (V85)', () => {
+  it('states the bound when the page is capped', () => {
     renderView(tableLoad({ totalRows: 1240, storedRows: 25, truncated: true, rows: TABLE.rows }))
 
     expect(screen.getByText(/1,240 rows matched/)).toBeDefined()
@@ -85,7 +85,7 @@ describe('the table', () => {
   })
 
   it('states the total on an uncapped page too', () => {
-    // The negative control (V87): without it, "a capped page says so" would pass against a page
+    // The negative control: without it, "a capped page says so" would pass against a page
     // that says it always — and a warning that is always on is one nobody reads.
     renderView(tableLoad())
 
@@ -147,13 +147,13 @@ describe('what a table surface never carries', () => {
 })
 
 describe('the states that are not a table', () => {
-  it('renders the sign-in way out on a 401 (V38, V42, V94)', () => {
+  it('renders the sign-in way out on a 401', () => {
     renderView({ kind: 'unauthenticated' })
 
     expect(screen.getByRole('heading', { name: /cannot authenticate here/i })).toBeDefined()
     expect(screen.getByRole('link', { name: /sign in to noa/i })).toBeDefined()
     // The same address as text beside the link: the render site whose sandbox omits `allow-popups`
-    // opens the link silently and this is the door left (V94, R32).
+    // opens the link silently and this is the door left.
     expect(screen.getByText('https://noa.test/sign-in')).toBeDefined()
   })
 
@@ -165,7 +165,7 @@ describe('the states that are not a table', () => {
     expect(screen.getByRole('button', { name: /try again/i })).toBeDefined()
   })
 
-  it('answers all four not-found causes with one sentence (V27)', () => {
+  it('answers all four not-found causes with one sentence', () => {
     renderView({ kind: 'not-found' })
 
     expect(screen.getByRole('heading', { name: /table not available/i })).toBeDefined()

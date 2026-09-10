@@ -14,7 +14,7 @@ import { type ResultTableLoad, parseResultTable } from '@/lib/tables/table'
  * the embed origin.
  *
  * **The cookie is forwarded and `Authorization` is not.** Every surface this app reaches is
- * cookie-authenticated (V22, V40); a bearer token is LibreChat's to send (C5), never a browser's,
+ * cookie-authenticated; a bearer token is LibreChat's to send, never a browser's,
  * and this loader adds no header a caller could use to relay one — the same departure §T.44(d)
  * makes in the proxy and §T.41(c) makes in the card's loader.
  *

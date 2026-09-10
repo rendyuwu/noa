@@ -1,4 +1,4 @@
-"""`POST …/servers/{id}/validate`: does this server answer, and what is its host key (T54).
+"""`POST …/servers/{id}/validate`: does this server answer, and what is its host key.
 
 Three services, one per system, over **one** trust-on-first-use rule. The rule is the reason
 this module exists separately from `core.servers.admin_service`, and it has two halves that
@@ -11,7 +11,7 @@ are easy to state and were easy to get wrong:
   with the captured value, and store it **only if that probe passed**.
 - Pin stored → probe with it. `ssh_exec` compares mid-handshake, before user auth, so a host
   answering with a different key gets `ssh_host_key_mismatch` and never receives the
-  credential (V82). NOA does **not** re-pin it.
+  credential. NOA does **not** re-pin it.
 
 `noa-old`'s WHM service did re-pin, unconditionally, on every validate — it captured whatever
 key answered and overwrote the stored one before probing. That makes the pin worth nothing:
@@ -159,10 +159,10 @@ async def probe_ssh_reachable(config: SSHConnectionConfig) -> None:
 
 
 async def probe_pmg_reachable(config: SSHConnectionConfig) -> None:
-    """PMG's SSH probe: `pmgsh get /version`, then read `/config/mynetworks` (V58).
+    """PMG's SSH probe: `pmgsh get /version`, then read `/config/mynetworks`.
 
     Two commands rather than one, and `noa-old` had both: `/version` proves the credential and
-    `sudo -n` where it is needed (V55), while `mynetworks` proves the endpoint every PMG tool
+    `sudo -n` where it is needed, while `mynetworks` proves the endpoint every PMG tool
     actually touches is readable. A node that authenticates but refuses `mynetworks` would
     otherwise validate green and fail on the first whitelist call.
     """
@@ -182,12 +182,12 @@ async def probe_with_trust_on_first_use(
     a usable pin. Raises whatever the probe raises — the caller shapes the result, because the
     exception trees differ per system.
 
-    The shared half of the rule, so WHM and PMG cannot drift apart on it (V66). This is
+    The shared half of the rule, so WHM and PMG cannot drift apart on it. This is
     deliberately the only place in NOA that decides whether a pin gets written.
     """
     if config.host_key_fingerprint:
         # Pinned: `ssh_exec` compares the presented key mid-handshake and raises
-        # `ssh_host_key_mismatch` before user auth (V82). Nothing is stored either way — a
+        # `ssh_host_key_mismatch` before user auth. Nothing is stored either way — a
         # mismatch is reported, never re-trusted.
         await probe(config)
         return None
@@ -228,7 +228,7 @@ def _validation_metadata(
     fingerprint_captured: bool,
     extra: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """What a validate event records (V14, V8).
+    """What a validate event records.
 
     `host_key_was_pinned` and `fingerprint_captured` are both here on purpose: together they
     answer "who first trusted this host key, and when", which is the question a
@@ -350,14 +350,14 @@ class _WHMProbeOutcome:
 
 
 class WHMServerValidationService:
-    """Validate one WHM server: the API token, then SSH if the row carries credentials (T54).
+    """Validate one WHM server: the API token, then SSH if the row carries credentials.
 
     Both transports, because a WHM row has both (I.ext) and either can be the broken one. The
     API check runs first: it is cheaper, and an operator whose token is wrong should not have
     to read an SSH error to find that out.
 
     A row with **no** SSH credentials validates green on the API alone, and that is right
-    rather than lenient: SSH is what the firewall tools need (T24-T26), and a WHM server used
+    rather than lenient: SSH is what the firewall tools need, and a WHM server used
     only for account reads is a legitimate configuration. `resolve_whm_ssh_config` answers
     `ssh_not_configured` if a firewall tool is ever pointed at it, which names the remedy.
 
@@ -467,7 +467,7 @@ class WHMServerValidationService:
         return _WHMProbeOutcome(result=api_answer, fingerprint=captured, acls=acls)
 
     async def _store_fingerprint(self, server_id: UUID, fingerprint: str) -> None:
-        """The one column this service may write, in its own committed transaction (V100)."""
+        """The one column this service may write, in its own committed transaction."""
         async with self._session_factory() as session:
             repository = self._repository_factory(session)
             await repository.set_host_key_fingerprint(server_id, fingerprint)
@@ -475,7 +475,7 @@ class WHMServerValidationService:
 
 
 class ProxmoxServerValidationService:
-    """Validate one Proxmox server: the API token, and nothing else (T54).
+    """Validate one Proxmox server: the API token, and nothing else.
 
     One transport, one probe, no write. Proxmox is reached over HTTP only (I.ext), so there is
     no host key to pin and this service's repository is `SELECT`-only — the absence of a write
@@ -531,7 +531,7 @@ class ProxmoxServerValidationService:
 
 
 class PMGServerValidationService:
-    """Validate one PMG node over SSH + `pmgsh` (T54, V58).
+    """Validate one PMG node over SSH + `pmgsh`.
 
     One transport, and it is the SSH one, so the trust-on-first-use rule is the whole of this
     service. A row with no credentials answers `ssh_not_configured` from

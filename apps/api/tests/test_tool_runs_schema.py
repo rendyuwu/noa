@@ -1,4 +1,4 @@
-"""`tool_runs` table and lifecycle enums (T35, V20, V45-V47).
+"""`tool_runs` table and lifecycle enums.
 
 Two levels, for two different claims:
 
@@ -129,8 +129,8 @@ def test_change_runs_are_representable() -> None:
 
     The receipt half of V46 is T36's `action_receipts` (table built, writer still T38's), and
     the CHANGE row itself is written by the
-    post-approval executor (T38) rather than by T73's middleware, which records READs only —
-    a CHANGE tool's `tools/call` opens the approval gate and executes nothing (T33). This
+    post-approval executor rather than by T73's middleware, which records READs only —
+    a CHANGE tool's `tools/call` opens the approval gate and executes nothing. This
     table only has to be able to say that a run was a change.
     """
     run = ToolRun(
@@ -333,7 +333,7 @@ async def test_a_failed_read_round_trips(session: AsyncSession) -> None:
     assert stored.created_at is not None
     assert stored.completed_at is None
     # Server-side default, not an ORM-side one: an insert that names no args still records
-    # "no arguments" rather than "not recorded" (V45).
+    # "no arguments" rather than "not recorded".
     assert stored.args == {}
 
 

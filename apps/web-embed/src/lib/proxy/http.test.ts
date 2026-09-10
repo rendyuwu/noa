@@ -12,7 +12,7 @@ import {
 /**
  * The proxy primitives, proven against this copy (§T.44).
  *
- * Every guard here was ported from `noa-old` (C13). V69 is why the tests came with it: upstream
+ * Every guard here was ported from `noa-old`. V69 is why the tests came with it: upstream
  * provenance is not evidence that a control works — B2 shipped an inert host-key pin precisely
  * because the port trusted the source. So each case below exercises the mechanism in this file,
  * not the one it was copied from.
@@ -36,7 +36,7 @@ describe('proxy/http', () => {
       // V40: the session rides on `noa_session`, scoped to the registrable domain
       // so it reaches this app as well as the admin one. If the proxy dropped or
       // rewrote it, every call from the card would authenticate as nobody and the
-      // whole decision path (V22) would answer 401.
+      // whole decision path would answer 401.
       const out = filterRequestHeaders(
         new Headers({ cookie: 'noa_session=abc.def.ghi; other=1' }),
       )
@@ -45,7 +45,7 @@ describe('proxy/http', () => {
     })
 
     it('drops the Authorization header — this origin does not relay bearer tokens', () => {
-      // MCP tokens are LibreChat's to send (C5) and never a browser's. Forwarding
+      // MCP tokens are LibreChat's to send and never a browser's. Forwarding
       // the header would make the embed origin a relay for one.
       const out = filterRequestHeaders(
         new Headers({ authorization: 'Bearer noa_live_token', cookie: 'noa_session=x' }),
@@ -155,7 +155,7 @@ describe('proxy/http', () => {
     it('resolves a protocol-relative Location to an absolute URL (no app-origin open redirect)', () => {
       // "//evil.example" must NOT be returned raw: on an app-origin response the
       // browser resolves it against the app origin -> open redirect, attributable
-      // to the one NOA origin LibreChat is allowed to frame (V41).
+      // to the one NOA origin LibreChat is allowed to frame.
       expect(rewriteLocationHeader('//evil.example/x', requestUrl)).toBe('http://evil.example/x')
     })
 

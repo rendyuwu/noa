@@ -1,4 +1,4 @@
-"""PMG server → SSH connection config (T18, C7, V55, V58, V69).
+"""PMG server → SSH connection config.
 
 Copied from `noa-old` branch `MCP` (`pmg/integrations/ssh.py`). PMG has one transport, so this
 module is the *only* door into a PMG box — where WHM splits an API client and an SSH path

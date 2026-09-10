@@ -203,7 +203,7 @@ async def test_a_whm_row_with_no_ssh_credentials_validates_on_the_api_alone(
 ) -> None:
     """Right rather than lenient: a WHM server used only for account reads is legitimate.
 
-    The firewall tools (T24-T26) refuse it with `ssh_not_configured` when they are pointed at
+    The firewall tools refuse it with `ssh_not_configured` when they are pointed at
     it, which names the remedy — so the validate route has nothing to add.
     """
     row = whm_server(
@@ -467,7 +467,7 @@ def build_pmg_service(
 
 
 async def test_a_pmg_validate_captures_a_pin_on_first_use(cipher: SecretCipher) -> None:
-    """The same rule as WHM's, from the same function (V66) — one table over."""
+    """The same rule as WHM's, from the same function — one table over."""
     row = pmg_server(
         "mail1",
         ssh_password=cipher.encrypt_text("ssh-password"),

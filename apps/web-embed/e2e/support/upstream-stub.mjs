@@ -9,7 +9,7 @@ import { createServer } from 'node:http'
  * failures into a red proxy test.
  *
  * It records what it was asked for, so a refusal the proxy makes can be told apart from a refusal
- * the upstream makes. Without `/__hits` the "login is not proxied" assertion (V42) would pass just
+ * the upstream makes. Without `/__hits` the "login is not proxied" assertion would pass just
  * as well against a proxy that forwarded the request to an upstream that happened to 404 — V87's
  * shape. The approval specs lean on the same counter from the other side: a decision POST that
  * *did* arrive is what makes "a form submit did not" mean something.
@@ -22,7 +22,7 @@ const hits = {}
 
 // Card ids the approval specs address, one per outcome the page renders (§T.41). Handed in by
 // `playwright.config.ts`, which is also where the specs read them from — one source, so a spec
-// cannot ask about a state this stub does not serve (V66).
+// cannot ask about a state this stub does not serve.
 const PENDING_ID = process.env.STUB_PENDING_ID ?? ''
 const DECIDED_ID = process.env.STUB_DECIDED_ID ?? ''
 const UNAUTHORIZED_ID = process.env.STUB_UNAUTHORIZED_ID ?? ''
@@ -77,7 +77,7 @@ const TABLE_NOT_FOUND_TOKEN = process.env.STUB_TABLE_NOT_FOUND_TOKEN ?? ''
 
 // Served only to a request that carried a cookie. The separator for "the operator's session
 // reached the API through the page's own read": every other token here answers 200 regardless, so
-// that spec would pass with the cookie dropped (V87).
+// that spec would pass with the cookie dropped.
 const TABLE_NEEDS_COOKIE_TOKEN = process.env.STUB_TABLE_NEEDS_COOKIE_TOKEN ?? ''
 const TABLE_TOTAL_ROWS = Number(process.env.STUB_TABLE_TOTAL_ROWS ?? 1240)
 
@@ -92,7 +92,7 @@ const TABLE_TOTAL_ROWS = Number(process.env.STUB_TABLE_TOTAL_ROWS ?? 1240)
 const TABLE_LONG_TOKEN = process.env.STUB_TABLE_LONG_TOKEN ?? ''
 const TABLE_LONG_ROWS = Number(process.env.STUB_TABLE_LONG_ROWS ?? 438)
 
-/** Two rows, whatever the total says — a capped page holds fewer rows than it matched (V85). */
+/** Two rows, whatever the total says — a capped page holds fewer rows than it matched. */
 const TABLE_ROWS = [
   { user: 'acmeco', domain: 'acme.example' },
   { user: 'betaco', domain: 'beta.example' },
@@ -134,7 +134,7 @@ function cardBody(id, { pending }) {
     conversation_ref: '1f0c2e5a-7b41-4d2e-9a3c-0b5d8e6f4a12',
     requester: { email: 'operator@noa.internal', librechat_user_id: 'librechat-user-1' },
     arguments: { server_ref: 'alpha', account: 'acmeco' },
-    // The before-state the card exists to show (C9, V17) — a value, so a spec asserting it is
+    // The before-state the card exists to show — a value, so a spec asserting it is
     // rendered is asserting against something rather than against an empty object.
     evidence: { suspended: false, domain: 'acme.example' },
     created_at: '2026-08-08T09:00:00+00:00',
@@ -149,10 +149,10 @@ function cardBody(id, { pending }) {
           created_at: '2026-08-08T09:30:00+00:00',
           completed_at: null,
         },
-    // What the change did, once something recorded it (V46). `null` everywhere but the polling
+    // What the change did, once something recorded it. `null` everywhere but the polling
     // card's terminal read: a receipt lands with the run's terminal write, not with the decision.
     receipt: null,
-    // `null` once nothing may be decided (V39): no live token for a card with no door.
+    // `null` once nothing may be decided: no live token for a card with no door.
     csrf: pending ? CSRF : null,
   }
 }
@@ -241,7 +241,7 @@ const server = createServer((request, response) => {
         authorization: request.headers['authorization'] ?? null,
       },
       {
-        // The attribute the browser must see survive the hop (V40). `.noa.internal` would be
+        // The attribute the browser must see survive the hop. `.noa.internal` would be
         // rejected for a localhost document, so the shape is what is asserted here; the real
         // domain is the API's setting.
         'set-cookie': 'stub_echo=1; Path=/; SameSite=Lax',
@@ -343,7 +343,7 @@ const server = createServer((request, response) => {
       return
     }
     if (token === TABLE_NOT_FOUND_TOKEN) {
-      // One body for unknown, foreign, orphaned and expired alike (V27) — the API answers all
+      // One body for unknown, foreign, orphaned and expired alike — the API answers all
       // four this way, and the page has one sentence for the lot.
       json(response, 404, {
         error_code: 'result_table_not_found',

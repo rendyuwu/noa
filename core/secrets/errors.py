@@ -1,4 +1,4 @@
-"""Secret-handling errors (T15, V73).
+"""Secret-handling errors.
 
 `noa-old` declared these inline in `crypto.py` and `yopass.py` as bare `Exception`
 subclasses, with yopass carrying a hand-rolled `error_code` class attribute. Here they
@@ -20,10 +20,10 @@ Codes raised by this package, all stable strings clients and tests branch on:
 
 - `secret_key_unavailable` — key absent or not a valid Fernet key.
 - `secret_decrypt_failed`  — value is not encrypted, or will not decrypt under this key.
-- `yopass_not_configured`  — `YOPASS_BASE_URL` unset; a tool error, ⊥ a crash (C15).
+- `yopass_not_configured`  — `YOPASS_BASE_URL` unset; a tool error, ⊥ a crash.
 - `yopass_store_failed`    — the yopass POST failed or returned something unusable.
 
-Messages stay credential-free (V8): they name which step failed, never the key, the
+Messages stay credential-free: they name which step failed, never the key, the
 passphrase, or the plaintext being protected.
 """
 
@@ -43,7 +43,7 @@ class SecretKeyUnavailableError(SecretCryptoError):
     """No usable Fernet key.
 
     In practice unreachable in a booted app: `Settings._resolve_encryption_key` validates
-    the key at construction (V52), so a bad key is a startup failure. Kept because
+    the key at construction, so a bad key is a startup failure. Kept because
     `SecretCipher` is also constructible with an explicit key, and a caller that passes
     garbage should hear about it here rather than at the first `encrypt`.
     """
@@ -57,7 +57,7 @@ class SecretDecryptError(SecretCryptoError):
 
     Both cases share a code deliberately: from the caller's side the stored value is
     unusable either way, and the distinction (wrong key vs. never encrypted) is a
-    deployment detail that belongs in `detail`, not in a body (V8).
+    deployment detail that belongs in `detail`, not in a body.
     """
 
     error_code: str = "secret_decrypt_failed"

@@ -1,14 +1,14 @@
-"""What every post-approval runner shares (T22, T25 — V33, V66).
+"""What every post-approval runner shares.
 
 Three things: the values a runner re-derives from the evidence, the refusals it makes when it
 cannot, and the words it answers with.
 
 A CHANGE runner acts on the **evidence** the operator approved against, never on the arguments
-the model supplied (V33): `server_ref` is a string an LLM passed and inventory can be edited
+the model supplied: `server_ref` is a string an LLM passed and inventory can be edited
 between a request and its approval, while `evidence["server_id"]` is the machine the preflight
 actually read and the operator actually saw on the card. That rule produces the same two
 refusals in every runner — the evidence no longer carries a usable value, or the row it names is
-gone — so the codes and the sentences live here rather than once per system (V66).
+gone — so the codes and the sentences live here rather than once per system.
 
 Born at T22 inside `whm_account_change`, hoisted at T25 when the firewall runner became the
 second caller. `whm_account_change` re-exports both names, so the tools and tests that already
@@ -36,7 +36,7 @@ inventories.
 
 **The status words are here for the same reason the codes are.** `changed` and `no_op` land in
 `tool_runs.result_summary` and in a receipt an operator reads, so two runners spelling one of
-them differently is two vocabularies in one audit trail (V66). They were T22's; T25 is the
+them differently is two vocabularies in one audit trail. They were T22's; T25 is the
 second speaker.
 
 `unavailable` was here too and moved to `core.approvals.delta`, which now owns the four states
@@ -52,7 +52,7 @@ from uuid import UUID
 
 from core.approvals.delta import (
     # Hoisted to `core.approvals.delta` when the receipt's delta became the second speaker of
-    # this word (V66). Its value is unchanged and it is re-exported below, so every runner and
+    # this word. Its value is unchanged and it is re-exported below, so every runner and
     # test that reads it from here keeps one import path — but there is now exactly one
     # definition of "the postflight could not answer", shared by the payload a runner returns
     # and the delta it states beside it, and the two cannot drift into two spellings.

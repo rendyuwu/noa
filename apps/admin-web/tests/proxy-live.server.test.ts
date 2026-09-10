@@ -20,7 +20,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
  *
  * Upstream is a stub, not the real API: what is asked here is the hop, and a real API would make
  * Postgres or LDAP being down read as a broken proxy. It records what arrived, which is what makes
- * "the Authorization header never got there" (C5) an assertion about the wire rather than about a
+ * "the Authorization header never got there" an assertion about the wire rather than about a
  * mock.
  *
  * Own lane (`pnpm test:server`, `vitest.server.config.ts`): it boots a dev server, which does not
@@ -65,7 +65,7 @@ async function freePort(): Promise<number> {
 }
 
 /**
- * Readiness gate: a TCP connect, one layer below the routes under test (V90).
+ * Readiness gate: a TCP connect, one layer below the routes under test.
  *
  * Pointing this at `/api/...` — the subject — would turn a proxy that throws into a *timeout*, and
  * a timeout names nothing: every cause produces the same stall. The socket is the subject's floor.
@@ -97,7 +97,7 @@ async function waitForPort(port: number, deadline: number): Promise<void> {
  *
  * `/auth/login` sets the session cookie with the `Domain` attribute V40 depends on; `/auth/me`
  * answers 401 so the status that drives the session-expiry flow is exercised as itself; anything
- * else is a 500 carrying a request id (V73).
+ * else is a 500 carrying a request id.
  */
 function startUpstream(port: number): Promise<http.Server> {
   const listener = http.createServer((request, response) => {
@@ -197,7 +197,7 @@ describe('§T.50 — /api/* reaches the API, and the session rides both ways', (
   it('answers at all — the server under test is the one being measured', async () => {
     // Without this the specs below could pass against a server that errors on everything: an error
     // page carries the config headers too, and a 500 from the app is indistinguishable from a 500
-    // the stub sent. `/healthz` serving its own body is the proof the app booted (V87).
+    // the stub sent. `/healthz` serving its own body is the proof the app booted.
     const response = await call('/healthz')
 
     expect(response.status).toBe(200)
@@ -248,7 +248,7 @@ describe('§T.50 — /api/* reaches the API, and the session rides both ways', (
     expect(response.status).toBe(500)
   }, REQUEST_TIMEOUT_MS)
 
-  it('passes a 401 through as a 401, with the request id that names its log line (V73)', async () => {
+  it('passes a 401 through as a 401, with the request id that names its log line', async () => {
     // `fetchWithAuth` keys the whole session-expiry flow off this status, and `clearAuth` is what
     // sends the operator to `/login`. A proxy that normalised it would leave an expired session
     // rendering an unexplained error state instead.

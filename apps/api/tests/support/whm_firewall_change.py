@@ -1,12 +1,12 @@
-"""Calling the firewall CHANGE tools' two halves, and the box a runner test needs (T25, T26).
+"""Calling the firewall CHANGE tools' two halves, and the box a runner test needs.
 
 `support/whm_firewall.py` owns the WHM box itself — the command answers, the availability
 probes, the transport double. This owns what a *test* needs to drive
-`whm_firewall_release_and_allow` (T25) and `whm_firewall_allowlist_remove` (T26): the call
+`whm_firewall_release_and_allow` and `whm_firewall_allowlist_remove`: the call
 helpers for each tool and each runner, and the fixture shapes all four lanes share.
 
 Its own module because those lanes are four test files, split so none runs past C14's line
-budget, and helpers duplicated across files are helpers that drift (V66).
+budget, and helpers duplicated across files are helpers that drift.
 
 The `ChangeExecutionRequest`s here are assembled the way `core.approvals.execution` assembles
 one, because that is what the executor hands a runner — and their `arguments` deliberately name
@@ -82,7 +82,7 @@ async def release(
     """Call the tool inside a real request context; return its answer and the caller's id.
 
     The context is not decoration: `open_change_request` reads the requester from the
-    authenticated identity rather than from an argument (V23, V27), so a call outside it would be
+    authenticated identity rather than from an argument, so a call outside it would be
     asserting against an identity the test planted.
     """
     user, resolved = authenticated_caller()
@@ -108,7 +108,7 @@ def execution_request(
     """What `core.approvals.execution` hands a runner for an approved release.
 
     The evidence is what the gate wrote and what the operator saw; the arguments deliberately
-    name a `server_ref` the runner must ignore (V33).
+    name a `server_ref` the runner must ignore.
     """
     return ChangeExecutionRequest(
         action_request_id=action_request_id or uuid4(),
@@ -155,7 +155,7 @@ async def allowlist_remove(
     """Call T26's tool inside a real request context; return its answer and the caller's id.
 
     The context is not decoration, for `release`'s reason: `open_change_request` reads the
-    requester from the authenticated identity rather than from an argument (V23, V27).
+    requester from the authenticated identity rather than from an argument.
     """
     user, resolved = authenticated_caller()
     with http_request_context({}, user=user):
@@ -181,7 +181,7 @@ def removal_request(
     operator approves a removal against — and it carries NOA's marker and the reason T25 wrote,
     since that is the entry being deleted and the reason V96 has to keep off the way back.
 
-    `reason` is on the request the way it is on every approved change (V43). This runner never
+    `reason` is on the request the way it is on every approved change. This runner never
     reads it, and the tests assert that it does not reappear.
     """
     # Resolved once: the marker on the evidence line has to be *this* request's, or a test

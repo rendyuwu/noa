@@ -1,12 +1,12 @@
-"""The MCP request-path auth entry point (T12 — V1, V3, V4, V5, V8, V9, V73, R4, R5).
+"""The MCP request-path auth entry point.
 
 Division of labour across the three MCP auth test files:
 
 - `test_mcp_identity_resolver.py` — the gates and their order, over doubles.
 - `test_mcp_token_verifier.py` — the fastmcp adapter: `AccessToken` shape, `None` on refusal.
 - this file — how a *request* reaches the gates and how a refusal reaches the client: the
-  header reads R5 warns about, the rate limiter (V9), the named response body (V3), and the
-  identity a tool sees (R5).
+  header reads R5 warns about, the rate limiter, the named response body, and the
+  identity a tool sees.
 
 Two levels, and both are needed. Direct calls to `resolve_mcp_identity` under the request
 contextvar assert which writes happened and which did not — the V4/V9 rules are about
@@ -175,7 +175,7 @@ async def test_a_bound_token_with_its_header_resolves() -> None:
 
 
 async def test_the_bearer_is_read_from_the_header_when_no_token_is_passed() -> None:
-    """The path the middleware needs: nobody handed us a token, so read the header (R5)."""
+    """The path the middleware needs: nobody handed us a token, so read the header."""
     repository = FakeMcpIdentityRepository()
     plaintext, _ = repository.add_token(librechat_user_id=None)
     context = build_auth_context(repository=repository)
@@ -201,7 +201,7 @@ async def test_a_passed_token_wins_over_the_header() -> None:
     assert identity.token_id == stored.token_id
 
 
-# --- resolve_mcp_identity: what each refusal writes (V4, V9) ---
+# --- resolve_mcp_identity: what each refusal writes ---
 
 
 async def test_a_request_with_no_bearer_touches_nothing() -> None:
@@ -275,7 +275,7 @@ async def test_an_expired_token_is_not_counted() -> None:
 
 
 async def test_a_missing_header_is_not_counted() -> None:
-    """A misconfigured client, not a guess (V3/C24)."""
+    """A misconfigured client, not a guess."""
     repository = FakeMcpIdentityRepository()
     plaintext, _ = repository.add_token(librechat_user_id=LIBRECHAT_USER)
     rate_limits = FakeRateLimitRepository()
@@ -291,7 +291,7 @@ async def test_a_missing_header_is_not_counted() -> None:
 
 
 async def test_an_inactive_operator_is_refused_and_not_counted() -> None:
-    """V1: `users.is_active` is re-read per request. Authenticated, then refused (V11)."""
+    """V1: `users.is_active` is re-read per request. Authenticated, then refused."""
     repository = FakeMcpIdentityRepository()
     plaintext, _ = repository.add_token(is_active=False, librechat_user_id=LIBRECHAT_USER)
     rate_limits = FakeRateLimitRepository()
@@ -476,7 +476,7 @@ def test_an_authenticated_request_passes_through_untouched() -> None:
 
 
 def test_the_bare_sdk_401_is_replaced() -> None:
-    """The body T12 exists to remove: `{"error": …, "error_description": …}` (V3)."""
+    """The body T12 exists to remove: `{"error": …, "error_description": …}`."""
     repository = FakeMcpIdentityRepository()
     plaintext, _ = repository.add_token(librechat_user_id=LIBRECHAT_USER)
 
@@ -485,7 +485,7 @@ def test_the_bare_sdk_401_is_replaced() -> None:
 
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
     body = response.json()
-    # `request_id` joined the envelope with T64 (V73); the SDK's two keys are still gone.
+    # `request_id` joined the envelope with T64; the SDK's two keys are still gone.
     assert set(body) == {"error_code", "message", "request_id"}
     assert "error_description" not in body
 
@@ -641,7 +641,7 @@ async def test_the_path_guard_is_mount_relative(
 
     Guarding on the raw path passes every test that runs the sub-app standalone and then
     lets every refusal through once it is mounted — the SDK's bare `invalid_token` comes
-    back with the same 401 status, so only the body says anything is wrong (V3).
+    back with the same 401 status, so only the body says anything is wrong.
     """
     reached: list[str] = []
 
@@ -704,7 +704,7 @@ async def test_a_tool_reads_its_caller_from_the_access_token() -> None:
 
 
 def test_no_access_token_in_context_is_refused_not_guessed() -> None:
-    """A tool reached without an access token means the mount lost its verifier (V1)."""
+    """A tool reached without an access token means the mount lost its verifier."""
     with http_request_context({}), pytest.raises(McpTokenMissingError):
         current_mcp_identity()
 

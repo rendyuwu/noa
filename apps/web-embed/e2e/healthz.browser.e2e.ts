@@ -5,8 +5,8 @@ import { expect, test } from '@playwright/test'
  * embed's own origin and gets the liveness answer.
  *
  * Same-origin, so it runs here. The cross-origin cookie behaviour this app
- * ultimately depends on (V37, V40) was measured separately against LibreChat in
- * `spikes/librechat-embed-render-gate/` (R29) and is not what this spec covers.
+ * ultimately depends on was measured separately against LibreChat in
+ * `spikes/librechat-embed-render-gate/` and is not what this spec covers.
  */
 
 test('the embed serves /healthz to a browser on its own origin', async ({ page }) => {

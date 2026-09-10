@@ -1,4 +1,4 @@
-"""`whm_servers` row → pinned SSH connection (T16, C7, V48, V55, V69).
+"""`whm_servers` row → pinned SSH connection.
 
 The three refusals in `resolve_whm_ssh_config` all happen *before* a socket opens, and each
 gets its own code because each has a different remedy. Asserting the code, not just that

@@ -8,7 +8,7 @@ import type {
   ListAuditToolRunsResponse,
 } from './types'
 
-// Transport for the read-only audit vertical (T55). Both calls go through the
+// Transport for the read-only audit vertical. Both calls go through the
 // shared fetchWithAuth + jsonOrThrow helpers, so a 401 triggers the
 // session-expiry flow and any non-OK response throws a typed ApiError carrying
 // the backend's stable error_code / message / request_id. The audit trail is

@@ -1,4 +1,4 @@
-"""FastMCP bearer verification (T11, T12 — C5, C20, V2, V3, V4, V5, R1-R5).
+"""FastMCP bearer verification.
 
 The adapter between fastmcp's auth contract and NOA's request-path authentication.
 Everything that decides *whether* a caller may act lives in `core.auth.mcp_identity`;
@@ -8,15 +8,15 @@ and the `AccessToken` an accepted identity becomes. V5 wants one identity-resolu
 so this class holds no repository, opens no session, reads no header and makes no policy
 decision — swap fastmcp for something else and this is the file that changes.
 
-Verified against the installed `fastmcp==3.4.5` and `mcp==1.29.0` (C23), not against docs:
+Verified against the installed `fastmcp==3.4.5` and `mcp==1.29.0`, not against docs:
 
-- `TokenVerifier.verify_token(self, token) -> AccessToken | None`, `None` = reject (R1).
+- `TokenVerifier.verify_token(self, token) -> AccessToken | None`, `None` = reject.
   There is no hook for a response body here: `BearerAuthBackend.authenticate` turns `None`
   into a bare 401 (`mcp/server/auth/middleware/bearer_auth.py`). So the refusal is stashed
-  on the request scope and `McpAuthErrorMiddleware` (T12) renders it with its code (V3).
+  on the request scope and `McpAuthErrorMiddleware` renders it with its code.
 - `verify_token` receives the token string only, but `RequestContextMiddleware` is inserted
   outermost, ahead of `AuthenticationMiddleware` (`fastmcp/server/http.py`), so
-  `get_http_headers()` works inside it (R4). `test_mcp_token_verifier.py` proves that in
+  `get_http_headers()` works inside it. `test_mcp_token_verifier.py` proves that in
   *our* wiring rather than trusting the source read.
 - The token arrives as the argument, so nothing here re-parses `authorization`; it is
   forwarded to `resolve_mcp_identity`, which would otherwise read the header itself and
@@ -50,11 +50,11 @@ __all__ = ["LOG_DENIED", "NoaTokenVerifier"]
 
 
 class NoaTokenVerifier(TokenVerifier):
-    """Resolve a NOA-minted bearer into a fastmcp `AccessToken` (R1, R2).
+    """Resolve a NOA-minted bearer into a fastmcp `AccessToken`.
 
     Constructed once at startup and passed as `FastMCP(..., auth=<instance>)` — keyword
     only, the instance directly, with no provider wrapper, because `TokenVerifier` is
-    already an `AuthProvider` (R3). T13 does that wiring; T11 shipped the class.
+    already an `AuthProvider`. T13 does that wiring; T11 shipped the class.
 
     No `base_url` and no `required_scopes`: those drive RFC 9728 protected-resource
     metadata routes, and C5 puts NOA on per-user minted tokens rather than OAuth. Scopes
@@ -66,7 +66,7 @@ class NoaTokenVerifier(TokenVerifier):
         self._context = context
 
     async def verify_token(self, token: str) -> AccessToken | None:
-        """Verify one bearer. `None` rejects (R1).
+        """Verify one bearer. `None` rejects.
 
         Every refusal is one `McpAuthError` (or `LdapUnavailableError`, V4's fail-closed
         answer) caught here and left on the request scope for the middleware to name.
@@ -89,7 +89,7 @@ class NoaTokenVerifier(TokenVerifier):
 
     @staticmethod
     def _to_access_token(identity: McpIdentity, presented_token: str) -> AccessToken:
-        """Shape the accepted identity for the SDK (R2).
+        """Shape the accepted identity for the SDK.
 
         Four choices worth naming:
 
@@ -107,13 +107,13 @@ class NoaTokenVerifier(TokenVerifier):
           `streamable_http_manager` pins an `Mcp-Session-Id` to the principal that created
           it and 404s anything else (`authorization_context`), so keying on the token id
           would kill a live session the moment an operator rotated their credential.
-        - **`expires_at` is passed through** so the SDK enforces it too (R2). The resolver
+        - **`expires_at` is passed through** so the SDK enforces it too. The resolver
           already refused an expired token; this is the belt to that braces, and it costs
           one integer.
 
         `claims` comes from `identity_claims` rather than a dict literal here, so the keys
         a tool reads through `current_mcp_identity` and the keys written here are the same
-        constants (R5).
+        constants.
         """
         return AccessToken(
             token=hash_mcp_token(presented_token),

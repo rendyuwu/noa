@@ -4,7 +4,7 @@ Revision ID: 0007_result_tables
 Revises: 0006_action_receipts
 Create Date: 2026-08-09
 
-T56 (V64, V85). A large READ answers with a summary and a URL; the rows land here and an
+T56. A large READ answers with a summary and a URL; the rows land here and an
 operator reads them on the table surface behind that URL. `tool_runs.result_summary` is
 bounded at 2000 characters on purpose (0003) — this is the body that bound refers to.
 
@@ -50,7 +50,7 @@ def upgrade() -> None:
         sa.Column("tool_name", sa.String(length=200), nullable=False),
         sa.Column("column_labels", postgresql.JSONB(), nullable=False),
         sa.Column("rows", postgresql.JSONB(), nullable=False),
-        # Matches before the cut, and whether there was one (V85). Stored rather than derived
+        # Matches before the cut, and whether there was one. Stored rather than derived
         # so the page cannot report `len(rows)` as the total.
         sa.Column("total_rows", sa.Integer(), nullable=False),
         sa.Column("truncated", sa.Boolean(), nullable=False),

@@ -76,7 +76,7 @@ function stubPolls(...answers: (() => Response)[]): { calls: number } {
  * effects at the `act` boundary, so the timer for the *next* poll is only scheduled once this
  * returns. That is why "it stopped" is asserted over several of these rather than over one long
  * advance: a single big jump cannot tell a loop that stopped from a loop that had no chance to
- * re-arm (V87).
+ * re-arm.
  */
 async function tick(ms: number): Promise<void> {
   await act(async () => {
@@ -100,9 +100,9 @@ describe('CardView', () => {
     vi.useRealTimers()
   })
 
-  it('polls a running change until the run is terminal, then stops (V29, V34)', async () => {
+  it('polls a running change until the run is terminal, then stops', async () => {
     // The whole of V29 in one spec: the state lives in the database, so the frame re-reads the row
-    // — and the outcome lands on the same URL that asked the question (V34).
+    // — and the outcome lands on the same URL that asked the question.
     const polls = stubPolls(() =>
       Response.json(approvedBody({ status: 'COMPLETED', result_summary: RESULT })),
     )
@@ -122,7 +122,7 @@ describe('CardView', () => {
     expect(polls.calls).toBe(1)
   })
 
-  it('never polls a card that is already terminal (V87)', async () => {
+  it('never polls a card that is already terminal', async () => {
     // The separating case. Without it, "it polled until COMPLETED" passes just as well against a
     // component that polls forever and happened to be handed a terminal answer.
     const polls = stubPolls(() => Response.json(cardBody({ status: 'DENIED', csrf: null })))
@@ -147,7 +147,7 @@ describe('CardView', () => {
     expect(polls.calls).toBe(1)
   })
 
-  it('takes the Approve button away when the poll finds the request expired (V32, V38)', async () => {
+  it('takes the Approve button away when the poll finds the request expired', async () => {
     // An approval that expires under an open frame must stop offering a decision the door would
     // refuse — a button that cannot succeed reads as an action refused rather than never available.
     stubPolls(() => Response.json(cardBody({ status: 'EXPIRED', csrf: null })))
@@ -162,7 +162,7 @@ describe('CardView', () => {
     expect(screen.getByText(/expired without an answer/i)).toBeTruthy()
   })
 
-  it('replaces the card with the 401 state and no live decision (V38)', async () => {
+  it('replaces the card with the 401 state and no live decision', async () => {
     stubPolls(() => Response.json({ error_code: 'session_invalid' }, { status: 401 }))
     renderCardView(load(cardBody()))
 
@@ -204,7 +204,7 @@ describe('CardView', () => {
     expect(screen.getByText(RESULT)).toBeTruthy()
   })
 
-  it('keeps the 401 state when a retry cannot reach NOA (V87)', async () => {
+  it('keeps the 401 state when a retry cannot reach NOA', async () => {
     // The same rule the poll follows: "could not be asked" is not an answer about the session. The
     // separating case for the spec above — without it, a retry that replaced the notice with
     // whatever came back would pass just as well.
@@ -235,7 +235,7 @@ describe('CardView', () => {
     expect(screen.getByRole('button', { name: /try again/i })).toBeTruthy()
   })
 
-  it('replaces the card with the one not-available sentence on a 404 (V27)', async () => {
+  it('replaces the card with the one not-available sentence on a 404', async () => {
     // Absent, another operator's and a deleted requester's all answer alike — one body from the
     // API, one sentence here.
     stubPolls(() => Response.json({ error_code: 'action_request_not_found' }, { status: 404 }))
@@ -247,7 +247,7 @@ describe('CardView', () => {
     expect(screen.queryByRole('button')).toBeNull()
   })
 
-  it('keeps the card and keeps asking when NOA cannot be reached (V34, V87)', async () => {
+  it('keeps the card and keeps asking when NOA cannot be reached', async () => {
     // The stop condition is "terminal", not "any answer". A transient failure must not blank a card
     // an operator is reading, and must not end the lifecycle this URL owns.
     const polls = stubPolls(
@@ -269,7 +269,7 @@ describe('CardView', () => {
   it('renders both halves of a finished change, never one "done" (§T.42(b), V46)', async () => {
     // DECISIONS §6.5, at the render: the state the operator authorised against and what the change
     // did to it are two blocks, and the fixture's halves share no value — so a card that showed one
-    // of them twice, or collapsed the pair into the verdict word, goes red here (V87).
+    // of them twice, or collapsed the pair into the verdict word, goes red here.
     stubPolls(() =>
       Response.json(
         approvedBody({ status: 'COMPLETED', result_summary: RESULT }, receiptBody()),
@@ -344,8 +344,8 @@ describe('CardView', () => {
     expect(polls.calls).toBe(RUN_POLL_LIMIT)
   })
 
-  it('renders no form, polling or not (V80)', async () => {
-    // The sandbox LibreChat gives this frame omits `allow-forms` (R13, R29), so a native submit
+  it('renders no form, polling or not', async () => {
+    // The sandbox LibreChat gives this frame omits `allow-forms`, so a native submit
     // dies silently in there. A re-render driven by a poll must not reintroduce one.
     stubPolls(() => Response.json(cardBody()))
     const { container } = renderCardView(load(cardBody()))

@@ -17,15 +17,15 @@ import { sanitizeReturnTo } from '@/lib/auth/return-to'
  * LDAP sign-in (§T.50, §I.admin-api `/auth/login`).
  *
  * BIGSU's standard entry is an SSO hand-off; this scoped email/password form exists because NOA
- * authenticates operators against LDAP (C4). The Biznet Gio wordmark is used verbatim, the page
+ * authenticates operators against LDAP. The Biznet Gio wordmark is used verbatim, the page
  * keeps one primary action, and FastAPI stays the source of truth — nothing here decides anything
  * about the session beyond posting the credential and reading the verdict.
  *
  * **The primary action is a `type="button"` click handler, not a form submit, and that is the whole
- * point of this file (V94, R32).** `NOA_SIGN_IN_URL` points at this route, and one of the two
+ * point of this file.** `NOA_SIGN_IN_URL` points at this route, and one of the two
  * places an operator arrives from is a click on the embed 401 card's link-out. R32 MEASURED what
  * that tab is: top-level, but it inherits the frame's sandbox, and `allow-forms` is absent at both
- * of LibreChat's render sites (R13). A sandboxed document never even fires the `submit` event — the
+ * of LibreChat's render sites. A sandboxed document never even fires the `submit` event — the
  * form submission algorithm returns at the sandbox check, before the event — so a login built on
  * `<form onSubmit>` plus a submit button is silently inert in exactly the tab NOA sent the operator
  * to. Nothing throws and nothing appears; the button just does nothing. V80 is the same shape one
@@ -82,7 +82,7 @@ export function LoginForm() {
       const payload = await jsonOrThrow<LoginResponse>(response)
 
       // Presentation cache only (`auth-store.ts`). The authority is the httpOnly `noa_session`
-      // cookie the response just set (V6, V40) plus the `/auth/me` re-read the protected layout
+      // cookie the response just set plus the `/auth/me` re-read the protected layout
       // runs on arrival.
       setStoredUser(payload.user ?? null)
       router.push(sanitizeReturnTo(searchParams.get('returnTo')))
@@ -140,7 +140,7 @@ export function LoginForm() {
           </FormField>
 
           {/*
-           * `type="button"`, deliberately (V94, R32). A submit button is refused without a sound in
+           * `type="button"`, deliberately. A submit button is refused without a sound in
            * a sandbox-inheriting tab, and this is the tab the embed's 401 link-out opens.
            */}
           <Button

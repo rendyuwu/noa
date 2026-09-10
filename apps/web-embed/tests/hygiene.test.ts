@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 /**
- * File-size hygiene (C14, V65): `.ts` <= 300 lines, `.tsx` <= 450.
+ * File-size hygiene: `.ts` <= 300 lines, `.tsx` <= 450.
  *
  * Scans `git ls-files` rather than walking the filesystem — the same choice
  * `apps/api/tests/test_config.py` makes. A walk would eat `.next/`, generated

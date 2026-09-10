@@ -4,9 +4,9 @@ Revision ID: 0001_schema_v1
 Revises: None
 Create Date: 2026-08-04
 
-T4 (C3). Covers identity + RBAC (V1, V11), MCP token auth with TOFU binding
+T4. Covers identity + RBAC, MCP token auth with TOFU binding
 (V2, V3), and the three managed-server tables whose credential columns hold
-Fernet ciphertext (C7, V48).
+Fernet ciphertext.
 
 `gen_random_uuid()` is core in Postgres 13+, so no `pgcrypto` extension is
 created here (C3 pins Postgres 16).
@@ -51,11 +51,11 @@ def _updated_at() -> sa.Column:
 
 
 def _ssh_columns() -> list[sa.Column]:
-    """SSH connection + credential columns shared by WHM and PMG (V55, V69)."""
+    """SSH connection + credential columns shared by WHM and PMG."""
     return [
         sa.Column("ssh_username", sa.String(length=255), nullable=True),
         sa.Column("ssh_port", sa.Integer(), nullable=True),
-        # Ciphertext only (C7, V48).
+        # Ciphertext only.
         sa.Column("ssh_password", sa.Text(), nullable=True),
         sa.Column("ssh_private_key", sa.Text(), nullable=True),
         sa.Column("ssh_private_key_passphrase", sa.Text(), nullable=True),
@@ -105,7 +105,7 @@ def upgrade() -> None:
     )
 
     # `tool_name` is deliberately not an FK: the catalog lives in code, and a grant
-    # for an unregistered tool must read as "no permission" (V10), not dangle.
+    # for an unregistered tool must read as "no permission", not dangle.
     op.create_table(
         "role_tool_permissions",
         sa.Column("role_id", _UUID, nullable=False),
@@ -126,14 +126,14 @@ def upgrade() -> None:
         "mcp_tokens",
         _uuid_pk(),
         sa.Column("user_id", _UUID, nullable=False),
-        # SHA-256 hex digest. Plaintext shown once at mint, never stored (V2).
+        # SHA-256 hex digest. Plaintext shown once at mint, never stored.
         sa.Column("token_hash", sa.String(length=64), nullable=False),
         sa.Column("token_prefix", sa.String(length=16), nullable=False),
         sa.Column("label", sa.String(length=255), nullable=True),
-        # NULL until first bind, then pinned (C20, V3).
+        # NULL until first bind, then pinned.
         sa.Column("librechat_user_id", sa.String(length=255), nullable=True),
         sa.Column("last_used_at", sa.DateTime(timezone=True), nullable=True),
-        # Drives LDAP revalidation staleness; LDAP down -> fail closed (V4).
+        # Drives LDAP revalidation staleness; LDAP down -> fail closed.
         sa.Column("last_ldap_check_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
         _created_at(),
@@ -152,7 +152,7 @@ def upgrade() -> None:
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("base_url", sa.String(length=500), nullable=False),
         sa.Column("api_username", sa.String(length=255), nullable=False),
-        # Ciphertext only (C7, V48).
+        # Ciphertext only.
         sa.Column("api_token", sa.Text(), nullable=False),
         sa.Column("verify_ssl", sa.Boolean(), nullable=False, server_default="true"),
         *_ssh_columns(),
@@ -168,7 +168,7 @@ def upgrade() -> None:
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("base_url", sa.String(length=500), nullable=False),
         sa.Column("api_token_id", sa.String(length=255), nullable=False),
-        # Ciphertext only (C7, V48).
+        # Ciphertext only.
         sa.Column("api_token_secret", sa.Text(), nullable=False),
         # Proxmox defaults to a self-signed cert, hence false (WHM defaults true).
         sa.Column("verify_ssl", sa.Boolean(), nullable=False, server_default="false"),
@@ -178,7 +178,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_proxmox_servers_name", "proxmox_servers", ["name"], unique=True)
 
-    # SSH + `pmgsh` only (V58) -> `ssh_host` required, no base_url/verify_ssl.
+    # SSH + `pmgsh` only -> `ssh_host` required, no base_url/verify_ssl.
     op.create_table(
         "pmg_servers",
         _uuid_pk(),

@@ -1,8 +1,8 @@
-"""Doubles for anything that holds an encrypted secret (T15, T16, T17).
+"""Doubles for anything that holds an encrypted secret.
 
-`build_cipher` started in `support/whm.py` (T16). Proxmox needs it too, PMG (T18) and the admin
-server routes (T54) will, and importing a WHM-named helper from a Proxmox test would be a lie
-about what it is — so it lives here (V66). This is its one home; the re-export `support/whm.py`
+`build_cipher` started in `support/whm.py`. Proxmox needs it too, PMG and the admin
+server routes will, and importing a WHM-named helper from a Proxmox test would be a lie
+about what it is — so it lives here. This is its one home; the re-export `support/whm.py`
 carried through T18 is gone as of T72.
 """
 

@@ -21,7 +21,7 @@ export type MintedTokenPanelProps = {
   onDoneAction: () => void
 }
 
-// The one and only render site of a token plaintext in this application (V103).
+// The one and only render site of a token plaintext in this application.
 // Everything about this component is shaped by that: it takes the value as a
 // prop, holds no copy of it, derives nothing from it, and disappears with its
 // parent the moment the dialog closes.

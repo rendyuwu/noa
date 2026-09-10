@@ -6,7 +6,7 @@ import { DatePicker, FilterBar, FormField, Input, Select } from '@gio/bigsu-ui'
 
 import type { ActionRequestFilters, ToolRunFilters } from '@/lib/admin/audit/types'
 
-// Server-driven filter bar for the audit list (T55). FilterBar owns only layout;
+// Server-driven filter bar for the audit list. FilterBar owns only layout;
 // the page owns the draft filter state and applies it against the server query.
 // Every control is explicitly labelled (FormField / aria-label), and the search
 // input maps to the "tool name" server filter. The bar stays presentational —
@@ -17,7 +17,7 @@ import type { ActionRequestFilters, ToolRunFilters } from '@/lib/admin/audit/typ
 // terminal-phase select; NOA has no threads and serves no receipt route, so a
 // thread filter would have narrowed on a column that does not exist. The
 // replacement is `conversationRef` — free text, because the value comes from
-// LibreChat's own conversation id via a header (T57) and is a grouping label,
+// LibreChat's own conversation id via a header and is a grouping label,
 // never a uuid NOA mints.
 
 const YMD = 'yyyy-MM-dd'

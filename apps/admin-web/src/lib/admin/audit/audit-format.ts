@@ -1,6 +1,6 @@
 import type { BadgeVariant, StatusChipStatus } from '@gio/bigsu-ui'
 
-// Presentation mapping for the audit list (T55). Two rules drive this module:
+// Presentation mapping for the audit list. Two rules drive this module:
 //
 //  1. Workflow statuses render through StatusChip's fixed 11-value vocabulary.
 //     Non-workflow descriptors (tool risk) render through Badge.
@@ -11,7 +11,7 @@ import type { BadgeVariant, StatusChipStatus } from '@gio/bigsu-ui'
 //
 // `resolveActionStatus` lived here for the ported action-requests tab, which
 // read a `terminalPhase` off a receipt route NOA did not serve. It went with
-// that tab (T55). `resolveActionRequestStatus` below is not that function
+// that tab. `resolveActionRequestStatus` below is not that function
 // returning: it maps `action_requests.status`, a real column, reached through a
 // route §I.admin-api names.
 

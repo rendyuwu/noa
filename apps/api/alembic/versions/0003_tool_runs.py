@@ -4,7 +4,7 @@ Revision ID: 0003_tool_runs
 Revises: 0002_login_rate_limits
 Create Date: 2026-08-07
 
-T35 (V20, V45-V47). `risk` and `status` are separate checked columns so a failed
+T35. `risk` and `status` are separate checked columns so a failed
 READ is representable — folding them into one lifecycle set would make `FAILED`
 and `READ` compete for the same cell.
 
@@ -59,11 +59,11 @@ def upgrade() -> None:
         ),
         # Audit/grouping label only, never a security scope (DECISIONS §3.2).
         sa.Column("conversation_ref", sa.String(length=255), nullable=True),
-        # Redacted by the writer (T73). `'{}'` so "no arguments" and "not recorded" differ.
+        # Redacted by the writer. `'{}'` so "no arguments" and "not recorded" differ.
         sa.Column(
             "args", postgresql.JSONB(), nullable=False, server_default=sa.text("'{}'::jsonb")
         ),
-        # Truncated (V45); the full body lives behind the table surface (V64).
+        # Truncated; the full body lives behind the table surface.
         sa.Column("result_summary", sa.String(length=2000), nullable=True),
         # Timing pair. Duration is derived on read so the two cannot disagree.
         sa.Column(

@@ -9,7 +9,7 @@ Machine-readable blocks below are marked with a `# noa-…` comment and asserted
 
 ## Three images, three contexts
 
-One image per deployable (C12). The build contexts differ, and not by preference:
+One image per deployable. The build contexts differ, and not by preference:
 
 | Image | Context | Dockerfile | Port |
 |---|---|---|---|
@@ -56,7 +56,7 @@ Exactly one setting is baked at build time, and it is the one that cannot be any
 | `NOA_LIBRECHAT_ORIGIN` | **build** | `apps/web-embed` `next.config.ts` → `config/framing.ts` | falls back to `https://chat.noa.internal`; the header is never omitted |
 | `NOA_API_URL` | runtime | both web apps' `/api/*` proxy, server-side | proxy raises — no `NEXT_PUBLIC_*` twin exists |
 | `NOA_SIGN_IN_URL` | runtime | embed 401 card | card names the state and offers no link |
-| everything else | runtime | API, from the environment | per `core/config.py`; secrets and addresses refuse dev defaults outside development (V52, V53, V95) |
+| everything else | runtime | API, from the environment | per `core/config.py`; secrets and addresses refuse dev defaults outside development |
 
 `output: 'standalone'` never executes the Next config at runtime, so `frame-ancestors` is
 compiled into the output (V41, §T.45). The consequence is two-sided and both sides matter: a
@@ -71,7 +71,7 @@ Measured at §T.60 against the built image, three ways, because one of them alon
 1. `--build-arg NOA_LIBRECHAT_ORIGIN=https://chat.example.test:8443` →
    `Content-Security-Policy: frame-ancestors https://chat.example.test:8443` on the wire. A
    distinct origin, deliberately: measuring with `https://chat.noa.internal` cannot separate the
-   argument working from the fallback default (V87).
+   argument working from the fallback default.
 2. `--build-arg NOA_LIBRECHAT_ORIGIN='https://*.example.test'` → the **build fails** with
    `NOA_LIBRECHAT_ORIGIN must be a single origin like https://chat.noa.internal (scheme, host,
    optional port — no wildcard, no path, no second origin)`. A widening value cannot ship.
@@ -83,10 +83,10 @@ The `noa_session` cookie is scoped `Domain=.noa.internal`, `SameSite=Lax`, `Path
 (V6, V40). Everything an operator's browser touches therefore has to sit under `noa.internal`, or
 the cookie simply does not ride: sign-in appears to succeed and then every authenticated request
 answers 401 with nothing in any log to say why. This is the same class of failure as a wrong
-address (V95) and it is why the local stack is documented at these names rather than at
+address and it is why the local stack is documented at these names rather than at
 `localhost`.
 
-The hosts entry is the one the §T.59 render-gate rig already used, verbatim (R29, V66):
+The hosts entry is the one the §T.59 render-gate rig already used, verbatim:
 
 ```
 # noa-hosts (asserted by apps/api/tests/test_deployment.py)
@@ -135,7 +135,7 @@ goes past that row's own three-name list. The alternative — a path prefix on t
 taken, because it puts the admin panel and the MCP endpoint on one origin and makes
 `frame-ancestors 'none'` versus the embed's allowlist a per-path property instead of a per-origin
 one. In development the same split is by port instead, which costs nothing because cookies ignore
-ports (V40) and the browser never calls FastAPI directly.
+ports and the browser never calls FastAPI directly.
 
 After the hosts line, set three values in the repo-root `.env` to match:
 
@@ -173,7 +173,7 @@ name in place of `localhost` — and reads the rest from `.env`:
 
 The two web services are given their variables individually rather than through `env_file`. They
 read one or two settings each, and handing them the whole file would put the Fernet key, the JWT
-secret and the LDAP bind password into containers where nothing reads them (C7, V8).
+secret and the LDAP bind password into containers where nothing reads them.
 
 `migrate` runs `alembic upgrade head` to completion and exits; `api` waits on
 `service_completed_successfully`. A failed migration then stops the stack with the migration's own
@@ -240,5 +240,5 @@ endpoints for both probe kinds on the web tier and gate the API rollout on the m
 - Configuration reaches a deployed pod through those ConfigMaps and Secrets — one ConfigMap per
   deployable and a single Secret the API alone mounts — which is what `.env.example` says at the
   top and why no image bakes a `.env` (C11; every `.dockerignore` here excludes it). Note that
-  `NOA_LIBRECHAT_ORIGIN` is *not* among them: it is baked at build (V41) and a ConfigMap key would
-  read as the lever that moves it while doing nothing at all (V101).
+  `NOA_LIBRECHAT_ORIGIN` is *not* among them: it is baked at build and a ConfigMap key would
+  read as the lever that moves it while doing nothing at all.

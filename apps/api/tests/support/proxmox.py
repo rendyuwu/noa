@@ -1,7 +1,7 @@
-"""Doubles for the Proxmox integration layer (T17).
+"""Doubles for the Proxmox integration layer.
 
 Both Proxmox client test files build the same thing — a `ProxmoxClient` whose transport is an
-`httpx.MockTransport` — so the builder lives here (V66). No network and no live Proxmox: the
+`httpx.MockTransport` — so the builder lives here. No network and no live Proxmox: the
 layer under test is request composition and failure classification, neither of which needs a
 socket, and `MockTransport` hands the request object back for the credential assertions.
 """

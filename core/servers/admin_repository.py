@@ -1,21 +1,21 @@
-"""SQL behind server-inventory *writes* (T54, C13, V66, V100).
+"""SQL behind server-inventory *writes*.
 
 The half `core.servers.whm_repository`, `pmg_repository` and `proxmox_repository` each
 deferred to this task in prose: `create`, `update`, `delete`, and the one-column write the
 validate flow makes when it captures a host key.
 
 **Separate classes from the read repositories, not extra methods on them.** The MCP tool path
-holds `SQLWHMServerRepository` to resolve a server reference (T19, T21), and it must not hold
+holds `SQLWHMServerRepository` to resolve a server reference, and it must not hold
 an object that can delete one. That is the split `noa_api.api.deps` already makes twice —
 `SQLApprovalCardRepository` has no `commit` and issues no statement that is not a `SELECT`, so
 a render path cannot grant an authorization — spelled here against inventory. The reads are
 not re-implemented either: each class **composes** its read repository, so `ORDER BY name`
 lives in one place and the admin list, the tool result and the ambiguity `choices` cannot
-disagree about row three (V66).
+disagree about row three.
 
 **Ciphertext comes in.** Every secret field on `WHMServerCreate`, `ProxmoxServerUpdate` and
 the rest is already `enc:v1:fernet:…` — `core.servers.admin_service` holds the `SecretCipher`
-and encrypts before building these value objects (C7, V48). Nothing in this module can
+and encrypts before building these value objects. Nothing in this module can
 encrypt, which is the point: a future caller cannot reach a write path that stores a
 plaintext, because there is none.
 
@@ -34,7 +34,7 @@ stating:
 
 - the comparison is on the whole `base_url` (WHM) / `ssh_host` (PMG), not on the SSH hostname
   derived from it. Re-deriving that hostname here would be a second implementation of
-  `resolve_whm_ssh_config`'s `urlsplit(...).hostname` (V66), and the cost of the looser test
+  `resolve_whm_ssh_config`'s `urlsplit(...).hostname`, and the cost of the looser test
   is one extra Validate press when only an API port moved;
 - an explicit `ssh_host_key_fingerprint` in the same patch **wins**. An operator who changed
   the host and pasted the new host's key in one save meant both (PMG's form offers that
@@ -42,7 +42,7 @@ stating:
 
 `commit()` sits on every Protocol here rather than being left to the route, because
 `noa_api.api.deps.get_db_session` does not commit and a repository that only `flush()`es
-answers 200 over a rollback — B10 and B11 both, one table apart (V100).
+answers 200 over a rollback — B10 and B11 both, one table apart.
 """
 
 from __future__ import annotations
@@ -113,7 +113,7 @@ class WHMServerCreate:
     """A new `whm_servers` row. `api_token` is ciphertext.
 
     `is_reseller_credential` defaults `false`, which is the column's own default and the
-    truthful value for a root token (V109): a caller written before the flag existed keeps
+    truthful value for a root token: a caller written before the flag existed keeps
     inserting root rows.
     """
 
@@ -189,7 +189,7 @@ class PMGServerUpdate:
     ssh: SSHCredentialsPatch = SSHCredentialsPatch()
 
 
-# --- Shared field application (V66) ---
+# --- Shared field application ---
 
 
 def apply_ssh_fields(row: WHMServer | PMGServer, patch: SSHCredentials) -> None:
@@ -271,7 +271,7 @@ class SQLWHMServerAdminRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
         # Composed, not re-implemented: `ORDER BY name` and the `None`-for-absent contract
-        # live in the read repository and are covered by its own live test (V66).
+        # live in the read repository and are covered by its own live test.
         self._reads = SQLWHMServerRepository(session)
 
     async def list_servers(self) -> Sequence[WHMServer]:
@@ -471,7 +471,7 @@ class SQLPMGServerAdminRepository:
         await self._session.commit()
 
 
-# --- The one column the validate flow may write (T54, V82) ---
+# --- The one column the validate flow may write ---
 #
 # Two more classes rather than two more methods above, and this is the same call
 # `noa_api.api.deps` makes for `SQLApprovalCardRepository`: a reachability probe must not hold
@@ -515,7 +515,7 @@ class SQLPMGHostKeyPinRepository:
         await self._session.commit()
 
 
-# --- The five statements all three share (V66) ---
+# --- The five statements all three share ---
 
 
 async def _name_taken(
@@ -530,7 +530,7 @@ async def _name_taken(
     **Case-insensitive, while the unique index is not**, and that asymmetry is the point.
     `core.servers.reference` records the consequence of the gap: Postgres uniqueness is
     case-sensitive, so `Node1` and `node1` can both exist and `NODE1` then matches both —
-    a permanent `host_ambiguous` for a reference an admin will keep typing (V18). The write
+    a permanent `host_ambiguous` for a reference an admin will keep typing. The write
     side is the only place that can stop it, so it refuses here.
 
     A pre-check rather than only catching the constraint, for the reason
@@ -548,7 +548,7 @@ async def _insert(session: AsyncSession, server: WHMServer | ProxmoxServer | PMG
     """`add` + `flush` + `refresh`, so the caller sees the server-generated columns.
 
     `refresh` rather than trusting the instance: `id`, `created_at` and `updated_at` are
-    server defaults (T4), and the response shape carries all three.
+    server defaults, and the response shape carries all three.
     """
     session.add(server)
     await session.flush()
@@ -579,7 +579,7 @@ async def _set_fingerprint(
     server: WHMServer | PMGServer | None,
     fingerprint: str | None,
 ) -> bool:
-    """Write only `ssh_host_key_fingerprint`. The validate flow's one write (V82).
+    """Write only `ssh_host_key_fingerprint`. The validate flow's one write.
 
     Narrow on purpose: this is the method the validation service holds, and it is the only
     column that service may change. Handing it a full `update` would let a reachability probe

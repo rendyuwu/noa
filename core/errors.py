@@ -1,4 +1,4 @@
-"""One error base for the whole API surface (V73, T9).
+"""One error base for the whole API surface.
 
 Every NOA failure that a client should see carries three fields, and the split is what
 lets a single exception handler shape every response:
@@ -6,7 +6,7 @@ lets a single exception handler shape every response:
 - `error_code` — stable machine string. Clients and tests branch on this, never on prose.
 - `message` — what the operator reads. Says what happened and who can fix it, so nobody
   files a ticket for something they could clear themselves. Safe to render: no
-  credential, no directory internals, no configuration state (V8).
+  credential, no directory internals, no configuration state.
 - `detail` — optional internal cause, for logs only. Defaults to `message`, and
   `str(exc)` yields it, so tracebacks stay useful while response bodies stay clean.
 
@@ -49,7 +49,7 @@ class RetryAfterMixin:
     It exists so the shared handler branches on a declared property instead of listing
     classes: `noa_api.api.errors` used to test `isinstance(error, AuthRateLimitedError)`,
     which silently drops the header for any second rate-limited class. A 429 without
-    `Retry-After` leaves the client guessing when to retry (V9).
+    `Retry-After` leaves the client guessing when to retry.
 
     Implementors set `retry_after_seconds` in `__init__`, floored at 1 — `Retry-After: 0`
     tells the client to retry immediately, the opposite of a block.

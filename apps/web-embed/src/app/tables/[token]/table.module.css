@@ -71,7 +71,7 @@
 }
 
 /*
- * The bound (V85). Muted like the card's status line, but never hidden: this is the sentence that
+ * The bound. Muted like the card's status line, but never hidden: this is the sentence that
  * keeps a capped page from reading like a complete one.
  */
 .bound {

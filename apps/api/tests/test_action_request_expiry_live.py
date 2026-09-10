@@ -1,4 +1,4 @@
-"""The expiry sweep against a real Postgres (T39 — V23, V28, V32, V87, V89).
+"""The expiry sweep against a real Postgres.
 
 `test_action_request_expiry.py` drives the same service over an in-memory repository, which
 proves the loop and the reporting but cannot prove the three claims that are *about the
@@ -92,14 +92,14 @@ async def expire_if_due(
     *,
     now: datetime | None = None,
 ) -> bool:
-    """The render path's check-on-read (T41, T63), over real SQL."""
+    """The render path's check-on-read, over real SQL."""
     async with factory() as session:
         service = ActionRequestExpiryService(SQLActionRequestExpiryRepository(session))
         return await service.expire_if_due(action_request_id=action_request_id, now=now)
 
 
 # --------------------------------------------------------------------------------------
-# The predicate (V32)
+# The predicate
 # --------------------------------------------------------------------------------------
 
 
@@ -124,7 +124,7 @@ async def test_the_sweep_expires_a_pending_request_past_its_deadline(factory) ->
     assert stored.status is ActionRequestStatus.EXPIRED
     assert stored.reason is None
     assert stored.tool_run_id is None
-    # A bound, not an equality: `decided_at` is clock-stamped (V87).
+    # A bound, not an equality: `decided_at` is clock-stamped.
     assert stored.decided_at is not None
     assert before <= stored.decided_at <= datetime.now(UTC)
     assert await read_runs(factory) == []
@@ -165,7 +165,7 @@ async def test_one_pass_expires_every_due_request(factory) -> None:
 
 
 async def test_a_request_exactly_on_its_deadline_expires_at_both_doors(factory) -> None:
-    """`<=`, in both comparisons, asserted together (V32).
+    """`<=`, in both comparisons, asserted together.
 
     `§T.39`'s line reads `expires_at < now()` and the decision door compares
     `expires_at <= decided_at`. Taken literally, a request whose deadline is *this instant*
@@ -272,7 +272,7 @@ async def test_the_sweep_cannot_touch_a_decided_request(factory) -> None:
 
 
 # --------------------------------------------------------------------------------------
-# Check-on-read, the half T41's card depends on (V32)
+# Check-on-read, the half T41's card depends on
 # --------------------------------------------------------------------------------------
 
 
@@ -352,7 +352,7 @@ async def test_check_on_read_of_an_unknown_id_reports_nothing_and_raises_nothing
 async def test_a_sweep_cannot_expire_a_request_being_approved(factory) -> None:
     """V28, V32: the request expired *while* an operator's approval was in flight.
 
-    **The race is arranged, and the arrangement is the point** (V89). Running the two in an
+    **The race is arranged, and the arrangement is the point**. Running the two in an
     `asyncio.gather` is not a race — the first commonly finishes before the second's statement
     reaches the server, so that version passes even if the `UPDATE` could clobber the
     decision. Here the approval is held open between its locked read and its commit, and the
@@ -502,7 +502,7 @@ async def test_a_decision_after_the_sweep_is_refused_as_already_decided(factory)
 # Everything the two expiry writers are supposed to agree on. `id`, `expires_at`, `created_at`
 # and `decided_at` are dropped: the first three differ per row by construction and the fourth
 # is clock-stamped, so keeping it would make this compare a coin flip on which second the two
-# writes landed in (V87). `decided_at` is asserted as a property instead, below.
+# writes landed in. `decided_at` is asserted as a property instead, below.
 COMPARED_COLUMNS = (
     "tool_name",
     "requested_by_user_id",
@@ -520,7 +520,7 @@ def shape(row: ActionRequest) -> dict[str, object]:
 
 
 async def test_a_swept_row_matches_one_expired_at_the_decision_door(factory) -> None:
-    """Two writers, one event, one kind of row (V32).
+    """Two writers, one event, one kind of row.
 
     The decision door and the sweep both write EXPIRED, from different sides and for different
     reasons — an operator arrived too late, or nobody arrived at all. If they disagreed on the
@@ -546,7 +546,7 @@ async def test_a_swept_row_matches_one_expired_at_the_decision_door(factory) -> 
     swept_row = await read_request(factory, by_the_sweep)
 
     assert shape(swept_row) == shape(door_row)
-    # The dropped clock column, asserted by property rather than by equality (V87).
+    # The dropped clock column, asserted by property rather than by equality.
     assert door_row.decided_at is not None
     assert swept_row.decided_at is not None
 

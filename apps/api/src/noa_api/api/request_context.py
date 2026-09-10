@@ -1,4 +1,4 @@
-"""One id per request, on every response and in every log line (T64 — V73).
+"""One id per request, on every response and in every log line.
 
 V73 wants a `request_id` in every error body and an `x-request-id` on every error response.
 That needs something upstream of the exception handlers to decide what the id *is*, because
@@ -21,12 +21,12 @@ them can reach the others:
 `api/error_handling.py`) takes an inbound `X-Request-Id` verbatim. That value goes straight
 back out as a response header and into structured log output, so an unbounded or
 newline-carrying one is a log-forging surface at best. Inbound is still honoured — a proxy
-that mints ids (T60) is exactly the correlation V73 is for — but only when it looks like an
+that mints ids is exactly the correlation V73 is for — but only when it looks like an
 id: bounded length, and characters that cover UUIDs, hex digests and W3C trace ids.
 
 That rule is not this header's alone, which is why `sanitize_header_label` is separate from
 `sanitize_request_id`: T73 reads `X-Noa-Conversation-Ref` and writes it into `tool_runs` and
-into log output, the same exposure under a different name and a different bound (V66). The
+into log output, the same exposure under a different name and a different bound. The
 two callers differ only in what they do with a rejection — an id is minted, a label goes
 `None` — and that choice stays with each caller rather than in here.
 """
@@ -98,7 +98,7 @@ def sanitize_header_label(value: str | None, *, max_length: int) -> str | None:
 
 
 def sanitize_request_id(value: str | None) -> str | None:
-    """An inbound `x-request-id` if it is usable as an id, else `None` (V73)."""
+    """An inbound `x-request-id` if it is usable as an id, else `None`."""
     return sanitize_header_label(value, max_length=MAX_REQUEST_ID_LENGTH)
 
 
@@ -121,7 +121,7 @@ def request_id_for(scope: Scope) -> str:
 
 
 class RequestContextMiddleware:
-    """Assign a request id, publish it, and put it on the response (V73).
+    """Assign a request id, publish it, and put it on the response.
 
     Raw ASGI rather than `BaseHTTPMiddleware`, matching `McpAuthErrorMiddleware`: the header
     is written by wrapping `send`, so it lands on *every* response, including the streaming
@@ -129,7 +129,7 @@ class RequestContextMiddleware:
 
     Installed by `noa_api.api.errors.install_error_handling`, which is the single seam both
     `noa_api.main` and the test harnesses call — so the envelope cannot be present on one
-    surface and absent on another (V66).
+    surface and absent on another.
     """
 
     def __init__(self, app: ASGIApp) -> None:

@@ -68,7 +68,7 @@ NOA_MCP_TOKEN=<paste from mint_mcp_token.py>
 cd apps/api && set -a && . ../../spikes/librechat-embed-render-gate/harness.env && set +a
 uv run alembic upgrade head && cd ../..
 uv run python spikes/librechat-embed-render-gate/mint_mcp_token.py operator@noa.internal dev-bypass
-#    ^ prints the plaintext once (V2). Paste it into LibreChat's .env as NOA_MCP_TOKEN.
+#    ^ prints the plaintext once. Paste it into LibreChat's .env as NOA_MCP_TOKEN.
 #    Mint a FRESH one per run: the first MCP call binds it to a LibreChat user id (V3 TOFU),
 #    and a token bound to a previous run's user is a 401.
 

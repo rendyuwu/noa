@@ -1,17 +1,17 @@
-"""Turning a tool result into an audit row's `result_summary` (T73, T38 — V8, V20, V47).
+"""Turning a tool result into an audit row's `result_summary`.
 
 Written at T73 for the READ path and hoisted here at T38, because the post-approval executor
 records the same field from the same envelope and two spellings of "bounded, redacted, compact
-JSON" is one too many (V66). `noa_api.mcp_audit` imports both functions and re-exports them,
+JSON" is one too many. `noa_api.mcp_audit` imports both functions and re-exports them,
 so its own callers and tests keep naming one thing.
 
 **The envelope is the contract.** Every exposed tool answers `{"ok": bool, ...}`
 (`noa_api.mcp_tools.results`), and `sanitize_tool_errors` turns an exception into `ok: False`
-rather than a raise (V19) — so `ok` is what a status is read off, and a payload that cannot be
+rather than a raise — so `ok` is what a status is read off, and a payload that cannot be
 read as a success is not evidence of one.
 
 **Redaction happens here even though the callers redact too.** `tool_runs.result_summary`
-outlives the call and is read by the admin audit surface (T55) and, for an approved change,
+outlives the call and is read by the admin audit surface and, for an approved change,
 by the card and by `noa_get_action_result`. A per-caller exemption is how one of them
 eventually writes a credential into the audit trail.
 """
@@ -33,7 +33,7 @@ TRUNCATION_SUFFIX: Final = "..."
 
 
 def result_summary(payload: Mapping[str, Any] | None) -> str | None:
-    """A bounded, redacted rendering of what a tool answered (V45, V47).
+    """A bounded, redacted rendering of what a tool answered.
 
     Compact JSON so the 2000 characters hold as much of the result as possible, `default=str`
     so a stray non-serializable value degrades to its repr instead of raising inside the
@@ -49,11 +49,11 @@ def result_summary(payload: Mapping[str, Any] | None) -> str | None:
 
 
 def status_for_payload(payload: Mapping[str, Any] | None) -> ToolRunStatus:
-    """COMPLETED or FAILED, read off the result envelope (V20).
+    """COMPLETED or FAILED, read off the result envelope.
 
     `ok` is the one field every tool result carries, and `sanitize_tool_errors` turns an
     exception into `ok: False` rather than a raise — so without this branch every failed call
-    would be recorded as a success. An ambiguity result (V18) is `ok: False` too, and is
+    would be recorded as a success. An ambiguity result is `ok: False` too, and is
     recorded FAILED on purpose: the call did not do what was asked, and `result_summary`
     carries the `choices` that say why.
 

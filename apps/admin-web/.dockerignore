@@ -1,4 +1,4 @@
-# Build context for the admin panel image (§T.60). Context is this directory (C12).
+# Build context for the admin panel image (§T.60). Context is this directory.
 #
 # `node_modules` is excluded and then re-introduced from the `deps` stage: a host `node_modules`
 # is both the largest thing here and the one most likely to hold a platform-specific binary that
@@ -18,7 +18,7 @@ node_modules/
 out/
 *.tsbuildinfo
 
-# Secrets never enter a layer (C11). Config arrives from the environment at boot.
+# Secrets never enter a layer. Config arrives from the environment at boot.
 .env
 .env.*
 

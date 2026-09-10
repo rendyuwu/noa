@@ -1,10 +1,10 @@
-"""Doubles and an app builder for the `/auth` routes (T8).
+"""Doubles and an app builder for the `/auth` routes.
 
 Postgres is not required for any route test: the app is built with
 `dependency_overrides` pointing `get_auth_service` at an `AuthService` whose repository
 and rate-limit store are in-memory dicts. The *real* `JWTService` and the real
-`AuthService` run — only I/O is faked, so the cookie, the activation gate (V7), the
-limiter policy (V9) and the per-request row re-read (V6) are all exercised for real.
+`AuthService` run — only I/O is faked, so the cookie, the activation gate, the
+limiter policy and the per-request row re-read are all exercised for real.
 
 `SQLAuthRepository` / `SQLLoginRateLimitRepository` get their own coverage against a
 live scratch database in `test_auth_repository.py`, skip-gated the way
@@ -273,7 +273,7 @@ def override_auth_service_factory(
     """A `get_auth_service` override wired to the doubles passed in.
 
     Extracted from `auth_harness` so T9's `support.rbac` probe app can put the same real
-    `AuthService` behind `require_admin` without a second copy of this wiring (V66). The
+    `AuthService` behind `require_admin` without a second copy of this wiring. The
     limiter policy is read off `settings`, never hardcoded, so a test that narrows the
     window still exercises the real thresholds.
     """

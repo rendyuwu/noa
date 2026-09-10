@@ -1,4 +1,4 @@
-"""The one definition of "now, aware, UTC" (T37, T39, T56 — V32, V66).
+"""The one definition of "now, aware, UTC".
 
 Lived in `core.approvals.clock` until T56, when the table surface became a fourth reader
 that compares a stored deadline against the present moment and had no business importing
@@ -8,7 +8,7 @@ boundary hold at one door and not the next. `core.approvals.clock` re-exports bo
 so every caller written against it still reads correctly.
 
 Deadlines compared here: `ActionDecisionService` against `decided_at` when an operator
-reaches a stale card (T37), T39's sweep against every pending row, and T56's table surface
+reaches a stale card, T39's sweep against every pending row, and T56's table surface
 against `tool_result_tables.expires_at` on read.
 
 `as_utc` exists because a *double* can hand back a naive datetime where the column cannot:

@@ -6,7 +6,7 @@
 # read is not evidence the mechanism behaves. This script proves the tree under test is the
 # one the SPEC names, so the live run that follows can be attributed to that pin.
 #
-# It also runs V88's config binding (T57) before touching the clone, so "the three keys are
+# It also runs V88's config binding before touching the clone, so "the three keys are
 # there" is a check rather than a habit.
 #
 #   spikes/librechat-embed-render-gate/verify_librechat_pin.sh [clone-dir]
@@ -26,13 +26,13 @@ pass() { printf 'ok    %s\n' "$1"; }
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # V88's three keys, the header set and the trailing slash, asserted against this directory's
-# `librechat.yaml` *and* against the config block of `docs/integrations/librechat.md` (T57).
+# `librechat.yaml` *and* against the config block of `docs/integrations/librechat.md`.
 # First, and before the clone gate, because it needs no clone: a config or doc drift should be
 # catchable without 2 GB of LibreChat on disk. The predicate itself lives in the test rather than
-# here so there is one copy of it (V66); this is where C21's trigger reaches it.
+# here so there is one copy of it; this is where C21's trigger reaches it.
 # A subshell, so the script's own working directory is still the caller's afterwards.
 (cd "$REPO_ROOT" && uv run pytest -q apps/api/tests/test_librechat_config_doc.py) \
-  || fail "config binding red — see apps/api/tests/test_librechat_config_doc.py (V88, T57)"
+  || fail "config binding red — see apps/api/tests/test_librechat_config_doc.py"
 pass "librechat.yaml + docs/integrations/librechat.md carry V88's keys"
 
 [ -d "$CLONE_DIR" ] || fail "no clone at $CLONE_DIR"
@@ -87,7 +87,7 @@ pass "shipped bytes never mention allow-forms (V80 premise holds)"
 #
 #   1. `ui-size-change` — the postMessage the frame-sizing work reads to learn the rendered UI's
 #      size. Drop the handler and sizing dies inside the library, where a read of LibreChat's own
-#      source (R12) would never catch it.
+#      source would never catch it.
 #   2. `autoResizeIframe` — the option LibreChat passes at each of the 3 render sites checked
 #      below. The library writes the reported size onto the iframe only when that option is set.
 #      A bump that renames or drops it severs the wiring between "LibreChat asks for resize" and

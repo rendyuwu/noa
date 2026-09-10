@@ -1,4 +1,4 @@
-"""The approval card's read, against a real Postgres (T41 — V27, V32, V35).
+"""The approval card's read, against a real Postgres.
 
 `test_approval_card_route.py` drives this path over doubles, which proves the route's shape, its
 refusals and the order it does things in. Three claims here are claims *about the database*:
@@ -7,7 +7,7 @@ refusals and the order it does things in. Three claims here are claims *about th
   preflight evidence are keys on `action_requests.approval_context`, written by T33's gate and
   round-tripped through asyncpg. A double handing back a dict proves the mapper; it does not
   prove that what the gate wrote is what the card reads.
-- **A deleted requester's row is refused.** `requested_by_user_id` is `SET NULL` (T34), so only
+- **A deleted requester's row is refused.** `requested_by_user_id` is `SET NULL`, so only
   a real `DELETE` produces the state every requester-match has to fail closed on.
 - **The card and the three writers describe one row.** The `EXPIRED` a stale request becomes and
   the run an approval starts are written by other classes in `core.approvals`; this is where the
@@ -74,9 +74,9 @@ SEPARABLE_CONTEXT: dict[str, object] = {
     "evidence": EVIDENCE_HALF,
 }
 
-# What the runner answered, in the envelope `build_receipt` reads (T38). Its sentinel appears in
+# What the runner answered, in the envelope `build_receipt` reads. Its sentinel appears in
 # no other branch of anything this file writes, so "the card carries the after-state" is a
-# compare that separates from "the card carries the before-state twice" (V87).
+# compare that separates from "the card carries the before-state twice".
 AFTER_SENTINEL = "after-state-the-runner-reported"
 
 RUNNER_PAYLOAD: dict[str, object] = {"ok": True, "result": AFTER_SENTINEL}
@@ -106,7 +106,7 @@ async def read_card(
     requester_user_id: UUID,
     now: datetime | None = None,
 ) -> ApprovalCardView | None:
-    """The production read path — the card reader and the expiry, over one session (T41)."""
+    """The production read path — the card reader and the expiry, over one session."""
     async with factory() as session:
         service = ApprovalCardService(
             repository=SQLApprovalCardRepository(session),
@@ -143,7 +143,7 @@ async def write_receipt(
     tool_run_id: UUID | None = None,
     receipt_data: dict[str, object] | None = None,
 ) -> None:
-    """A receipt through the production writer, in the production shape (T36, T38).
+    """A receipt through the production writer, in the production shape.
 
     `receipt_data` defaults to what `build_receipt` produces, so what this file reads back is
     what the executor actually stores rather than a hand-built payload that agrees with the
@@ -163,7 +163,7 @@ async def write_receipt(
 
 
 async def delete_user(factory: async_sessionmaker[AsyncSession], user_id: UUID) -> None:
-    """Delete the operator, leaving their requests behind with a NULL requester (T34)."""
+    """Delete the operator, leaving their requests behind with a NULL requester."""
     async with factory() as session:
         await session.execute(sa.delete(User).where(User.id == user_id))
         await session.commit()
@@ -227,7 +227,7 @@ async def test_a_decided_requests_reason_is_on_the_row_and_not_on_the_card(facto
 
 
 async def test_a_context_the_gate_did_not_write_renders_empty_rather_than_raising(factory) -> None:  # type: ignore[no-untyped-def]
-    """A card in front of an operator is the wrong place for a `KeyError` (V35).
+    """A card in front of an operator is the wrong place for a `KeyError`.
 
     Reachable if a row predates the gate's guarantees or was written by something else. The
     honest render is "nothing recorded", not an exception — and not a claimed identity nobody
@@ -269,7 +269,7 @@ async def test_another_operators_card_is_not_readable(factory) -> None:  # type:
 
 
 async def test_an_unknown_id_reads_as_nothing(factory) -> None:  # type: ignore[no-untyped-def]
-    """The other half of the pair the route answers identically (V27)."""
+    """The other half of the pair the route answers identically."""
     user_id = await insert_user(factory, OPERATOR_EMAIL)
 
     assert await read_card(factory, uuid4(), requester_user_id=user_id) is None
@@ -328,7 +328,7 @@ async def test_the_card_carries_the_receipt_its_writer_wrote(factory) -> None:  
     the before-state twice, or collapsed the pair into one "done", goes red here.
 
     Nothing is re-derived on the way out: `after` is compared against the payload the writer
-    redacted (V8, V45) rather than against a shape rebuilt here.
+    redacted rather than against a shape rebuilt here.
     """
     user_id = await insert_user(factory, OPERATOR_EMAIL)
     request_id = await open_request(
@@ -347,14 +347,14 @@ async def test_the_card_carries_the_receipt_its_writer_wrote(factory) -> None:  
     assert card.receipt.before == EVIDENCE_HALF
     assert card.receipt.after == RUNNER_PAYLOAD
     assert card.receipt.error_code is None
-    # The pair, stated as a pair: one URL owns the question and the answer (V34), and the
+    # The pair, stated as a pair: one URL owns the question and the answer, and the
     # answer is two halves that do not agree with each other.
     assert card.receipt.before != card.receipt.after
     assert AFTER_SENTINEL in json.dumps(card.as_payload())
 
 
 async def test_a_card_with_no_receipt_reports_none(factory) -> None:  # type: ignore[no-untyped-def]
-    """The separating case (V87): the join runs and finds nothing, and that is an answer.
+    """The separating case: the join runs and finds nothing, and that is an answer.
 
     Without this, "the card carries the receipt" passes just as well against a reader that
     invents an empty one for every request — which would render an outcome section over a
@@ -376,7 +376,7 @@ async def test_another_operators_receipt_is_not_readable(factory) -> None:  # ty
     """V27: the receipt rides on the requester-matched statement, so it is never fetched either.
 
     The receipt genuinely exists — the owner's read proves it — which is what makes the
-    intruder's `None` a refusal rather than an empty table (V87).
+    intruder's `None` a refusal rather than an empty table.
     """
     owner_id = await insert_user(factory, OPERATOR_EMAIL)
     intruder_id = await insert_user(factory, OTHER_EMAIL)
@@ -400,7 +400,7 @@ async def test_a_receipt_payload_no_writer_would_emit_renders_empty_rather_than_
 ) -> None:
     """V38: a card in front of an operator is the wrong place for a `TypeError`.
 
-    `receipt_data` is unversioned JSONB (T36), so a row written by something other than T38's
+    `receipt_data` is unversioned JSONB, so a row written by something other than T38's
     two writers is expressible. Both halves render as "nothing recorded", and `ok` fails closed
     on a truthy value that is not `True` — reading `"yes"` as success is the one direction that
     must not be permissive.
@@ -451,12 +451,12 @@ async def test_a_card_past_its_deadline_reads_expired_and_is_written_expired(fac
     assert stored.status is ActionRequestStatus.EXPIRED
     # An expiry is the absence of an answer, so it carries no reason — T34's CHECK exempts
     # `EXPIRED` precisely so it can, which means nothing at the database level would catch one
-    # that did (V15, T39).
+    # that did.
     assert stored.reason is None
 
 
 async def test_a_live_card_is_not_expired_by_being_read(factory) -> None:  # type: ignore[no-untyped-def]
-    """The separating case (V87): the check runs, and on a live row it changes nothing."""
+    """The separating case: the check runs, and on a live row it changes nothing."""
     user_id = await insert_user(factory, OPERATOR_EMAIL)
     request_id = await open_request(factory, requested_by_user_id=user_id, expires_in_seconds=3600)
 
@@ -471,7 +471,7 @@ async def test_a_foreign_card_is_never_written_to(factory) -> None:  # type: ign
     """V27 before V32, and the table is the only place that ordering is visible.
 
     `expire_if_due` takes an id and no requester, and the id in this URL reaches the operator
-    through a tool result that persists in LibreChat's MongoDB (V26). An expiry-first card would
+    through a tool result that persists in LibreChat's MongoDB. An expiry-first card would
     let an id its reader cannot see be written to; reading first makes it a pure no-op.
     """
     owner_id = await insert_user(factory, OPERATOR_EMAIL)

@@ -1,4 +1,4 @@
-"""Trust-on-first-use, against a real SSH handshake (T54, V69, V82).
+"""Trust-on-first-use, against a real SSH handshake.
 
 **This file is the gate V69 demands.** The rule it covers is a *security* control ported from
 `noa-old`, and V69 is explicit that upstream provenance is not evidence a control works: a
@@ -30,7 +30,7 @@ The four properties, and what each would look like if it were wrong:
 Case 2 ships with its negative control (case 1's sibling,
 `test_a_matching_pin_validates_over_a_real_handshake`): "the pin was not overwritten" passes
 just as well against a validate that does nothing at all, so a run that *does* connect and
-*does* succeed has to be in the file beside it (V87).
+*does* succeed has to be in the file beside it.
 """
 
 from __future__ import annotations
@@ -265,7 +265,7 @@ async def test_a_capture_whose_probe_fails_leaves_no_pin_behind(cipher: SecretCi
     assert row.ssh_host_key_fingerprint is None
 
 
-# --- 4: one prober, both systems (V66) ---
+# --- 4: one prober, both systems ---
 
 
 async def test_both_systems_reach_one_prober(cipher: SecretCipher) -> None:

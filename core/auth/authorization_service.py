@@ -1,4 +1,4 @@
-"""The RBAC engine (T9, V6, V10, V11, V12, V13, V14).
+"""The RBAC engine.
 
 Ported from `noa-old` branch `MCP` (`core/auth/authorization_service.py`, C13). One class
 answers two different kinds of question, and keeping them together is deliberate — the
@@ -6,9 +6,9 @@ write side must not be able to produce a state the read side interprets differen
 
 - **Read** — `get_permitted_tools(user_id)` and `authorize_tool(user_id, tool)`. Called on
   every MCP request: `tools/list` filters by the first, the execution gate re-checks with
-  the second (V1). Both start from a fresh `users` row.
+  the second. Both start from a fresh `users` row.
 - **Write** — role CRUD, grant replacement, role assignment, enable/disable, delete.
-  Called by the admin routes (T51-T53). Every mutation records an audit event (V14).
+  Called by the admin routes. Every mutation records an audit event.
 
 Three rules the implementation is shaped around:
 
@@ -17,15 +17,15 @@ Three rules the implementation is shaped around:
    trustworthy source: memoizing an operator's tool set — even for one request — would let
    a revoked grant or a disabled account keep working. `AuthorizedUser.tools` is a snapshot
    for a response body, never an input to a later check.
-2. **Admin bypass is bounded by the catalog** (V10). `admin` skips the grant table, not the
+2. **Admin bypass is bounded by the catalog**. `admin` skips the grant table, not the
    "is this a real tool?" question. An unregistered name is refused for everyone, which is
    what stops a prompt-injected tool name from resolving because an admin happened to ask.
-3. **Guards live here, not in the routes** (V12, V13). The last-active-admin check, the
+3. **Guards live here, not in the routes**. The last-active-admin check, the
    self-deactivate refusal, the reserved `admin` role and the internal-role rules are
    invariants about the data, so they hold for any caller — a future CLI or migration
    script included. `noa-old` had them here too, but re-derived each HTTP status in every
-   route; here the error class carries it (V73).
-4. **Every mutation commits, and the commit is the last thing it does** (T51). V14 says a
+   route; here the error class carries it.
+4. **Every mutation commits, and the commit is the last thing it does**. V14 says a
    permission update takes effect immediately, which is only true of a write that ended its
    transaction: the repository flushes and `noa_api.api.deps.get_db_session` never commits,
    so a service that left the boundary to its caller would have five routes answering 200
@@ -102,7 +102,7 @@ from core.auth.tool_list_notifications import (
 )
 from core.db.models import ADMIN_ROLE_NAME, INTERNAL_ROLE_PREFIX, is_internal_role
 
-# `roles.name` is `String(100)` (T4). Validated here so an over-long name is a 400 rather
+# `roles.name` is `String(100)`. Validated here so an over-long name is a 400 rather
 # than a database error surfacing as a 500.
 MAX_ROLE_NAME_LENGTH: Final = 100
 
@@ -116,7 +116,7 @@ DETAIL_ROLE_NAME_CHARS = "role name has characters outside [A-Za-z0-9_-]"
 
 # T66: the notifier swallowed an exception after a committed write. Logged at error because
 # nothing else records it — the operator's change succeeded and their 200 says so, so this
-# line is the only trace that a connected client was not told (V74).
+# line is the only trace that a connected client was not told.
 LOG_TOOL_LIST_NOTIFY_FAILED = "tool_list_changed_notify_failed"
 
 logger = structlog.get_logger(__name__)
@@ -146,31 +146,31 @@ class AuthorizationService:
         # becomes a call instead — the service is constructed per request either way.
         self._known_tools = frozenset(known_tools)
 
-    # --- Read path (V1, V6, V10, V11) ---
+    # --- Read path ---
 
     async def get_permitted_tools(self, user_id: UUID) -> set[str]:
         """Tools `user_id` may call, resolved from the database on every call.
 
         The three branches are V10 and V11 in order:
 
-        - `is_active=False` → empty, whatever roles say (V11). Checked first, so a disabled
+        - `is_active=False` → empty, whatever roles say. Checked first, so a disabled
           admin gets nothing rather than everything.
-        - holds `admin` → every known tool, grant table skipped (V10).
+        - holds `admin` → every known tool, grant table skipped.
         - otherwise → their roles' grants, filtered to the catalog. The filter matters:
-          `role_tool_permissions.tool_name` is a plain string (T4), so a grant written
+          `role_tool_permissions.tool_name` is a plain string, so a grant written
           before a tool was renamed must resolve to "no permission", not to a dangling
           name the dispatcher might still accept.
 
         Raises `UserNotFoundError` when the row is gone. Not an empty set: a deleted
         operator is not an operator with no permissions, and the caller owes them a 401
-        (T12) rather than an empty tool list that reads like a misconfigured role.
+        rather than an empty tool list that reads like a misconfigured role.
         """
         user = await self._require_user(user_id)
         roles = await self._repository.get_role_names(user_id)
         return await self._effective_tools(is_active=user.is_active, roles=roles)
 
     async def authorize_tool(self, user_id: UUID, tool_name: str) -> bool:
-        """Whether `user_id` may call `tool_name` right now (V1).
+        """Whether `user_id` may call `tool_name` right now.
 
         Re-resolved rather than read off an earlier `tools/list`: V74 accepts that a client
         may hold a stale catalog and leans on exactly this check as the backstop, so a
@@ -184,33 +184,33 @@ class AuthorizationService:
         return tool_name in await self.get_permitted_tools(user_id)
 
     async def resolve_user(self, user_id: UUID) -> AuthorizedUser:
-        """One user with their roles and effective tools, read fresh (V6)."""
+        """One user with their roles and effective tools, read fresh."""
         user = await self._require_user(user_id)
         return await self._to_authorized_user(user)
 
     async def list_users(self) -> list[AuthorizedUser]:
-        """Every user with roles and effective tools, for the admin list (T51)."""
+        """Every user with roles and effective tools, for the admin list."""
         users = await self._repository.list_users()
         return [await self._to_authorized_user(user) for user in users]
 
-    # --- Roles (V13) ---
+    # --- Roles ---
 
     async def list_roles(self) -> list[str]:
-        """Assignable roles. Internal `user:` roles are excluded (V13, V75).
+        """Assignable roles. Internal `user:` roles are excluded.
 
         `admin` is included: it is a real `roles` row (`AuthService._provision` writes it for
         a bootstrap admin) and hiding it would leave the panel unable to show who holds the
-        one role it cannot grant tools to. Editing and deleting it are refused instead (V13).
+        one role it cannot grant tools to. Editing and deleting it are refused instead.
         """
         return await self._repository.list_assignable_role_names()
 
     async def list_tools(self) -> list[str]:
-        """Every tool name a grant may name (V10, T52).
+        """Every tool name a grant may name.
 
         The vocabulary of `set_role_tools`, read off the same `_known_tools` that validates a
         write — so what the panel offers and what the service accepts cannot drift apart. A
         route asking `core.auth.tool_catalog` directly would be a second answer to the
-        question this service already owns (V66), and would miss a construction-time
+        question this service already owns, and would miss a construction-time
         `known_tools` override.
 
         A read: no event, no commit.
@@ -220,7 +220,7 @@ class AuthorizationService:
     async def create_role(self, name: str, *, actor_email: str | None = None) -> str:
         """Create a role. Idempotent, and records an event only when it created one.
 
-        `admin` is refused (V13): it already exists implicitly through the bypass, and
+        `admin` is refused: it already exists implicitly through the bypass, and
         letting an admin create a second definition of it invites grants that do nothing.
         """
         role_name = self._validate_role_name(name)
@@ -235,7 +235,7 @@ class AuthorizationService:
         await self._record(EVENT_ROLE_CREATED, actor_email, created, {"role": created})
         await self._repository.commit()
         # No T66 notification, and the omission is the correct answer rather than an oversight
-        # (V74). A role is born with zero grants and zero holders, so no operator's effective
+        #. A role is born with zero grants and zero holders, so no operator's effective
         # tool set moved. Telling every session to refetch here would be noise a client that
         # honoured the notification would pay for.
         return created
@@ -243,7 +243,7 @@ class AuthorizationService:
     async def delete_role(self, name: str, *, actor_email: str | None = None) -> None:
         """Delete a role and, by cascade, its grants and assignments.
 
-        Refuses `admin` (V13). `RoleNotFoundError` for anything else that is absent, so a
+        Refuses `admin`. `RoleNotFoundError` for anything else that is absent, so a
         second delete of the same role is a 404 rather than a silent success — the admin
         panel would otherwise show a stale row disappearing twice.
         """
@@ -253,7 +253,7 @@ class AuthorizationService:
         # **Read the holders before the delete, not after.** The assignments go by
         # `ON DELETE CASCADE`, so once the row is gone there is nobody left to find and T66's
         # notification would reach an empty audience — a bug indistinguishable from "nobody
-        # held that role" (V74). `delete_role` is also the existence check, so this runs before
+        # held that role". `delete_role` is also the existence check, so this runs before
         # it and costs one wasted query on the 404 path; an absent role has no holders, so the
         # answer is `[]` and nothing is announced.
         holders = await self._repository.list_user_ids_with_role(role_name)
@@ -285,7 +285,7 @@ class AuthorizationService:
     ) -> list[str]:
         """Replace a role's grants with exactly `tool_names` (V14 — effective at once).
 
-        Refuses `admin` (V13) and any name outside the catalog (V10). Unknown names are
+        Refuses `admin` and any name outside the catalog. Unknown names are
         rejected as a set, not one at a time, so an admin fixing a typo in a list of twenty
         sees all the bad ones at once.
         """
@@ -310,7 +310,7 @@ class AuthorizationService:
         await self._notify_tool_list_changed(holders)
         return stored
 
-    # --- User administration (V12, V13) ---
+    # --- User administration ---
 
     async def set_user_roles(
         self,
@@ -320,7 +320,7 @@ class AuthorizationService:
         actor_email: str | None = None,
         actor_user_id: UUID | None = None,
     ) -> AuthorizedUser:
-        """Replace the user's assignable roles, preserving internal ones (V13, V75).
+        """Replace the user's assignable roles, preserving internal ones.
 
         Guard order is chosen so the caller learns about their own mistake before the
         deployment's: an internal role or an unknown name is a malformed request (400),
@@ -348,7 +348,7 @@ class AuthorizationService:
             {"target_user_id": str(user_id), "roles": authorized.roles},
         )
         await self._repository.commit()
-        # One user: replacement changes what *they* resolve to and nothing else (V74).
+        # One user: replacement changes what *they* resolve to and nothing else.
         await self._notify_tool_list_changed([user_id])
         return authorized
 
@@ -360,7 +360,7 @@ class AuthorizationService:
         actor_email: str | None = None,
         actor_user_id: UUID | None = None,
     ) -> AuthorizedUser:
-        """Enable or disable a user (V7, V11, V12), cascade-revoking their tokens (V4).
+        """Enable or disable a user, cascade-revoking their tokens.
 
         Disabling is the operation V6 leans on: there is no session revocation, so
         `is_active=False` takes effect through the per-request row re-read in
@@ -368,7 +368,7 @@ class AuthorizationService:
         also why both guards below are refusals rather than warnings — an admin who
         disables themselves cannot undo it from inside the app.
 
-        Disabling also deletes every `mcp_tokens` row the operator holds (V4, T11). Note
+        Disabling also deletes every `mcp_tokens` row the operator holds. Note
         what that is and is not: it is not what stops them calling tools — V1's per-request
         `is_active` re-check already does, and it does so without waiting for anything to
         propagate. It is what makes the credential itself dead, so a token sitting in a
@@ -412,15 +412,15 @@ class AuthorizationService:
                 "target_user_id": str(user_id),
                 "is_active": is_active,
                 # Recorded even when zero: "disabled, held no tokens" and "disabled, lost
-                # four" are different facts for whoever reads the trail later (V14).
+                # four" are different facts for whoever reads the trail later.
                 "revoked_mcp_tokens": revoked_tokens,
             },
         )
         # The status flip, the token revoke and the event are one transaction, ended here
-        # (T51). Both guards above raise before it, so a refused disable revokes nothing and
+        #. Both guards above raise before it, so a refused disable revokes nothing and
         # persists nothing.
         await self._repository.commit()
-        # Notified on both directions of the flip, not only on disable (V11, V74): enabling an
+        # Notified on both directions of the flip, not only on disable: enabling an
         # account moves its effective tool set from empty to whatever its roles grant, which is
         # as much a catalog change as losing it. A disabled operator may still hold an open
         # session — their tokens are gone, so it cannot outlive its next request, but until then
@@ -435,12 +435,12 @@ class AuthorizationService:
         actor_email: str | None = None,
         actor_user_id: UUID | None = None,
     ) -> AuthorizedUser:
-        """Delete a user; return what they were (V12).
+        """Delete a user; return what they were.
 
         The snapshot is taken before the delete because the response has to name whom it
         removed, and after the row is gone there is nothing to read. Self-delete is refused
         for everyone, admin or not: it would leave the caller holding a valid session cookie
-        for a row that no longer exists (V6).
+        for a row that no longer exists.
         """
         user = await self._require_user(user_id)
         roles = await self._repository.get_role_names(user_id)
@@ -498,12 +498,12 @@ class AuthorizationService:
 
     @staticmethod
     def _reject_reserved_role(role_name: str) -> None:
-        """`admin` is built in: ⊥ edit its tools, ⊥ delete it (V13)."""
+        """`admin` is built in: ⊥ edit its tools, ⊥ delete it."""
         if role_name == ADMIN_ROLE_NAME:
             raise ReservedRoleError(f"role `{ADMIN_ROLE_NAME}` is reserved")
 
     def _normalize_assignable_roles(self, role_names: Iterable[str]) -> list[str]:
-        """Validate a role-assignment list, refusing internal roles by name (V13)."""
+        """Validate a role-assignment list, refusing internal roles by name."""
         normalized: list[str] = []
         for role_name in role_names:
             raw = role_name.strip()
@@ -521,7 +521,7 @@ class AuthorizationService:
     async def _guard_admin_removal(
         self, user: AuthorizationUserRecord, *, actor_user_id: UUID | None
     ) -> None:
-        """Refuse an `admin` removal that nobody could undo (V12).
+        """Refuse an `admin` removal that nobody could undo.
 
         Two cases, and the last-admin one only applies to an *active* target: stripping
         `admin` from an already-disabled account cannot empty the active-admin set, because
@@ -566,7 +566,7 @@ class AuthorizationService:
         )
 
     async def _notify_tool_list_changed(self, user_ids: Collection[UUID]) -> None:
-        """Tell `user_ids`' MCP sessions their tool catalog moved (T66 — V74).
+        """Tell `user_ids`' MCP sessions their tool catalog moved.
 
         Called *after* `commit()` by every mutation that can change an effective tool set, and
         called nowhere else. Three properties, each of them the reason this is a method rather
@@ -603,7 +603,7 @@ class AuthorizationService:
         target: str | None,
         metadata: dict[str, object],
     ) -> None:
-        """Record one admin audit event (V14)."""
+        """Record one admin audit event."""
         await self._audit.record(
             AdminAuditEvent(
                 event_type=event_type,

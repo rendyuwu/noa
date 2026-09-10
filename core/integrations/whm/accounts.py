@@ -1,16 +1,16 @@
-"""WHM account rows, reduced to the fields NOA speaks about (T21, C13, V8, V26).
+"""WHM account rows, reduced to the fields NOA speaks about.
 
 Ported from `noa-old` branch `MCP` (`whm/tools/result_shapes.py`), where it sat under the
 tool package. It lives in `core/` here because three callers need it, not one:
-`whm_search_accounts` (T21), `whm_list_accounts` (T20) and the suspend/unsuspend preflights
-that run in-process inside T22/T23 (C9, V17). Two copies of a field list is how one of them
-starts reporting a field the others do not (V66).
+`whm_search_accounts`, `whm_list_accounts` and the suspend/unsuspend preflights
+that run in-process inside T22/T23. Two copies of a field list is how one of them
+starts reporting a field the others do not.
 
 **A whitelist, not a passthrough.** `listaccts` answers with far more per account than any
 NOA surface needs — IP, plan, disk and bandwidth counters, theme, locale, partition. Every
 field kept below is one a tool result, an approval card or a suspension preflight actually
 reads, and everything else is dropped. The result lands in a LibreChat transcript that
-persists in their MongoDB (V26), so "what does the model need" is the right question rather
+persists in their MongoDB, so "what does the model need" is the right question rather
 than "what did WHM send".
 
 **A row with no `user` is dropped entirely.** `user` is the identifier every CHANGE tool

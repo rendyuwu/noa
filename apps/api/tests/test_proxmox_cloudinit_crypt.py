@@ -10,7 +10,7 @@ So every test here is about keeping *unavailable* separate from *mismatch*, and 
 matters most is:
 
 - `test_a_host_without_libcrypt_reports_unavailable` — the guard;
-- `test_verification_still_separates_a_wrong_password` — the negative control (V87). Without it,
+- `test_verification_still_separates_a_wrong_password` — the negative control. Without it,
   a `verify_cloudinit_password` that answered `UNAVAILABLE` unconditionally would pass every
   other assertion in this file. A verdict function that stopped verifying would be silent.
 
@@ -103,7 +103,7 @@ def test_the_library_is_probed_before_the_hash_is_read() -> None:
     assert verification.cause == CAUSE_CRYPT_LIBRARY_UNAVAILABLE
 
 
-# --- The negative control: the compare still separates (V87) ---
+# --- The negative control: the compare still separates ---
 
 
 def test_verification_confirms_the_password_that_is_actually_set() -> None:
@@ -117,7 +117,7 @@ def test_verification_confirms_the_password_that_is_actually_set() -> None:
 
 
 def test_verification_still_separates_a_wrong_password() -> None:
-    """**The control this file would be worthless without** (V87).
+    """**The control this file would be worthless without**.
 
     Every other assertion here is satisfied by a function that answers `UNAVAILABLE` for
     everything. This is the one that is not: a document carrying somebody else's password has to

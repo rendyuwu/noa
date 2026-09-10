@@ -11,7 +11,7 @@ Three things are pinned here, and each one is a production incident in `noa-old`
   missing binary produce different codes, so an operator is told to fix sudoers rather than
   hunting an install that is already there.
 - **A banner in front of JSON still parses** (`noa-old` GH #83). `core.remote_exec.banner_strip`
-  is the real fix (V56); the raw-decode fallback is what keeps an unrecognised banner variant
+  is the real fix; the raw-decode fallback is what keeps an unrecognised banner variant
   from turning an approved CHANGE into a parse error.
 
 `run_*_command` takes a resolved `SSHConnectionConfig` as of T24, so the row refusals it used to

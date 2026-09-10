@@ -1,4 +1,4 @@
-"""Server-inventory CRUD policy: names, encryption, audit, commit (T54, V8, V14, V100).
+"""Server-inventory CRUD policy: names, encryption, audit, commit.
 
 Three services, one per table, and they hold every rule the fifteen admin routes have. The
 routes (`noa_api.api.routes.admin_servers`) resolve the actor, call one method and shape the
@@ -11,15 +11,15 @@ Five rules, and each is here rather than in a route:
 1. **The name is checked before the write, case-insensitively.** `core.servers.reference`
    records why the case matters: Postgres uniqueness is case-sensitive, so `Node1` and `node1`
    can both exist while `NODE1` matches both, which is a permanent `host_ambiguous` for a
-   reference an operator will keep typing (V18). The write side is the only place that can
+   reference an operator will keep typing. The write side is the only place that can
    prevent it. The unique index stays the backstop for the exact-case race.
 2. **Secrets are encrypted here and nowhere else on this path.** A service method takes
    **plaintext** in the secret fields of its spec and hands the repository a copy whose secrets
-   are `enc:v1:fernet:…` (C7, V48). `core.servers.admin_repository` cannot encrypt — it has no
+   are `enc:v1:fernet:…`. `core.servers.admin_repository` cannot encrypt — it has no
    cipher — so there is exactly one encryption site, and `test_server_admin_repository.py`
    asserts the stored columns rather than trusting this sentence.
-3. **One audit event per mutation** (V14), carrying ids, names, hosts, ports and presence
-   booleans. Never a token, never an SSH credential (V8).
+3. **One audit event per mutation**, carrying ids, names, hosts, ports and presence
+   booleans. Never a token, never an SSH credential.
 4. **`commit()` is the last statement, after every guard** (V100(a)). `noa_api.api.deps`'s
    session dependency does not commit, so a service that only reached `flush()` would answer
    200 over a rollback — B10 on T9's engine and B11 on T10's tokens, and V100(d) makes finding
@@ -98,7 +98,7 @@ def encrypt_ssh_credentials(values: SSHCredentialsT, *, cipher: SecretCipher) ->
 
     `ssh_host_key_fingerprint` is **not** encrypted, and that is not an oversight: a host key
     fingerprint is a public digest. The whole point of storing it is comparing it to what a
-    host presents mid-handshake (V82), and `WHMServer.to_safe_dict` returns it to the panel so
+    host presents mid-handshake, and `WHMServer.to_safe_dict` returns it to the panel so
     an operator can read it — a value shown in a UI is not one to hold ciphertext.
     """
     return replace(
@@ -123,7 +123,7 @@ def _require_reseller_name_matches(*, name: str, api_username: str) -> None:
     flag on and touches nothing else is exactly the write this rule exists to stop, and reading
     the request body alone would let it through. Both sides go through
     `normalize_whm_identity`, which is the same comparison an account CHANGE makes against the
-    account's `owner` (V106) — two spellings of "equal" here would mean a row this accepts is
+    account's `owner` — two spellings of "equal" here would mean a row this accepts is
     one that path still refuses.
     """
     if normalize_whm_identity(name) != normalize_whm_identity(api_username):
@@ -133,7 +133,7 @@ def _require_reseller_name_matches(*, name: str, api_username: str) -> None:
 
 
 def _ssh_metadata(server: WHMServer | PMGServer) -> dict[str, Any]:
-    """The SSH facts an audit event may carry: shape, never material (V8)."""
+    """The SSH facts an audit event may carry: shape, never material."""
     return {
         "ssh_username": server.ssh_username,
         "ssh_port": server.ssh_port,
@@ -144,7 +144,7 @@ def _ssh_metadata(server: WHMServer | PMGServer) -> dict[str, Any]:
 
 
 class WHMServerAdminService:
-    """List / create / update / delete for `whm_servers` (T54)."""
+    """List / create / update / delete for `whm_servers`."""
 
     def __init__(
         self,
@@ -252,7 +252,7 @@ class WHMServerAdminService:
                     "api_username": server.api_username,
                     "verify_ssl": server.verify_ssl,
                     # Which credential class this row now holds. An account CHANGE is refused
-                    # or allowed by the owner compare (V106), so "when did this row become a
+                    # or allowed by the owner compare, so "when did this row become a
                     # reseller credential, and who said so" is a question the trail must answer.
                     "is_reseller_credential": server.is_reseller_credential,
                     **_ssh_metadata(server),
@@ -262,7 +262,7 @@ class WHMServerAdminService:
 
 
 class ProxmoxServerAdminService:
-    """List / create / update / delete for `proxmox_servers` (T54).
+    """List / create / update / delete for `proxmox_servers`.
 
     No SSH block anywhere: Proxmox is an HTTP API and nothing else (I.ext), so there is one
     secret column and no host key to pin.
@@ -352,7 +352,7 @@ class ProxmoxServerAdminService:
 
 
 class PMGServerAdminService:
-    """List / create / update / delete for `pmg_servers` (T54).
+    """List / create / update / delete for `pmg_servers`.
 
     SSH is not optional here, unlike WHM: PMG is reached over `pmgsh` over SSH and nothing
     else (V58, I.ext), so a row with no credentials is a row no tool can use. It is still

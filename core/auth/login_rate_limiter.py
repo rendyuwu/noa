@@ -1,9 +1,9 @@
-"""Login rate limiter (T8, V9).
+"""Login rate limiter.
 
 Ported from `noa-old` branch `MCP` (`core/auth/login_rate_limiter.py`, C13).
 
 The clock arithmetic moved to `core.auth.attempt_limiter.AttemptLimiter` when T12 needed
-the same counting for failed MCP authentication (V66). What is left here is the part that
+the same counting for failed MCP authentication. What is left here is the part that
 is about *login*: which keys an attempt lands in, and which error a block raises.
 
 Two buckets accumulate per failed attempt — one keyed by source IP, one by the submitted
@@ -58,7 +58,7 @@ LoginRateLimitRepository = AttemptLimitRepository
 
 
 class LoginRateLimiter(AttemptLimiter):
-    """Count failed logins per IP and per email; block past the max (V9)."""
+    """Count failed logins per IP and per email; block past the max."""
 
     async def assert_allowed(
         self, *, email: str, ip_address: str, now: datetime | None = None

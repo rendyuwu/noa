@@ -24,12 +24,12 @@ Slice by header only; protocol = "AS-BUILT read protocol" below, ∧ it BINDS.
 
 ## Repo
 
-Monorepo, 3 deployables, 1 shared `core/`, 1 Alembic (C12):
+Monorepo, 3 deployables, 1 shared `core/`, 1 Alembic:
 
 - `apps/api` — FastAPI + FastMCP. Two router sets: `/mcp` + `/admin`.
 - `apps/admin-web` — Next.js + BIGSU admin panel. ⊥ frameable.
 - `apps/web-embed` — Next.js approval card iframe + large-result tables. **⊥ BIGSU, ⊥ Tailwind** —
-  hand-written CSS; eslint refuses `@gio/*` ∧ any `apps/admin-web` import (T40). Dev port 3001.
+  hand-written CSS; eslint refuses `@gio/*` ∧ any `apps/admin-web` import. Dev port 3001.
 - `core/` — config, auth, remote_exec, secrets, integrations. Shared by all.
 
 `apps/admin-web` ∧ `apps/web-embed` = independent packages. Own lockfile, own CI, own deploy.
@@ -76,12 +76,12 @@ Web apps, each in own dir: `pnpm install`, `pnpm dev`, `pnpm build`, `pnpm lint`
 - `gitlab` = `git@gitlab.biznetgio.pt:simondayce/noa.git`, PRIVATE, owner-maintained. CI surface,
   branches `master` ∧ `staging` ∧ nothing else. Runner ! sit INSIDE the Biznet Gio network ∵
   `bigsu.biznetgio.pt` resolves internal-only ⇒ a public runner ⊥ install `@gio/*` at all. Detail:
-  `docs/admin-web.md` §"Registry access and CI". (T61)
+  `docs/admin-web.md` §"Registry access and CI".
 
 **⊥ push `master` ∨ `staging` to `origin`. EVER.** They carry `k8s/*/secret-api.yaml` FILLED —
 Fernet key, JWT secret, DB ∧ LDAP bind passwords — ∧ `origin` is public. NAME the remote on every
 push of those 2: ⊥ bare `git push`, ⊥ rely on a default. A leak here is ⊥ recoverable — deleting the
-branch after ⊥ unpublish what was already cached ∨ indexed. (C11, V68, T75)
+branch after ⊥ unpublish what was already cached ∨ indexed.
 
 `master` ∧ `staging` = `main` + the CI/deploy overlay (`.gitlab-ci.yml`, `k8s/{staging,production}/`,
 `scripts/ci/`, `artifacts.env`, ∧ the 2 tests that read them). ⊥ an authoring branch, ever: ∀ job
@@ -104,70 +104,70 @@ again, ∨ the next push is a non-fast-forward.
   of any name. ⊥ `reason`, ⊥ `proposed_reason`. LLM ⊥ author, ⊥ relay, ⊥ see. Reason born at
   DECISION time, ⊥ call time — **approve ∧ deny both require a non-blank one**, 409
   `change_reason_required` either way, ∧ the DB CHECK `ck_action_requests_decided_reason` holds it
-  vs any writer. EXPIRED carries ⊥ reason ∵ nobody gave one. (C8, V15, V43, T37)
+  vs any writer. EXPIRED carries ⊥ reason ∵ nobody gave one.
 - **Approve/deny** ⊥ travel through LLM. Only path = cookie POST from NOA-origin document +
   server-minted CSRF token — HMAC, bound to the session **∧** the request id, key derived from
   `AUTH_JWT_SECRET`, `core/approvals/csrf.py`. "May this run?" read from `action_requests.status`
   in DB — ⊥ from LLM claim, ⊥ from tool arg. One writer of a terminal status
   (`core/approvals/decisions.py`), ∧ it is ⊥ reachable from the MCP path: T33's repository writes
-  PENDING ∧ nothing else. (C18, V22, V23, V28, V39, T37)
+  PENDING ∧ nothing else.
 - **One workflow, one tool.** Preflight, checks, execution → internal functions. Only final
-  workflow exposed. Evidence born in-process, ⊥ cross tool boundary. (C9, V17)
-- **Never-implement list** (C22) = management policy, ⊥ technical. ⊥ port, ⊥ expose, ⊥ re-add.
+  workflow exposed. Evidence born in-process, ⊥ cross tool boundary.
+- **Never-implement list** = management policy, ⊥ technical. ⊥ port, ⊥ expose, ⊥ re-add.
   Re-add = owner decision, ⊥ agent call.
 - **T59 = CLEARED 2026-08-08 (was a blocking gate).** Iframe render path VERIFIED live vs pinned
   LibreChat `45cc53c4` — frame on NOA origin, cookie rides in, in-frame POST authenticated
   (R29). Embed work (T32, T41–T46, T56) unblocked; active branch = iframe UI resource + link-out
-  text beside it (V24, V25). Approve/deny in-frame ! be JS `fetch` — no `allow-forms` (V80).
-  Re-verify on every LibreChat bump: `spikes/librechat-embed-render-gate/` (C21).
+  text beside it. Approve/deny in-frame ! be JS `fetch` — no `allow-forms`.
+  Re-verify on every LibreChat bump: `spikes/librechat-embed-render-gate/`.
 - **An ESCAPE HATCH out of the frame ships the plain ADDRESS beside the link** — ⊥ a link alone.
   `target="_blank"` needs `allow-popups`, absent at 1 of the 2 render sites ⇒ the click does
   NOTHING, silently; ∧ where popups ARE granted the opened tab INHERITS the sandbox ⇒ `allow-forms`
   ⊥ in it either, so a `<form>` login in that tab is inert too. "Top-level" ⊥ mean "unsandboxed"
   (MEASURED, T43). Assert on the page COUNT ∨ a hit counter, ⊥ on an exception, ∧ at BOTH pinned
-  sandbox strings — the permissive one is the negative control. (V94, V25, R32, R13)
-- **Python `<3.13`** (C1) ∧ **`fastmcp==3.4.5`** (C23) ∧ **exact-pinned `next`/`react`** (C2).
+  sandbox strings — the permissive one is the negative control.
+- **Python `<3.13`** ∧ **`fastmcp==3.4.5`** ∧ **exact-pinned `next`/`react`**.
   Bump = deliberate + re-verify, ⊥ drive-by.
-- Ambiguous identifier → structured candidates result. ⊥ guess. (C10, V18)
+- Ambiguous identifier → structured candidates result. ⊥ guess.
 - Raw exceptions ⊥ reach LLM. Sanitize: `RuntimeError` → `tool_execution_failed`,
-  `TimeoutError` → `timeout`. (V19)
+  `TimeoutError` → `timeout`.
 - Zero firewall backends available → error `no_firewall_backend`. ⊥ success-with-empty-gather.
   Silent no-op on approved CHANGE = ⊥ acceptable. Guard sits at the MECHANISM: ∀ firewall op goes
   through `firewall_gate.run_on_usable_backends` — ⊥ a per-tool check, ⊥ a hand-rolled
   `asyncio.gather` (AST-guarded). Binaries present ∧ `sudo -n` denied → `ssh_sudo_required`,
-  ⊥ `no_firewall_backend`. (V57, V55, T68)
+  ⊥ `no_firewall_backend`.
 - **Partial answer ⊥ a whole one.** A source that ⊥ answer gets NAMED beside the verdict; zero
-  answers → `unknown`, ⊥ the benign value. Silence ≠ evidence of absence. (V86)
+  answers → `unknown`, ⊥ the benign value. Silence ≠ evidence of absence.
 - A READ that CAPS rows ships its own bound — total count + truncation flag, ordered
-  reproducibly before the cut. (V85)
+  reproducibly before the cut.
 - **A background pass that WRITES carries a LIMIT ∧ reports what the LIMIT hid.** Cap IN the
   statement, ⊥ a slice after loading; total from the SAME statement as the page; `truncated` +
   `remaining` beside `count`, ∵ "how many did this pass resolve" reads as "how many were
   there". Batch ÷ interval = the drain rate ∧ it gets STATED. ⊥ `FOR UPDATE ... SKIP LOCKED`
-  on rows a live worker also writes — a repair loop ⊥ outrank the worker. (V92, V85)
+  on rows a live worker also writes — a repair loop ⊥ outrank the worker.
 
 ## Code style
 
 - Python: type hints ∀ new code. `ruff` clean. `.py` ≤ 900 lines.
 - TypeScript: typed, ⊥ `any`. `.ts` ≤ 300 lines, `.tsx` ≤ 450 lines.
-- Reusable functions over duplication. Shared code → `core/`. (V66)
-- Tests for new functionality. ≥1 check per touched invariant where practical. (V67)
+- Reusable functions over duplication. Shared code → `core/`.
+- Tests for new functionality. ≥1 check per touched invariant where practical.
 - Test compare ⊥ eat clock-stamped bytes (`Expires`, `Date`, `iat`) — drop them from equality,
-  assert by property, ∧ keep a case proving the compare still separates. (V87, B4)
+  assert by property, ∧ keep a case proving the compare still separates.
 - Test of a CONCURRENCY control ! prove the 2 parties OVERLAPPED. `asyncio.gather` of 2 callers
   ⊥ a race — it passes with the lock deleted. Hold the window open, assert ORDER (⊥ the win
-  count), ∧ ship a negative control showing the forbidden order is reachable. (V89, B5)
+  count), ∧ ship a negative control showing the forbidden order is reachable.
 - Test SETUP gate ⊥ be the thing under test. Readiness wait pointed at the subject turns the
   subject's failure into a TIMEOUT, ∧ a timeout names nothing. Gate sits one layer BELOW — socket
-  under route, process under socket. (V90)
+  under route, process under socket.
 - **An assertion nobody watched FAIL is ⊥ evidence.** Break the guarded thing, SEE red, restore,
   see green, record the failure line. Green-against-a-break is WORSE than no check — it eats the
   attention a missing one would draw. Mutate the PRODUCTION value, ⊥ the test body: deleting an
   assertion ⊥ redden a suite, so that measures nothing. A hand-kept SET (dict of branches, list of
   tools) is a claim only where something reads it against the code — bind it ∨ SAY it is unbound.
   Lane physically ⊥ stage the hazard ⇒ say so ∧ hold each instrument separately; a stated gap
-  beats a spec that reads as coverage. (V119)
-- Conventional commits. ⊥ secrets in git — `.env*` ignored except `.env.example`. (V68)
+  beats a spec that reads as coverage.
+- Conventional commits. ⊥ secrets in git — `.env*` ignored except `.env.example`.
 - Env vars for lists = JSON arrays: `AUTH_BOOTSTRAP_ADMIN_EMAILS=["a@b.com"]`.
 - Browser ⊥ call FastAPI direct. Same-origin proxy route per web app.
 - ∀ error response carries `request_id` in body + `x-request-id` header. Shared handler, ⊥ per-route.
@@ -180,10 +180,10 @@ again, ∨ the next push is a non-fast-forward.
 `MCP`/`main`. Read `git show MCP:<path>`.
 Copy mature integration layers (WHM/Proxmox/PMG, `remote_exec`, `secrets`) — ⊥ rewrite. Banner
 stripping ∧ `sudo -n` hardened there. **Host-key pinning ∧ TOFU refresh were ⊥** — upstream
-`known_hosts=None` = asyncssh's off switch, port inherited a dead pin, fixed here (B2, V82).
+`known_hosts=None` = asyncssh's off switch, port inherited a dead pin, fixed here.
 Upstream provenance ⊥ evidence a control works: ported security control ! land with a test vs the
-real mechanism before any §V ∨ doc calls it hardened. (C13, V69, V82, V84)
-**Same rule caught the REFRESH half (T54)** — upstream WHM validate captured ∧ OVERWROTE the pin
+real mechanism before any §V ∨ doc calls it hardened.
+**Same rule caught the REFRESH half ** — upstream WHM validate captured ∧ OVERWROTE the pin
 EVERY run ⇒ pin worth nothing, any admin pressing Validate silently re-trusts whatever answers.
 NOA pins ONCE: ⊥ pin → capture, store ONLY if the probe after it passes; stored pin ≠ presented
 → `ssh_host_key_mismatch`, ⊥ re-pin. Rotation = 2 deliberate acts (clear, then validate). Test =

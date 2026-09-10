@@ -1,4 +1,4 @@
-"""`SQLAuthRepository` / `SQLLoginRateLimitRepository` against a live database (T8).
+"""`SQLAuthRepository` / `SQLLoginRateLimitRepository` against a live database.
 
 The doubles in `support.auth` cover policy; these cover the SQL. Anything asserted here
 is something a fake cannot tell you: that `ON CONFLICT` really upserts, that a `commit()`
@@ -151,7 +151,7 @@ async def test_duplicate_email_is_rejected_by_the_database(session: AsyncSession
         await repository.create_user(email=EMAIL, ldap_dn=DN, display_name=None, is_active=True)
 
 
-# --- Commit boundary (V7) ---
+# --- Commit boundary ---
 
 
 async def test_commit_persists_the_row_into_another_session(
@@ -249,7 +249,7 @@ async def test_role_names_are_scoped_to_the_user(session: AsyncSession) -> None:
     assert await repository.get_role_names(other.id) == []
 
 
-# --- Rate-limit buckets (V9) ---
+# --- Rate-limit buckets ---
 
 
 async def test_get_bucket_returns_none_when_absent(session: AsyncSession) -> None:

@@ -16,11 +16,11 @@ Two things are NOT here on purpose:
   `core.db.lifecycle` as of T35, and as of T73 the name → risk mapping is built at
   *registration* (`noa_api.mcp_tools.registry`), where the tool is defined — not here.
   Permission resolution never branches on risk: a CHANGE tool the operator may call still
-  goes through the approval gate (V16), and a CHANGE tool they may not call is refused by
-  RBAC first (V1). Adding risk here would invite a check that conflates "may call" with
+  goes through the approval gate, and a CHANGE tool they may not call is refused by
+  RBAC first. Adding risk here would invite a check that conflates "may call" with
   "may run now", and would put the classification somewhere a new tool can be missing from.
 - **Internal functions** (§I.mcp's `*_preflight_*`, `whm_validate_server`, and the rest).
-  They run in-process inside a workflow tool (C9, V17), are never exposed over MCP, and
+  They run in-process inside a workflow tool, are never exposed over MCP, and
   therefore can never be the subject of a grant. Listing them would let an admin grant a
   permission that means nothing.
 
@@ -75,7 +75,7 @@ NEVER_IMPLEMENT_TOOLS: Final[frozenset[str]] = frozenset(
 
 
 def is_known_tool(tool_name: str) -> bool:
-    """True when `tool_name` is a registered, exposed tool (V10).
+    """True when `tool_name` is a registered, exposed tool.
 
     Exact match, no normalization: a grant is written by an admin picking from the
     catalog, and silently accepting `WHM_List_Accounts` would mean the stored grant no

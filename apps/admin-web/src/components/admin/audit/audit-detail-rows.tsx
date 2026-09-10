@@ -35,10 +35,10 @@ export function AuditIdRow({ label, value }: { label: string; value?: string | n
 // halves on the other — and a `yopass_url` can appear anywhere inside them. That
 // URL is consumed once, so a hover preview, a prefetch or a mis-click spends the
 // operator's own delivery and nobody can read the password afterwards: it renders
-// as characters in a monospace block and never as an anchor (C15, V49).
+// as characters in a monospace block and never as an anchor.
 //
 // One component rather than one `<pre>` per drawer, and that is the point of it
-// (V66). The rule above is enforced where the markup is written, so a second
+//. The rule above is enforced where the markup is written, so a second
 // renderer cannot ship guarded by nothing, and the next JSON surface has one
 // obvious thing to reuse instead of a `<pre>` to copy.
 export function JsonBlock({ value }: { value: unknown }) {

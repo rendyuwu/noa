@@ -1,22 +1,22 @@
-"""Application settings — one source of truth for every env var (T5).
+"""Application settings — one source of truth for every env var.
 
-Shared by all three deployables' server-side code (C12). Field names map 1:1 to
+Shared by all three deployables' server-side code. Field names map 1:1 to
 env var names, case-insensitively: `postgres_url` ← `POSTGRES_URL`. `.env.example`
 is the documented surface; anything added here belongs there too.
 
 Environment-sensitive rules, enforced at construction so a misconfig fails at
 startup rather than mid-request:
 
-- `NOA_SECRET_ENCRYPTION_KEY` required in production, auto-generated in dev (V52).
-  It encrypts server credentials, not the database — the name says so (C7).
-- `AUTH_JWT_SECRET` required in production, ≥32 chars, auto-generated in dev (V53).
+- `NOA_SECRET_ENCRYPTION_KEY` required in production, auto-generated in dev.
+  It encrypts server credentials, not the database — the name says so.
+- `AUTH_JWT_SECRET` required in production, ≥32 chars, auto-generated in dev.
 - `NOA_EMBED_BASE_URL` and `NOA_API_URL` refuse their development default outside
   development: both addresses are handed onward — one to an operator, one to a web
-  app's proxy — and a laptop address is wrong silently, not loudly (V95).
+  app's proxy — and a laptop address is wrong silently, not loudly.
 - `ldap://` refused in production unless explicitly allowed; dev LDAP bypass
-  refused outside development/test (C4).
+  refused outside development/test.
 
-List-valued vars use JSON arrays (C11): `AUTH_BOOTSTRAP_ADMIN_EMAILS=["a@b.com"]`.
+List-valued vars use JSON arrays: `AUTH_BOOTSTRAP_ADMIN_EMAILS=["a@b.com"]`.
 A bare comma-separated string is accepted as a convenience.
 """
 
@@ -45,10 +45,10 @@ DEFAULT_POSTGRES_URL = "postgresql+asyncpg://noa:noa@localhost:5432/noa"
 MIN_JWT_SECRET_LENGTH = 32
 
 # Development defaults for the two settings whose value leaves this process as an address
-# somebody else has to resolve: the approval URL an operator opens (V26) and the target the
+# somebody else has to resolve: the approval URL an operator opens and the target the
 # web apps' server-side proxies forward to. Named here rather than written inline on the
 # fields below because `_validate_operator_addresses` refuses exactly these values outside
-# development (V95) — one constant per address keeps the default and the guard from drifting
+# development — one constant per address keeps the default and the guard from drifting
 # apart, which is the only way that guard could go quietly vacuous.
 DEV_DEFAULT_EMBED_BASE_URL = "http://localhost:3001"
 DEV_DEFAULT_API_URL = "http://localhost:8000"
@@ -69,7 +69,7 @@ def resolve_env_file(*, start: Path, cwd: Path) -> Path | None:
 
 
 def _parse_string_list(value: object) -> object:
-    """Coerce a JSON array, or a comma-separated string, into `list[str]` (C11)."""
+    """Coerce a JSON array, or a comma-separated string, into `list[str]`."""
     if value is None:
         return []
 
@@ -109,21 +109,21 @@ class Settings(BaseSettings):
     # --- Runtime ---
     environment: str = "development"
 
-    # --- Database (C3) ---
+    # --- Database ---
     postgres_url: PostgresDsn = cast(PostgresDsn, DEFAULT_POSTGRES_URL)
     db_pool_size: int = Field(default=5, ge=1)
     db_max_overflow: int = Field(default=10, ge=0)
 
-    # --- Secret encryption (C7, V52) ---
+    # --- Secret encryption ---
     # Encrypts server credentials (SSH creds, API tokens), NOT the database.
     noa_secret_encryption_key: SecretStr | None = None
 
-    # --- Auth / JWT (V6, V53) ---
+    # --- Auth / JWT ---
     auth_jwt_secret: SecretStr | None = None
     auth_jwt_algorithm: str = "HS256"
     auth_jwt_access_token_ttl_seconds: int = Field(default=3600, ge=60)
     auth_session_cookie_name: str = "noa_session"
-    # `.noa.internal` so the cookie rides to the embed origin too (V40).
+    # `.noa.internal` so the cookie rides to the embed origin too.
     auth_session_cookie_domain: str | None = None
     auth_session_cookie_path: str = "/"
     auth_session_cookie_samesite: str = "lax"
@@ -131,12 +131,12 @@ class Settings(BaseSettings):
     auth_bootstrap_admin_emails: list[str] = Field(default_factory=list)
     auth_dev_bypass_ldap: bool = False
 
-    # Login rate limiting (V9)
+    # Login rate limiting
     auth_login_rate_limit_window_seconds: int = Field(default=60, ge=1)
     auth_login_rate_limit_max_attempts: int = Field(default=5, ge=1)
     auth_login_rate_limit_block_seconds: int = Field(default=600, ge=1)
 
-    # --- LDAP (C4, V7) ---
+    # --- LDAP ---
     ldap_server_uri: str = "ldap://localhost:389"
     ldap_allow_insecure_transport: bool = False
     ldap_bind_dn: str = ""
@@ -145,20 +145,20 @@ class Settings(BaseSettings):
     ldap_user_filter: str = "(|(mail={email})(userPrincipalName={email}))"
     ldap_timeout_seconds: int = Field(default=5, ge=1)
 
-    # --- MCP tokens (C5, V4) ---
-    # Staleness interval for LDAP revalidation; LDAP down -> fail closed (V4).
+    # --- MCP tokens ---
+    # Staleness interval for LDAP revalidation; LDAP down -> fail closed.
     mcp_token_ldap_revalidate_seconds: int = Field(default=900, ge=0)
     # None -> non-expiring until revoked (V2: revoke = delete row).
     mcp_token_ttl_seconds: int | None = Field(default=None, ge=60)
 
-    # Failed-MCP-auth rate limiting (V9, T12). Same numbers as login: the buckets are
+    # Failed-MCP-auth rate limiting. Same numbers as login: the buckets are
     # keyed per LibreChat account and per presented token, never per source address
     # (in-cluster it identifies nothing), so a block costs one account, not the fleet.
     mcp_auth_rate_limit_window_seconds: int = Field(default=60, ge=1)
     mcp_auth_rate_limit_max_attempts: int = Field(default=5, ge=1)
     mcp_auth_rate_limit_block_seconds: int = Field(default=600, ge=1)
 
-    # --- Approval gate (V30, V31, V32) ---
+    # --- Approval gate ---
     approval_max_inflight_per_user: int = Field(default=1, ge=1)
     approval_pending_ttl_seconds: int = Field(default=3600, ge=60)
     # How often T39's background sweep looks for pending requests past their deadline. Not
@@ -186,7 +186,7 @@ class Settings(BaseSettings):
     #
     # Drain rate is this over the interval above: 100 per 120s, so 50 a minute and 3,000 an
     # hour. That beats the rate stranded rows appear at, because appearing costs a process
-    # death mid-call or a failed closing audit write (T73) — the population that can strand at
+    # death mid-call or a failed closing audit write — the population that can strand at
     # one instant is the runs in flight at that instant, and V31's cap bounds the CHANGE half of
     # it per operator. A *sustained* 50 a minute would mean NOA is failing that many calls a
     # minute, which is not a backlog a reaper is the remedy for. The two knobs compose: an
@@ -196,10 +196,10 @@ class Settings(BaseSettings):
     # an env var.
     approval_stranded_run_reap_batch_size: int = Field(default=100, ge=1, le=1000)
 
-    # --- Large READ results (V64, V85) ---
+    # --- Large READ results ---
     # How long a parked table stays readable. A lifetime, like the reap deadline above and
     # unlike the two intervals: the URL it belongs to persists in LibreChat's transcript
-    # (V26), so an operator may open it long after the call, and 24 hours is a working day
+    #, so an operator may open it long after the call, and 24 hours is a working day
     # plus the night in between. Read past this and the surface answers exactly as it does
     # for an absent or a foreign token — one refusal for all of them (V27's shape).
     result_table_ttl_seconds: int = Field(default=86400, ge=60)
@@ -207,7 +207,7 @@ class Settings(BaseSettings):
     # throughput: `whm_list_accounts` on a dense server is thousands of rows, and neither an
     # unbounded JSONB column nor an unbounded `<table>` in a small iframe is a thing anybody
     # chose. What the cap must never do is hide itself — the row stores the pre-cut count and
-    # a truncation flag beside the rows, and both are rendered (V85).
+    # a truncation flag beside the rows, and both are rendered.
     #
     # `le` as much as `ge`, for T38's reason one table over: a cap with no ceiling is the
     # unbounded write again, spelled in an env var.
@@ -219,15 +219,15 @@ class Settings(BaseSettings):
     )
     api_cors_allow_credentials: bool = True
     # Base of the approval URL handed to the operator (V26: carries an id only). The default
-    # is refused outside development (V95) — see `_validate_operator_addresses`.
+    # is refused outside development — see `_validate_operator_addresses`.
     noa_embed_base_url: str = DEV_DEFAULT_EMBED_BASE_URL
-    # LibreChat origin allowed to frame the embed app (V41).
+    # LibreChat origin allowed to frame the embed app.
     noa_librechat_origin: str = "https://chat.noa.internal"
     # Server-side proxy target for the web apps; browsers never call the API direct. Default
-    # refused outside development, same rule and same reason as the embed base above (V95).
+    # refused outside development, same rule and same reason as the embed base above.
     noa_api_url: str = DEV_DEFAULT_API_URL
 
-    # --- yopass (C15, V50) ---
+    # --- yopass ---
     # Absent -> the reset tool reports `yopass_not_configured`; the app still boots.
     yopass_base_url: str | None = None
     # Bounded so a misconfig surfaces at startup, not mid-execute.
@@ -245,7 +245,7 @@ class Settings(BaseSettings):
     @field_validator("auth_bootstrap_admin_emails", mode="after")
     @classmethod
     def _lowercase_emails(cls, value: list[str]) -> list[str]:
-        """Emails compare case-insensitively; normalize once, here (V7)."""
+        """Emails compare case-insensitively; normalize once, here."""
         return [email.lower() for email in value]
 
     @field_validator(
@@ -282,7 +282,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _apply_environment_rules(self) -> Settings:
-        """Secrets, addresses and transport rules, per environment (V52, V53, V95, C4)."""
+        """Secrets, addresses and transport rules, per environment."""
         if self.is_development:
             # Local dev runs over plain HTTP, so a Secure cookie would never be sent.
             self.auth_session_cookie_secure = False
@@ -400,7 +400,7 @@ class Settings(BaseSettings):
                 "; ".join(offenders) + ". These addresses are handed onward — the approval "
                 "URL to an operator, the proxy target to a web app — so a localhost value "
                 "outside development/test environments resolves nowhere and fails silently. "
-                "Set them to the deployment's real origins (V95)"
+                "Set them to the deployment's real origins"
             )
 
     def _validate_ldap_transport(self) -> None:
@@ -431,30 +431,30 @@ class Settings(BaseSettings):
 
     @property
     def secret_encryption_key(self) -> str:
-        """The resolved Fernet key. Non-empty after validation (V52)."""
+        """The resolved Fernet key. Non-empty after validation."""
         if self.noa_secret_encryption_key is None:  # pragma: no cover - validator guarantees
             raise RuntimeError("noa_secret_encryption_key is not configured")
         return self.noa_secret_encryption_key.get_secret_value()
 
     @property
     def ldap_bind_password_value(self) -> str:
-        """Service-account password, unwrapped at the call site only (V8)."""
+        """Service-account password, unwrapped at the call site only."""
         return self.ldap_bind_password.get_secret_value()
 
     @property
     def jwt_secret(self) -> str:
-        """The resolved JWT signing secret. Non-empty after validation (V53)."""
+        """The resolved JWT signing secret. Non-empty after validation."""
         if self.auth_jwt_secret is None:  # pragma: no cover - validator guarantees
             raise RuntimeError("auth_jwt_secret is not configured")
         return self.auth_jwt_secret.get_secret_value()
 
     @property
     def yopass_configured(self) -> bool:
-        """False -> the reset tool reports `yopass_not_configured` (C15)."""
+        """False -> the reset tool reports `yopass_not_configured`."""
         return bool(self.yopass_base_url)
 
     def session_cookie_kwargs(self) -> dict[str, Any]:
-        """Cookie attributes for set/clear, so both paths cannot drift (V6)."""
+        """Cookie attributes for set/clear, so both paths cannot drift."""
         return {
             "key": self.auth_session_cookie_name,
             "domain": self.auth_session_cookie_domain,

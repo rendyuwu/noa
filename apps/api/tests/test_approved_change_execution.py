@@ -1,13 +1,13 @@
-"""Executing an approved change, without a database (T38 — V8, V20, V23, V46, V47).
+"""Executing an approved change, without a database.
 
 Four claims live here and none of them is about SQL:
 
-- **The authorization is re-read** (V23). Two identifiers are not permission, and the row can
+- **The authorization is re-read**. Two identifiers are not permission, and the row can
   have moved between the decision's commit and the task being scheduled.
 - **The runner is dispatched with what the gate recorded**, and refused before dispatch when
   those arguments are not runnable.
-- **Both artifacts land in one commit** (V46): the run's terminal status and the receipt.
-- **Nothing internal reaches the row** (V8). A raising runner's message, a host, an argument
+- **Both artifacts land in one commit**: the run's terminal status and the receipt.
+- **Nothing internal reaches the row**. A raising runner's message, a host, an argument
   name — the operator-safe sentence is stored and the cause is logged.
 
 The SQL — the `status = APPROVED AND tool_run_id = :run` predicate, and one receipt per request
@@ -75,7 +75,7 @@ async def execute(
 
 
 # --------------------------------------------------------------------------------------
-# The authorization (V23)
+# The authorization
 # --------------------------------------------------------------------------------------
 
 
@@ -136,7 +136,7 @@ async def test_the_runner_is_handed_what_the_gate_recorded() -> None:
     Not re-gathered here, and not taken from anything the caller passed: what an operator
     approved against is what the change runs against.
 
-    **The reason travels too** (T22). It is not an authorization — that was settled by
+    **The reason travels too**. It is not an authorization — that was settled by
     `status = APPROVED` before this call — but WHM's `suspendacct` takes a suspension note, and
     C8's single operator-typed field is the only text NOA has that belongs in one. What the
     runner must not do with it is echo it back; that is asserted where the runner is, in
@@ -158,7 +158,7 @@ async def test_the_runner_is_handed_what_the_gate_recorded() -> None:
 
 
 async def test_a_tool_with_no_runner_fails_the_run_by_name() -> None:
-    """Still reachable: the WHM account pair has runners (T22, T23), T25-T29 do not.
+    """Still reachable: the WHM account pair has runners, T25-T29 do not.
 
     A named terminal failure rather than a run left `STARTED` until the reaper — which is what
     makes shipping the executor before its first CHANGE tool safe rather than a silent hole.
@@ -173,7 +173,7 @@ async def test_a_tool_with_no_runner_fails_the_run_by_name() -> None:
 
 
 async def test_a_runner_registered_under_another_name_is_not_reached() -> None:
-    """The negative control for the dispatch above (V87): the map is keyed by tool name, so a
+    """The negative control for the dispatch above: the map is keyed by tool name, so a
     runner for a different tool must not answer for this one."""
     repository = FakeApprovedChangeExecutionRepository(authorized=authorized_change())
     runner = RecordingChangeRunner()
@@ -185,7 +185,7 @@ async def test_a_runner_registered_under_another_name_is_not_reached() -> None:
 
 
 async def test_a_change_whose_arguments_were_redacted_is_refused() -> None:
-    """Fail-closed rather than running a change with `[redacted]` where a value belonged (V8).
+    """Fail-closed rather than running a change with `[redacted]` where a value belonged.
 
     Vacuous today — no CHANGE tool NOA plans declares a sensitive-named argument, because
     C15/V49 generate secrets server-side — and a guard at the mechanism so that the tool which
@@ -204,7 +204,7 @@ async def test_a_change_whose_arguments_were_redacted_is_refused() -> None:
 
 
 async def test_a_nested_redacted_argument_is_refused_too() -> None:
-    """The guard walks as deep as the redactor does (V66).
+    """The guard walks as deep as the redactor does.
 
     `redact_sensitive_data` recurses, so `{"server": {"ssh_password": ...}}` reaches
     `approval_context` with the value already replaced. A top-level-only scan sees an
@@ -226,7 +226,7 @@ async def test_a_nested_redacted_argument_is_refused_too() -> None:
 
 
 async def test_the_redaction_guard_reads_key_names_not_values() -> None:
-    """The negative control for the guard above (V87).
+    """The negative control for the guard above.
 
     Redaction is by key name (`core.secrets.redaction`), so an ordinary argument whose *value*
     happens to be the placeholder string is not a redacted argument — and a guard that compared
@@ -245,7 +245,7 @@ async def test_the_redaction_guard_reads_key_names_not_values() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# What gets recorded (V20, V46, V47)
+# What gets recorded
 # --------------------------------------------------------------------------------------
 
 
@@ -264,7 +264,7 @@ async def test_a_successful_change_completes_its_run() -> None:
 
 
 async def test_a_runner_that_answers_a_refusal_records_failed() -> None:
-    """`sanitize_tool_errors` returns `ok: False` rather than raising (V19), so without this
+    """`sanitize_tool_errors` returns `ok: False` rather than raising, so without this
     branch every refused change would be recorded as one that worked."""
     repository = FakeApprovedChangeExecutionRepository(authorized=authorized_change())
     runner = RecordingChangeRunner({"ok": False, "error_code": "ssh_sudo_required"})
@@ -318,7 +318,7 @@ async def test_a_raising_runner_does_not_leak_its_message() -> None:
 
 
 async def test_a_cancelled_runner_is_not_recorded_at_all() -> None:
-    """Shutdown cancels executions (V30), and a cancelled change has no outcome to record.
+    """Shutdown cancels executions, and a cancelled change has no outcome to record.
 
     `BaseException` is deliberately not caught: the run stays `STARTED`, which is exactly the
     row the reaper resolves, and swallowing the cancellation would turn a shutdown into a hang.
@@ -365,7 +365,7 @@ async def test_a_credential_in_a_result_is_redacted_before_it_is_stored() -> Non
 
 
 # --------------------------------------------------------------------------------------
-# The receipt (V46)
+# The receipt
 # --------------------------------------------------------------------------------------
 
 

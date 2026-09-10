@@ -1,13 +1,13 @@
-"""The reaper and its loop, without a database (T38 — V20, V30, V46, V47).
+"""The reaper and its loop, without a database.
 
 `tool_runs.status` defaults to `STARTED` so a process that dies mid-call leaves evidence rather
-than nothing (T35). This is what makes that worth having. Four claims here, none about SQL:
+than nothing. This is what makes that worth having. Four claims here, none about SQL:
 
 - **What a reaped run records.** `FAILED`, because the enum offers no third terminal state, with
   a summary that says the outcome is *unknown* — an interrupted change may well have applied on
   the remote host, and "failed" would be a claim nobody observed.
 - **Which reaped runs owe a receipt.** Those belonging to an `action_requests` row, because
-  `action_receipts.action_request_id` is NOT NULL (T36) and a READ has no approval to be the
+  `action_receipts.action_request_id` is NOT NULL and a READ has no approval to be the
   receipt of.
 - **What the reaper will not repair.** `APPROVED`-with-no-run is detected and logged, never
   fixed. The decision path cannot produce that pair (T37 writes both in one transaction, V29);
@@ -16,11 +16,11 @@ than nothing (T35). This is what makes that worth having. Four claims here, none
 - **How much one pass may do, and what it says about the rest.** Both populations are read
   under `batch_size`, and a pass that hit the bound reports what it left — in the outcome and
   in the log line, because a capped pass that logs like a complete one reads as "everything is
-  resolved" (V85, V92).
+  resolved".
 
 The predicates, the cutoff comparison and the ordering the batch cuts on are
 `test_stranded_run_reaper_live.py`'s, against a real Postgres. The loop's four properties are
-`test_periodic_task.py`'s, proven once for both background components (V66).
+`test_periodic_task.py`'s, proven once for both background components.
 """
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ INTERVAL_SECONDS = 0.02
 WAIT_TIMEOUT_SECONDS = 2.0
 
 # Wide enough that the tests which are not about the bound never reach it, so a batch assertion
-# is only ever made by a test that asked for one (V92).
+# is only ever made by a test that asked for one.
 BATCH_SIZE = 100
 
 
@@ -102,7 +102,7 @@ def build_reaper(
 
 
 # --------------------------------------------------------------------------------------
-# What a reaped run records (V20, V47)
+# What a reaped run records
 # --------------------------------------------------------------------------------------
 
 
@@ -140,7 +140,7 @@ async def test_the_summary_says_the_outcome_is_unknown_not_that_it_failed() -> N
 
 async def test_every_stranded_run_in_a_batch_is_reaped() -> None:
     """A pass that stopped at the first row would leave the rest for the next interval, and the
-    cap they are spending with them. The batch is the only thing that stops it (V92)."""
+    cap they are spending with them. The batch is the only thing that stops it."""
     repository = FakeStrandedRunRepository()
     repository.runs.extend([stranded_run(), stranded_run(), stranded_run()])
 
@@ -167,7 +167,7 @@ async def test_a_pass_is_one_transaction() -> None:
 
     Still true with the batch in place, and the batch is what makes it affordable: the promise
     costs one transaction's worth of row locks, and `batch_size` is the ceiling on that
-    worth (V92).
+    worth.
     """
     repository = FakeStrandedRunRepository()
     repository.runs.extend([stranded_run(), stranded_run()])
@@ -179,7 +179,7 @@ async def test_a_pass_is_one_transaction() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# The bound a pass is held to, and the bound it reports (V85, V92)
+# The bound a pass is held to, and the bound it reports
 # --------------------------------------------------------------------------------------
 
 
@@ -218,7 +218,7 @@ async def test_a_truncated_pass_reports_how_many_it_left() -> None:
 
 
 async def test_a_pass_that_saw_its_whole_population_reports_nothing_left() -> None:
-    """The negative control for the pair above (V87): `truncated` has to be able to be false,
+    """The negative control for the pair above: `truncated` has to be able to be false,
     or "this pass was capped" is a claim that is always true and therefore says nothing."""
     repository = FakeStrandedRunRepository()
     repository.runs.extend(stranded_run() for _ in range(2))
@@ -231,7 +231,7 @@ async def test_a_pass_that_saw_its_whole_population_reports_nothing_left() -> No
 
 
 async def test_a_truncated_pass_says_so_in_the_log() -> None:
-    """Where an operator actually reads it (V85).
+    """Where an operator actually reads it.
 
     `count` alone answers "how many did this pass resolve", which reads as "how many were
     there" — so a capped pass and a complete one would produce the same line with different
@@ -250,7 +250,7 @@ async def test_a_truncated_pass_says_so_in_the_log() -> None:
 
 
 async def test_a_complete_pass_logs_that_nothing_is_left() -> None:
-    """The negative control for the line above (V87): the two passes have to read differently.
+    """The negative control for the line above: the two passes have to read differently.
 
     A `truncated` that is always true, or a `remaining` that is always zero, would let the log
     of a capped pass be mistaken for the log of a finished one — the exact reading V85 exists
@@ -269,7 +269,7 @@ async def test_a_complete_pass_logs_that_nothing_is_left() -> None:
 
 
 async def test_the_detector_is_bounded_and_reports_its_own_bound() -> None:
-    """Read-only buys less than it looks like it does (V92).
+    """Read-only buys less than it looks like it does.
 
     Nothing is written for this population, but its ids are logged — one line naming every row
     of an arbitrarily large population is a log entry nobody can read, and the tuple behind it
@@ -291,7 +291,7 @@ async def test_the_detector_is_bounded_and_reports_its_own_bound() -> None:
 
 
 async def test_a_complete_detector_pass_reports_nothing_left() -> None:
-    """The negative control for the detector's bound (V87)."""
+    """The negative control for the detector's bound."""
     repository = FakeStrandedRunRepository()
     repository.orphans.extend(uuid4() for _ in range(2))
 
@@ -335,7 +335,7 @@ async def test_both_populations_are_judged_against_one_moment() -> None:
 
 
 async def test_a_pass_without_a_moment_uses_an_aware_utc_clock() -> None:
-    """Asserted as a bound and a property, not an equality: this value *is* the clock (V87)."""
+    """Asserted as a bound and a property, not an equality: this value *is* the clock."""
     repository = FakeStrandedRunRepository()
     before = datetime.now(UTC)
 
@@ -347,7 +347,7 @@ async def test_a_pass_without_a_moment_uses_an_aware_utc_clock() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# The receipt (V46)
+# The receipt
 # --------------------------------------------------------------------------------------
 
 
@@ -373,7 +373,7 @@ async def test_a_reaped_change_gets_a_receipt() -> None:
 
 
 async def test_a_reaped_read_run_gets_no_receipt() -> None:
-    """`action_receipts.action_request_id` is NOT NULL (T36): a READ has no approval to be the
+    """`action_receipts.action_request_id` is NOT NULL: a READ has no approval to be the
     receipt of, and a receipt has nowhere to point without one.
 
     READ rows are still reaped — T73's audit middleware swallows a failed closing write and
@@ -390,7 +390,7 @@ async def test_a_reaped_read_run_gets_no_receipt() -> None:
 
 
 async def test_a_mixed_pass_reaps_both_and_writes_one_receipt() -> None:
-    """The negative control for the two tests above (V87): one pass, both kinds of row, and the
+    """The negative control for the two tests above: one pass, both kinds of row, and the
     receipt goes to the one that has a request."""
     repository = FakeStrandedRunRepository()
     change = stranded_run(action_request_id=uuid4())
@@ -476,7 +476,7 @@ async def test_a_reaping_pass_names_what_it_reaped() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# The loop (V30)
+# The loop
 # --------------------------------------------------------------------------------------
 
 
@@ -546,7 +546,7 @@ async def test_a_failing_pass_does_not_end_the_loop() -> None:
 
 
 async def test_the_first_pass_waits_one_interval() -> None:
-    """No pass at boot: `/health` must answer with Postgres down (V51)."""
+    """No pass at boot: `/health` must answer with Postgres down."""
     repository = FakeStrandedRunRepository()
     factory = RecordingSessionFactory()
     reaper = StrandedRunReaper(

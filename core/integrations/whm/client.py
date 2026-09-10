@@ -1,4 +1,4 @@
-"""WHM JSON API client (T16, C7, C22, V69).
+"""WHM JSON API client.
 
 Copied from `noa-old` branch `MCP` (`whm/integrations/client.py`), with the method surface
 scoped to what this repo's 14 tools and admin routes actually reach for (see "What is not
@@ -26,7 +26,7 @@ tools and tests branch on them.
 place ciphertext becomes plaintext. `noa-old` reached for a module-level `maybe_decrypt_text`
 there; T15 deleted that wrapper along with the settings singleton it hid, so the `SecretCipher`
 arrives as an argument (T16 deviation (b)) and `build_runtime` builds the single instance on
-`AppRuntime` (T21).
+`AppRuntime`.
 
 **A client per call, deliberately.** `httpx.AsyncClient` is opened and closed inside each
 request rather than held on the instance. Verbatim from `noa-old`: `verify_ssl` is per-server
@@ -149,7 +149,7 @@ class WHMClient:
     """One authenticated WHM endpoint. Construct via `build_whm_client_from_creds`.
 
     `api_token` is plaintext here — decryption happens in the factory, so this class stays
-    testable without a cipher and there is exactly one decrypt site (C7).
+    testable without a cipher and there is exactly one decrypt site.
     """
 
     def __init__(
@@ -296,7 +296,7 @@ class WHMClient:
         """`listaccts` → `{"ok": True, "accounts": [...]}`.
 
         The `data.acct` unwrap lives here so no caller re-derives it, and non-dict rows are
-        dropped rather than handed on: `whm_list_accounts` (T20) renders this straight into a
+        dropped rather than handed on: `whm_list_accounts` renders this straight into a
         table surface.
         """
         result = await self._get_json_api("listaccts")
@@ -311,11 +311,11 @@ class WHMClient:
         return {"ok": True, "message": "ok", "accounts": accounts}
 
     async def suspend_account(self, *, username: str, reason: str) -> dict[str, object]:
-        """`suspendacct`. Backs `whm_suspend_account` (T22).
+        """`suspendacct`. Backs `whm_suspend_account`.
 
         `reason` is WHM's own suspension-note field and is written from the operator-typed
         approval reason at execute time — it is ⊥ a tool argument, and the LLM never authors
-        or sees it (C8, V15, V43).
+        or sees it.
         """
         result = await self._get_json_api(
             "suspendacct", params={"user": username, "reason": reason}
@@ -325,7 +325,7 @@ class WHMClient:
         return {"ok": True, "message": "ok"}
 
     async def unsuspend_account(self, *, username: str) -> dict[str, object]:
-        """`unsuspendacct`. Backs `whm_unsuspend_account` (T23)."""
+        """`unsuspendacct`. Backs `whm_unsuspend_account`."""
         result = await self._get_json_api("unsuspendacct", params={"user": username})
         if result.get("ok") is not True:
             return result
@@ -344,7 +344,7 @@ def build_whm_client_from_creds(
     """Single construction point for an authenticated WHM client.
 
     `encrypted_token` is the at-rest column value; `maybe_decrypt_text` unwraps it, tolerating
-    a row that predates encryption (C7). One decrypt site means one place to audit and one
+    a row that predates encryption. One decrypt site means one place to audit and one
     place to change when a `v2` scheme lands.
 
     `transport` is a test seam — `httpx.MockTransport` in `test_whm_client.py`. `noa-old`'s

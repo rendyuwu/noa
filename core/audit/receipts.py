@@ -1,4 +1,4 @@
-"""SQL behind `action_receipts` — what an approved CHANGE actually did (T38 — V46).
+"""SQL behind `action_receipts` — what an approved CHANGE actually did.
 
 T36 built the table and wrote nothing to it, naming this task as its only writer. This is
 that writer, and it is one class for the whole table for the reason `core.audit.tool_runs`
@@ -32,14 +32,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db.models import ActionReceipt
 
-# The unique index `create_if_missing` conflicts on (T36). Named rather than inferred from a
+# The unique index `create_if_missing` conflicts on. Named rather than inferred from a
 # column list so a rename of the constraint fails here instead of silently turning the
 # idempotent insert into a duplicate-key error at runtime.
 RECEIPT_UNIQUE_CONSTRAINT = "uq_action_receipts_action_request_id"
 
 
 class ActionReceiptRepository(Protocol):
-    """The one write this table takes (V46)."""
+    """The one write this table takes."""
 
     async def create_if_missing(
         self,
@@ -63,13 +63,13 @@ class SQLActionReceiptRepository:
         tool_run_id: UUID | None,
         receipt_data: dict[str, Any],
     ) -> UUID | None:
-        """Insert the receipt for this request, or leave the existing one alone (V46, V34).
+        """Insert the receipt for this request, or leave the existing one alone.
 
         Returns the new row's id, or `None` when one was already recorded.
 
         `receipt_data` has no server default on the column, deliberately unlike
         `tool_runs.args` — an empty receipt is not a legitimate state, so a caller that
-        omitted it would fail rather than record an outcome with nothing in it (T36).
+        omitted it would fail rather than record an outcome with nothing in it.
         """
         statement = (
             insert(ActionReceipt)

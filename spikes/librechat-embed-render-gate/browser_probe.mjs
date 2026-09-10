@@ -4,7 +4,7 @@
  * Drives a real browser against a real LibreChat at pin 45cc53c4, talking to a real NOA
  * process over MCP, and answers one question with a measurement rather than a source read:
  * when NOA returns a `text/uri-list` UI resource, does the frame LibreChat renders sit on
- * NOA's origin with the `noa_session` cookie riding into it (C17, V37), so the decision POST
+ * NOA's origin with the `noa_session` cookie riding into it, so the decision POST
  * V22 requires is possible from inside it?
  *
  * What each stage proves is written next to it. Two design points worth stating here:
@@ -469,7 +469,7 @@ async function main() {
       srcFrame?.sandbox ?? '(none)',
     );
     check(
-      'sandbox withholds allow-forms (V80)',
+      'sandbox withholds allow-forms',
       !(srcFrame?.sandbox ?? '').includes('allow-forms'),
       srcFrame?.sandbox ?? '(none)',
     );

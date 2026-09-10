@@ -17,7 +17,7 @@ argument one system over).
 `api_username` is already on the row that won resolution, so neither site spends a round trip to
 ask a question it is holding the answer to.
 
-**Ownership has to be PROVEN, and silence does not prove it** (V86). Four verdicts, not two: the
+**Ownership has to be PROVEN, and silence does not prove it**. Four verdicts, not two: the
 credential is the owner; the credential is readable and is somebody else; WHM reported no owner;
 NOA's row records no credential. The last two refuse — they do not proceed. That is the opposite
 of T23's locked-suspension bound one field over, and the difference is evidence rather than
@@ -26,7 +26,7 @@ closed there would take the tool off a whole cPanel generation, while `owner` wa
 present on 451 of 451 rows across 7 owners, never blank (§R.33). So failing closed here costs
 nothing in measured reality, and failing open buys exactly the harm §V106 exists to prevent: a
 card that must fail, one operator decision spent on it, and one reason typed for nothing — and a
-reason is born at decision time (C8), so a burnt one cannot be recovered. Zero answers means
+reason is born at decision time, so a burnt one cannot be recovered. Zero answers means
 `unknown`, never the benign value.
 
 The two unproven verdicts share one code and differ in one clause, because the operator's remedy
@@ -66,7 +66,7 @@ EVIDENCE_OWNER: Final = "owner"
 
 # What one of those says when its source did not answer. A word rather than an absent key or a
 # `null`, because the card renders evidence generically — an omitted key reads as a field nobody
-# thought to record, and `null` reads as a bug (V86).
+# thought to record, and `null` reads as a bug.
 #
 # **It no longer stands where `owner` goes.** An account whose owner is unknown is refused before
 # any evidence is written, so a card always names a real one — the word for a non-answer there
@@ -87,7 +87,7 @@ ERROR_ACCOUNT_OWNER_UNKNOWN: Final = "whm_account_owner_unknown"
 
 # One event for both tools, both sites and every refusing verdict, with tool, site and verdict as
 # fields rather than in the name: "which credential was pointed at whose account" is one question
-# and it is asked in one query. Identifiers only, never the account payload (V8).
+# and it is asked in one query. Identifiers only, never the account payload.
 LOG_OWNERSHIP_REFUSED: Final = "whm_account_change_ownership_refused"
 SITE_PREFLIGHT: Final = "preflight"
 SITE_RUNNER: Final = "runner"
@@ -126,7 +126,7 @@ def classify_ownership(*, owner: object, api_username: object) -> Ownership:
     is shared with V109(b)'s admin-write guard: WHM echoes an owner as it was typed and an
     operator types the row's credential, so `Web08CpnPool01 ` and `web08cpnpool01` are one
     identity — and they have to be one identity to *both* guards, not just to this one, or a row
-    the admin write accepted is a row this gate refuses with nothing naming the cause (V66).
+    the admin write accepted is a row this gate refuses with nothing naming the cause.
 
     The owner is checked first when both are missing, because that is the half a caller might
     have been able to see: `whm_search_accounts` reports `owner`, and nothing a model can reach
@@ -142,7 +142,7 @@ def classify_ownership(*, owner: object, api_username: object) -> Ownership:
 
 
 def recorded(value: object) -> str:
-    """One of §V108's four fields as a card shows it, or the word for a non-answer (V86)."""
+    """One of §V108's four fields as a card shows it, or the word for a non-answer."""
     if isinstance(value, str) and value.strip():
         return value
     return EVIDENCE_UNRECORDED
@@ -172,7 +172,7 @@ def refuse_unproven_ownership(
     `name`.** V109(b) forces a reseller row's `name` to *be* its `api_username`, and V109(a)
     keeps those rows out of `whm_list_servers`, so printing the resolved name would disclose a
     credential username the model could not otherwise see, into a transcript that persists in
-    LibreChat's MongoDB (V26). The caller's own string discloses nothing new and is the more
+    LibreChat's MongoDB. The caller's own string discloses nothing new and is the more
     useful half anyway: it names the thing to change. The resolved name stays in the structured
     log, which is not the transcript.
 

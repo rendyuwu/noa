@@ -12,11 +12,11 @@ import styles from './notice.module.css'
  *
  * Four states reach it — the session NOA does not recognise, the request or table that is not this
  * operator's, and the read that could not be made at all — and every one of them is a *state*,
- * never a blank frame with a control standing on nothing (V38).
+ * never a blank frame with a control standing on nothing.
  *
  * Lifted out of `app/approvals/[id]/` at §T.56, when the table surface became the second document
  * that renders these states. Two copies of "cannot authenticate here" is two places for the way out
- * to go missing from one of them (V66, V94).
+ * to go missing from one of them.
  *
  * `children` is where a state puts its way out. There is nothing generic about it — most have none,
  * and the one that does is `sign-in-notice.tsx`.
@@ -25,7 +25,7 @@ import styles from './notice.module.css'
  * with the strongest claim on that is the 401: what it hands the operator is a printed address, and
  * the printed address is the escape hatch itself rather than a convenience beside the link — the
  * sandbox at one of LibreChat's two render sites omits `allow-popups`, so there the link opens
- * nothing at all and the text is the only door (V94, R32). Measured before this, at the 150px box
+ * nothing at all and the text is the only door. Measured before this, at the 150px box
  * `@mcp-ui/client` opens with: that address began 4.5px below the fold and ended 30px past it. It
  * was never unreachable — `.notice` is `max-height: 100dvh; overflow-y: auto` and scrolls — but a
  * document that can ask for a frame it fits in and does not ask is one that leaves its own way out

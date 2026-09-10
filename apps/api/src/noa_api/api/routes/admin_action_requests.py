@@ -16,7 +16,7 @@ could move a status would be a second answer to "may this run?". This router is 
 incapable of being one.
 
 **`require_admin` is a parameter on every handler**, not a router dependency, for the reason
-`admin_users.py` gives: the gate and the actor are one read (V13), and it inherits V6's row
+`admin_users.py` gives: the gate and the actor are one read, and it inherits V6's row
 re-read with it, so a demoted or disabled admin loses these routes on their next request rather
 than at cookie expiry.
 
@@ -30,8 +30,8 @@ not make — an audit surface that could only show the reader's own decisions co
 same client's second view.
 
 **Nothing here redacts and nothing here un-redacts.** `approval_context` was redacted at gate time
-(T33) and `receipt_data` by `build_receipt` (V8); what this serves is what was stored. A second
-redactor on the read would be a quieter second home for one rule (V66) — `core/approvals/card.py`
+and `receipt_data` by `build_receipt`; what this serves is what was stored. A second
+redactor on the read would be a quieter second home for one rule — `core/approvals/card.py`
 records the same argument for the operator-facing reader.
 
 **One refusal for two causes on the detail routes** — no such request, and an id that is not a
@@ -140,7 +140,7 @@ class AdminActionReceiptResponse(BaseModel):
     failure, which publishes a delta carrying earned falses. Both are `ok: false`.
 
     **A `yopass_url` in `after` or in `delta.delivered_credential` is text and never a link.** The
-    secret behind it is one-time consumption (C15, V49): a hover preview, a prefetch or a stray
+    secret behind it is one-time consumption: a hover preview, a prefetch or a stray
     click burns the operator's own delivery, and rendering it as text costs nothing. The rule is
     the renderer's to keep, and it is stated here because this is the response that carries the
     value to it.
@@ -160,7 +160,7 @@ def _parse_request_id(action_request_id: str) -> UUID:
     """The path segment as a UUID, or the same 404 an unknown id gets.
 
     One place rather than three, so the two detail routes and the receipt route cannot drift on
-    which malformed input they refuse (V66). See the module docstring for why this is not a 422.
+    which malformed input they refuse. See the module docstring for why this is not a 422.
     """
     try:
         return UUID(action_request_id)
@@ -184,16 +184,16 @@ async def list_action_requests(
 ) -> AdminActionRequestListResponse:
     """CHANGE authorisations, newest first, filtered and cursor-paged (§I.admin-api — V13, V15).
 
-    Every filter is applied inside the statement (V93). One applied after the fetch would also
+    Every filter is applied inside the statement. One applied after the fetch would also
     break paging, because the `LIMIT` would have cut rows the filter was about to remove and the
     page would come back short while `nextCursor` claimed there was more.
 
     `limit` is bounded here *and* in the service: this route is one caller, and a ceiling that
     only a query-string validator holds is one a future caller does not have.
 
-    Refusals: 403 (V13), 422 for an out-of-range `limit` or an unknown `status`, 400
+    Refusals: 403, 422 for an out-of-range `limit` or an unknown `status`, 400
     `invalid_audit_cursor` for a token that does not decode — the same codec the audit list uses,
-    so one page-token format serves both views (V66).
+    so one page-token format serves both views.
     """
     del admin_user
 
@@ -242,7 +242,7 @@ async def get_action_receipt(
     admin_user: AdminUserDep,
     requests: ActionRequestAdminServiceDep,
 ) -> AdminActionReceiptResponse:
-    """What that decision's run recorded, in the halves it was written as (V46, V34).
+    """What that decision's run recorded, in the halves it was written as.
 
     Two refusals with two codes. An unknown or malformed id is `action_request_not_found`; a real
     request that carries no receipt is `action_receipt_not_found`, which is the answer for every

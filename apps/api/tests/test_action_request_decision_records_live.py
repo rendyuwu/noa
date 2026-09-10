@@ -1,4 +1,4 @@
-"""What a decision records, against a real Postgres (T37 — V23, V29, V46, V47, V108).
+"""What a decision records, against a real Postgres.
 
 `test_action_request_decision_routes.py` drives the same service over an in-memory
 repository, which proves the ordering but cannot prove the claim that is *about the database*:
@@ -9,7 +9,7 @@ repository, which proves the ordering but cannot prove the claim that is *about 
   constraint itself, not a service that happens to agree with it.
 
 So this file is about the rows an approval and a denial leave behind: the `action_requests`
-row that becomes the authorization (V23), the `tool_runs` row that describes the change
+row that becomes the authorization, the `tool_runs` row that describes the change
 (V46, V47), and the four identity fields that row carries beside the arguments (V108).
 
 The refusals and V28's row lock are `test_action_request_decisions_live.py`; V31's per-user
@@ -62,7 +62,7 @@ RESELLER = "web08cpnpool01"
 
 # Planted in the evidence under a key `SENSITIVE_KEYS` names, to prove the audit row's reader is
 # a whitelist rather than a copy. Nothing in production puts a token there — the point is that
-# the reader would not carry one if something did (V8).
+# the reader would not carry one if something did.
 PLANTED_TOKEN = "planted-api-token-value"
 
 
@@ -91,7 +91,7 @@ async def test_approval_writes_the_change_tool_run(factory) -> None:
     """V46, V47: an approved CHANGE produces a `tool_runs` row that describes it.
 
     `risk=CHANGE` is fixed by the repository rather than passed in — every row in
-    `action_requests` is a change by construction (V16), and a parameter would be somewhere
+    `action_requests` is a change by construction, and a parameter would be somewhere
     for `READ` to be written into an approved change's audit row.
 
     The run is `STARTED`, not `COMPLETED`: nothing has executed. T38's executor moves it, and
@@ -266,7 +266,7 @@ async def test_the_decision_row_is_the_authorization_after_approval(factory) -> 
 
 
 async def test_decision_and_run_commit_together(factory) -> None:
-    """One transaction, so `APPROVED` with no run cannot exist (V29, V46).
+    """One transaction, so `APPROVED` with no run cannot exist.
 
     Driven by making the *commit* impossible rather than by patching the service: the
     `tool_runs` FK is deferred to nothing, so instead the reason is emptied behind the

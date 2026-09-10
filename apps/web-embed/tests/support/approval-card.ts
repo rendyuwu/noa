@@ -5,7 +5,7 @@ import { type ApprovalCard, parseApprovalCard } from '@/lib/approvals/card'
  *
  * Two suites read a card now — the poll (`lib/approvals/poll.test.ts`) and the card that runs it
  * (`app/approvals/[id]/card-view.test.tsx`) — and a second copy of this body would be a second
- * answer to what the API sends, free to drift on one side only (V66). The e2e stub
+ * answer to what the API sends, free to drift on one side only. The e2e stub
  * (`e2e/support/upstream-stub.mjs`) holds the same shape for the browser lane; it is a separate
  * process and cannot import this, so the two are kept deliberately alike.
  *
@@ -40,7 +40,7 @@ const PENDING_BODY: Record<string, unknown> = {
  *
  * Shares no value with `evidence` above, deliberately: the claim these suites make is that the
  * card renders *both* halves, and a fixture whose halves overlapped could not tell that from one
- * rendering the same half twice (V87).
+ * rendering the same half twice.
  */
 export const RECEIPT_AFTER: Record<string, unknown> = {
   ok: true,
@@ -48,7 +48,7 @@ export const RECEIPT_AFTER: Record<string, unknown> = {
   suspended_at: '2026-08-08T09:31:00+00:00',
 }
 
-/** What the API sends under `receipt` once a change has recorded an outcome (V46). */
+/** What the API sends under `receipt` once a change has recorded an outcome. */
 export function receiptBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     ok: true,
@@ -61,7 +61,7 @@ export function receiptBody(overrides: Record<string, unknown> = {}): Record<str
   }
 }
 
-/** The `tool_runs` half of the card (V29, V47). `STARTED` by default: that is what an approve opens. */
+/** The `tool_runs` half of the card. `STARTED` by default: that is what an approve opens. */
 export function runBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     tool_run_id: TOOL_RUN_ID,
@@ -80,7 +80,7 @@ export function cardBody(overrides: Record<string, unknown> = {}): Record<string
 /**
  * An approved request and the run it started.
  *
- * `csrf` is `null` because the API sends none once nothing may be decided (V39) — a fixture that
+ * `csrf` is `null` because the API sends none once nothing may be decided — a fixture that
  * kept the token would let a spec pass against a card showing live buttons after the decision.
  */
 export function approvedBody(
@@ -93,7 +93,7 @@ export function approvedBody(
     csrf: null,
     run: runBody(runOverrides),
     // `null` by default, because that is what a card carries while its run is still in flight:
-    // the receipt lands with the terminal write, not with the decision (V46).
+    // the receipt lands with the terminal write, not with the decision.
     receipt,
   })
 }

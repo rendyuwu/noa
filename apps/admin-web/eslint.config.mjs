@@ -25,7 +25,7 @@ const forbiddenImports = {
     {
       group: ['**/noa-old/**', '**/web-bigsu', '**/web-bigsu/**'],
       message:
-        'noa-old is a reference, not a dependency — §T.48 ports its files, it does not import them (C13, V69).',
+        'noa-old is a reference, not a dependency — §T.48 ports its files, it does not import them.',
     },
   ],
 }

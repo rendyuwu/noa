@@ -4,7 +4,7 @@ Revision ID: 0002_login_rate_limits
 Revises: 0001_schema_v1
 Create Date: 2026-08-06
 
-T8 (V9). One row per (scope, scope_key) bucket: `ip` + `email` are counted
+T8. One row per (scope, scope_key) bucket: `ip` + `email` are counted
 separately so neither an IP-only nor an email-only limit leaves a hole.
 
 The unique constraint doubles as the lookup index — every query filters on both

@@ -1,7 +1,7 @@
-"""A CHANGE tool with nothing able to run it is a startup failure (T38 — V10, V46).
+"""A CHANGE tool with nothing able to run it is a startup failure.
 
 A CHANGE tool has two halves that live in different modules and run at different moments: the
-tool opens an approval request (T33), and a `ChangeRunner` performs the change once an operator
+tool opens an approval request, and a `ChangeRunner` performs the change once an operator
 approves (`noa_api.mcp_tools.change_runners`). Register the first without the second and the
 failure is invisible until an operator has typed a reason and pressed Approve — at which point
 the change answers `change_runner_unavailable` and does not run.
@@ -19,7 +19,7 @@ added `proxmox_reset_vm_password`, the first from a system other than WHM, and T
 keyed off the integration rather than the tool name would collide. T29 closed the set with
 `pmg_whitelist`, the third system and the last exposed CHANGE name. The probe that registers a
 CHANGE tool with no runner stays, because a predicate that is now satisfied by every name still
-has to separate (V87) — and it is what the *next* CHANGE tool will meet before an operator does.
+has to separate — and it is what the *next* CHANGE tool will meet before an operator does.
 """
 
 from __future__ import annotations
@@ -86,7 +86,7 @@ def test_every_change_tool_is_registered_with_its_runner() -> None:
 
 
 def test_a_change_tool_without_a_runner_fails_at_startup() -> None:
-    """The probe (V87): the predicate separates, it does not merely never fire.
+    """The probe: the predicate separates, it does not merely never fire.
 
     A registered CHANGE name with no runner is exactly the arrangement an operator would meet as
     a card they can approve and a change NOA cannot run.
@@ -104,7 +104,7 @@ def test_a_change_tool_with_a_runner_passes() -> None:
 
 
 def test_a_read_tool_needs_no_runner() -> None:
-    """A READ executes inside its own `tools/call` (V16) — there is nothing to run afterwards.
+    """A READ executes inside its own `tools/call` — there is nothing to run afterwards.
 
     Without this branch the guard would demand a runner for every tool NOA exposes, which would
     make it fire on the twelve READs already registered.
@@ -142,7 +142,7 @@ def test_the_real_registry_passes_the_guard() -> None:
     registered = register_mcp_tools(build_mcp_server(tool_context=context), context=context)
 
     assert_change_runners_cover(registered, build_change_runners(context=context))
-    # And the guard is not passing because there is nothing to cover (V87): T22 registered a
+    # And the guard is not passing because there is nothing to cover: T22 registered a
     # CHANGE tool, so this call has something to be right about.
     assert ToolRisk.CHANGE in set(registered.values())
 

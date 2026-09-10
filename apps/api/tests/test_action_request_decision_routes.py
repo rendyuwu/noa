@@ -1,4 +1,4 @@
-"""Approve/deny route guards (T37 — V15, V22, V23, V27, V28, V29, V32, V39, V73).
+"""Approve/deny route guards.
 
 No Postgres: `support.action_decisions.decision_harness` swaps the decision repository and
 the executor for in-memory doubles and leaves the rest — the router, the error handler,
@@ -93,7 +93,7 @@ def test_approve_returns_202_with_tool_run_id(harness: DecisionHarness) -> None:
 
 
 def test_approve_writes_the_decision_and_links_the_run(harness: DecisionHarness) -> None:
-    """The row is the authorization (V23), so what it says after approval is the claim."""
+    """The row is the authorization, so what it says after approval is the claim."""
     request = pending(harness)
 
     harness.approve(request.action_request_id)
@@ -112,7 +112,7 @@ def test_approve_starts_a_change_run_carrying_the_gate_time_facts(
     """V46, V47: an approved CHANGE writes a `tool_runs` row, and it describes *this* change.
 
     `tool_name` and `conversation_ref` come off the locked row and the arguments come off
-    `approval_context` — already redacted at gate time (V8, V33). Re-deriving any of them
+    `approval_context` — already redacted at gate time. Re-deriving any of them
     here would be a second record of one moment that can disagree with the card an operator
     actually read.
     """
@@ -135,7 +135,7 @@ def test_approve_hands_the_run_to_the_executor_after_committing(
     `lock` first, so every guard is evaluated through it. `inflight` after the guards and
     *before* `run`, because the run this approval inserts is the row V31's count is counting —
     taken after it, the cap could only ever be checked against a number this call already
-    changed (T38). `run` before `decision` and both before `commit`, so an APPROVED row with no
+    changed. `run` before `decision` and both before `commit`, so an APPROVED row with no
     run is unrepresentable. `execute` last, because a handoff before the commit could start a
     change whose authorization then rolled back.
     """
@@ -219,7 +219,7 @@ def test_approve_with_whitespace_reason_is_refused(harness: DecisionHarness) -> 
 def test_deny_without_reason_is_refused(harness: DecisionHarness) -> None:
     """T37's call on what T34 left open: required on both, which is what makes the
     database CHECK expressible. The safe exit stays open — leaving the request alone
-    expires it (V32), and an expiry carries no reason precisely because nobody gave one.
+    expires it, and an expiry carries no reason precisely because nobody gave one.
     """
     request = pending(harness)
 
@@ -342,7 +342,7 @@ def test_the_mcp_tool_context_exposes_no_decision_writer() -> None:
     """V22: the LLM-reachable path has no way to write a terminal status.
 
     `McpToolContext` carries `SQLActionRequestRepository`, which writes PENDING and nothing
-    else (T33). This asserts the decision repository never joins it — a second door on the
+    else. This asserts the decision repository never joins it — a second door on the
     authorization, on the side a bearer token reaches, would not otherwise be visible from
     any test in this file.
     """
@@ -403,7 +403,7 @@ def test_a_csrf_token_for_another_card_is_refused(harness: DecisionHarness) -> N
 
 
 def test_another_operators_csrf_token_is_refused(harness: DecisionHarness) -> None:
-    """Session-bound (V39). A cookie a sibling host planted does not come with one of these."""
+    """Session-bound. A cookie a sibling host planted does not come with one of these."""
     request = pending(harness)
     intruder = harness.add_operator(OTHER_EMAIL)
 
@@ -466,13 +466,13 @@ def test_foreign_request_and_unknown_id_answer_identically(harness: DecisionHarn
     assert foreign_response.status_code == status.HTTP_404_NOT_FOUND
     assert unknown_response.status_code == status.HTTP_404_NOT_FOUND
 
-    # `request_id` differs per request by design (V73); everything else must not.
+    # `request_id` differs per request by design; everything else must not.
     assert _without_request_id(foreign_response) == _without_request_id(unknown_response)
     assert harness.repository.decisions == []
 
 
 def test_a_request_whose_requester_was_deleted_is_refused(harness: DecisionHarness) -> None:
-    """The FK is `SET NULL` (T34), so a deleted operator's request matches nobody.
+    """The FK is `SET NULL`, so a deleted operator's request matches nobody.
 
     Fail-closed: NULL is not "anyone may decide this", it is "no one".
     """
@@ -484,7 +484,7 @@ def test_a_request_whose_requester_was_deleted_is_refused(harness: DecisionHarne
 
 
 def test_deny_enforces_the_same_requester_match(harness: DecisionHarness) -> None:
-    """Both routes, or the weaker one is the whole access control (V66)."""
+    """Both routes, or the weaker one is the whole access control."""
     intruder = harness.add_operator(OTHER_EMAIL)
     foreign = harness.repository.add(locked_request(requested_by_user_id=intruder.id))
 
@@ -577,7 +577,7 @@ def test_a_request_at_its_deadline_is_expired(harness: DecisionHarness) -> None:
 
 
 # --------------------------------------------------------------------------------------
-# V31 — the per-user cap on in-flight changes (T38)
+# V31 — the per-user cap on in-flight changes
 # --------------------------------------------------------------------------------------
 
 
@@ -598,7 +598,7 @@ def test_an_operator_at_the_cap_is_refused_409(harness: DecisionHarness) -> None
 
 
 def test_an_operator_below_the_cap_is_allowed(harness: DecisionHarness) -> None:
-    """The negative control (V87): the cap has to admit the ordinary case, or "refused at the
+    """The negative control: the cap has to admit the ordinary case, or "refused at the
     limit" is a claim about a door that is simply shut."""
     request = pending(harness)
     harness.repository.set_inflight(harness.operator.id, 0)
@@ -639,7 +639,7 @@ def test_the_cap_refuses_before_a_run_is_started(harness: DecisionHarness) -> No
 
 
 def test_the_cap_is_checked_after_the_row_is_found(harness: DecisionHarness) -> None:
-    """A request that is not this operator's answers 404 whatever their allowance is (V27).
+    """A request that is not this operator's answers 404 whatever their allowance is.
 
     The cap is the last guard, so being at the limit never becomes a way to learn that somebody
     else's request exists — and an operator at their limit is told about a request that was
@@ -668,7 +668,7 @@ def test_a_blank_reason_is_refused_without_taking_the_user_lock(
 
 
 def test_a_denial_ignores_the_cap(harness: DecisionHarness) -> None:
-    """Nothing starts, so there is nothing to bound (V31).
+    """Nothing starts, so there is nothing to bound.
 
     An operator at their limit must still be able to say no — refusing a denial would leave the
     request to expire, which records less about a decision that was actually made.
@@ -716,7 +716,7 @@ def test_the_production_dependency_reads_the_cap_off_settings(
 
 
 def test_the_cap_comes_from_settings() -> None:
-    """`APPROVAL_MAX_INFLIGHT_PER_USER` is the one answer to "how many" (T5).
+    """`APPROVAL_MAX_INFLIGHT_PER_USER` is the one answer to "how many".
 
     Asserted with a value that is not the production default, so a service that hardcoded the
     default would pass a test written against 1 and fail this one (T33(e)'s argument, one setting
@@ -764,8 +764,8 @@ def test_every_decision_error_is_mapped_explicitly() -> None:
     ],
 )
 def test_each_refusal_takes_the_status_its_remedy_implies(error, expected: int) -> None:
-    """404 hides existence (V27); 409 says "not this one, not now"; 403 says re-auth
-    changes nothing (V39). Pinned per class, because these are the statuses the embed
+    """404 hides existence; 409 says "not this one, not now"; 403 says re-auth
+    changes nothing. Pinned per class, because these are the statuses the embed
     branches on.
     """
     assert status_for(error("diagnostic")) == expected
@@ -815,21 +815,21 @@ def test_the_production_app_mounts_the_decision_routes() -> None:
     assert "/action-requests/{action_request_id}/deny" in paths
     # T41's card, on the same router and the same session cookie.
     assert "/action-requests/{action_request_id}" in paths
-    # The negative control (V87): this set genuinely distinguishes mounted from absent. There is
-    # no collection route and §I.embed lists none — one URL per request (V34), reached by an id
+    # The negative control: this set genuinely distinguishes mounted from absent. There is
+    # no collection route and §I.embed lists none — one URL per request, reached by an id
     # the operator was given, never by listing what exists.
     assert "/action-requests" not in paths
 
 
 def test_the_real_executor_is_what_production_wires() -> None:
-    """T38's seam, filled with the asyncio host that actually runs the change (V29, V30).
+    """T38's seam, filled with the asyncio host that actually runs the change.
 
     Asserted rather than assumed because "approved changes silently never run" is precisely the
     failure this arrangement risks: between T37 and T38 the seam held a placeholder that logged
     and started nothing, and nothing in the request path would have looked different.
 
     Nothing is in flight on a freshly built runtime — the host owns tasks only once an approval
-    hands it a run, which is what keeps `build_runtime` free of a connection (V51).
+    hands it a run, which is what keeps `build_runtime` free of a connection.
     """
     from core.approvals.execution_host import AsyncioApprovedChangeExecutor
     from noa_api.main import build_runtime
@@ -841,7 +841,7 @@ def test_the_real_executor_is_what_production_wires() -> None:
 
 
 def _without_request_id(response: Response) -> dict[str, object]:
-    """A refusal body minus the one field that is different by design (V73, V87)."""
+    """A refusal body minus the one field that is different by design."""
     payload = dict(response.json())
-    assert payload.pop("request_id", None), "every error body carries a request_id (V73)"
+    assert payload.pop("request_id", None), "every error body carries a request_id"
     return {"status_code": response.status_code, **payload}

@@ -7,7 +7,7 @@ import { UPSTREAM_ORIGIN } from '../playwright.config'
  *
  * This is the one claim jsdom cannot make. The unit specs prove the proxy forwards whatever
  * `Cookie` header it is handed; what a browser decides to *send* to its own origin is a
- * different question, and the whole decision path (V22) rests on the answer.
+ * different question, and the whole decision path rests on the answer.
  *
  * The cookie here is scoped to `localhost`, not `.noa.internal`. A browser will not accept the
  * real domain for a localhost document, and asserting it anyway would be a check that cannot
@@ -16,7 +16,7 @@ import { UPSTREAM_ORIGIN } from '../playwright.config'
  * hop to the API at all.
  */
 
-// The stub's own address, off the config that starts it rather than repeated here (V66). It was a
+// The stub's own address, off the config that starts it rather than repeated here. It was a
 // literal until the harness ports became overridable, at which point the copy pointed at whatever
 // else happened to be on 8099 and this file's `/__hits` reads came back as somebody's HTML.
 const UPSTREAM = UPSTREAM_ORIGIN
@@ -42,7 +42,7 @@ test('a cookie on the embed origin reaches the API through the proxy', async ({ 
 })
 
 test('the proxy strips Authorization — this origin relays no bearer token', async ({ page }) => {
-  // MCP tokens are LibreChat's to send (C5). A browser that sets the header must
+  // MCP tokens are LibreChat's to send. A browser that sets the header must
   // not have it forwarded, or the embed origin becomes a relay for one.
   await page.goto('/healthz')
 
@@ -59,7 +59,7 @@ test('the proxy strips Authorization — this origin relays no bearer token', as
 
 test('an allowed decision POST reaches the API', async ({ page }) => {
   // The separating case. Without it the refusals below pass just as well against a
-  // proxy that forwards nothing at all (V87).
+  // proxy that forwards nothing at all.
   await page.goto('/healthz')
 
   const status = await page.evaluate(async (path: string) => {

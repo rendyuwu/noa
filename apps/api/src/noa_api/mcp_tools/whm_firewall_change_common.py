@@ -1,4 +1,4 @@
-"""What both WHM firewall CHANGE tools share (T25, T26 — V22, V33, V66).
+"""What both WHM firewall CHANGE tools share.
 
 `change_target.py` holds what *every* post-approval runner shares, across systems. This holds
 what the two firewall ones share with each other and with nothing else: the before-state their
@@ -7,7 +7,7 @@ is an ordinary answer, and the machine-and-address a runner resolves out of the 
 
 **Born at T25 inside `whm_firewall_change.py`, hoisted at T26 when the allowlist removal became
 the second caller.** The same move `change_target.py` was made by, for the same reason: a second
-caller is when shared code stops being one module's internals (V66). It is a leaf on purpose —
+caller is when shared code stops being one module's internals. It is a leaf on purpose —
 it imports the READ layer's vocabulary and nothing from either tool module — because the
 alternative, letting T26 import its machinery from T25's module, makes the second tool a
 dependent of the first and the aggregate registrar a cycle.
@@ -46,7 +46,7 @@ from core.remote_exec.types import SSHConnectionConfig
 from noa_api.mcp_tools.change_target import (
     # Re-exported below rather than imported twice: a firewall CHANGE module reaches for all of
     # these through this one module, instead of half through `change_target` and half from here
-    # (V66). What `change_target` owns is what every runner shares across systems; this is the
+    #. What `change_target` owns is what every runner shares across systems; this is the
     # firewall pair's own layer on top of it.
     ERROR_EVIDENCE_UNUSABLE,
     ERROR_SERVER_UNAVAILABLE,
@@ -103,7 +103,7 @@ class BackendChange:
 
 
 def backend_change_failure(error_code: str, message: str) -> BackendChange:
-    """A backend failure with NOA's own comment text cut out of it (V96).
+    """A backend failure with NOA's own comment text cut out of it.
 
     A backend that refuses a command frequently quotes the command — or the entry — back, and a
     firewall entry NOA created carries the operator's reason behind its marker. This message
@@ -168,7 +168,7 @@ async def tolerated_imunify_step(
 
     A sudo-rights refusal is re-raised for the reason it is one backend over: sudoers can permit
     the probe and refuse the write, and tolerating that turns a change that could not run into a
-    change that found nothing to do (V55).
+    change that found nothing to do.
     """
     result = await run_imunify_command(config, args=args)
     try:
@@ -197,7 +197,7 @@ def firewall_state(
 
     **Uncut**, unlike T24's own `matches`. These lines go onto `action_requests.approval_context`
     and from there to the approval card and the receipt, both of which are the operator's own
-    surfaces behind their cookie (V27) — and `noa_get_action_result` reaches neither
+    surfaces behind their cookie — and `noa_get_action_result` reaches neither
     (`ActionResultView` has no evidence field, and `core.approvals.results` never joins
     `action_receipts`, V76). V96 withholds from the surface that answers a *model*; withholding
     here would take the reason off the two places that exist to show it.
@@ -222,7 +222,7 @@ def firewall_state(
 
 
 def unanswered_backends(lookups: Mapping[str, BackendLookup]) -> list[str]:
-    """The usable backends that produced no verdict a decision can rest on (V86).
+    """The usable backends that produced no verdict a decision can rest on.
 
     One spelling of the predicate, because it is asserted on twice per change — once on the
     before-state the operator reads and once on the after-state the runner answers with — and two
@@ -232,13 +232,13 @@ def unanswered_backends(lookups: Mapping[str, BackendLookup]) -> list[str]:
 
 
 def holds_allow_entry(lookups: Mapping[str, BackendLookup]) -> bool:
-    """Does any backend that answered still hold an allow entry for this address? (T26)
+    """Does any backend that answered still hold an allow entry for this address?
 
     Read from `allow_entry` rather than from the combined verdict, because the verdict resolves
     block-over-allow and therefore loses exactly this fact for an address that is on both lists
     (`core.integrations.whm.csf`). Backends that did not answer are skipped rather than counted
     as clean, which is why every caller has to check `unanswered_backends` first: silence is not
-    evidence of absence (V86), and here the absence is the whole claim.
+    evidence of absence, and here the absence is the whole claim.
     """
     return any(lookup.allow_entry for lookup in lookups.values() if lookup.answered)
 
@@ -246,10 +246,10 @@ def holds_allow_entry(lookups: Mapping[str, BackendLookup]) -> bool:
 def backend_outcomes(
     changes: Mapping[str, BackendChange], lookups: Mapping[str, BackendLookup]
 ) -> tuple[BackendOutcome, ...]:
-    """Each backend's row in the delta both firewall runners publish (V86).
+    """Each backend's row in the delta both firewall runners publish.
 
     Two independent facts joined by name, and they are joined here rather than twice because the
-    join is where they could disagree (V66): `changes` says whether the backend could be *driven*
+    join is where they could disagree: `changes` says whether the backend could be *driven*
     and with what refusal, `lookups` says whether it *answered* the confirming read and with what
     verdict. Keeping them apart is what makes "the command failed" and "the check said nothing"
     two rows a reader can act on differently — the first names a remedy, the second names a
@@ -281,7 +281,7 @@ def backend_outcomes(
 
 
 def evidence_bound(evidence: Mapping[str, object]) -> Bound | None:
-    """The bound of the before-state reading this change was decided against (V85).
+    """The bound of the before-state reading this change was decided against.
 
     `firewall_state` writes the lines it read plus `total_matches` and `truncated`, because the
     cut is csf's own (`max_matches`) and a bound travels with the rows it bounds. A delta stating
@@ -305,7 +305,7 @@ def evidence_verdict(evidence: Mapping[str, object]) -> str | None:
     """The combined verdict the operator saw, as the `old` side of a delta's field change.
 
     Off the evidence rather than re-derived: it is the reading the decision rests on, and a
-    second computation here could disagree with the one that was authorised (V33).
+    second computation here could disagree with the one that was authorised.
 
     `None` when the evidence has no usable verdict, and a caller treats that as "no field change
     can be stated" rather than substituting a benign word — a delta whose `old` side was invented
@@ -330,7 +330,7 @@ class FirewallChangeTarget:
 async def resolve_firewall_change_target(
     evidence: Mapping[str, object], *, context: McpToolContext
 ) -> FirewallChangeTarget | ToolPayload:
-    """The connection and address an approved firewall change runs against (V33).
+    """The connection and address an approved firewall change runs against.
 
     **From the evidence, never from the arguments.** `server_ref` and `target` are strings a
     model supplied, inventory can be edited between a request and its approval, and the evidence

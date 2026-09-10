@@ -1,4 +1,4 @@
-"""Doubles for the server-inventory *write* path (T54).
+"""Doubles for the server-inventory *write* path.
 
 `support/servers.py` owns the rows and the read repositories the MCP tool path uses. This
 module owns the three write repositories and the two host-key-pin repositories the admin
@@ -16,7 +16,7 @@ hand-written one.
 **The doubles apply the production field rules.** `apply_ssh_fields_with_pin_rule` and its sibling
 live in `core.servers.admin_repository` and are imported here rather than re-implemented — the
 clear-flag order and the "a moved host loses its pin" rule are exactly what the service tests
-assert, and a double with its own copy would be asserting the copy (V66).
+assert, and a double with its own copy would be asserting the copy.
 
 **`commit` is counted, not simulated.** The V100 boundary itself is only observable against a
 live database from a second session (`test_server_admin_repository.py`). What a double *can*
@@ -348,7 +348,7 @@ class RecordingValidationService:
     factory and a socket to tests about none of that.
 
     `not_found` is the production error class, passed in rather than chosen here, so the route
-    still answers with the shipped code and the shipped 404 body (V73).
+    still answers with the shipped code and the shipped 404 body.
     """
 
     result: ServerValidationResult

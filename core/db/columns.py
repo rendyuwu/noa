@@ -28,7 +28,7 @@ def created_at(**kwargs: Any) -> Mapped[datetime]:
     """Insert timestamp, timezone-aware, DB-defaulted.
 
     `**kwargs` reaches `mapped_column` — `tool_runs` passes `index=True` because the
-    audit list sorts and pages on it (T35, T55), and no other table needs that index.
+    audit list sorts and pages on it, and no other table needs that index.
     """
     return mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), **kwargs
@@ -46,7 +46,7 @@ def updated_at() -> Mapped[datetime]:
 
 
 def lifecycle_enum_type(enum_class: type[StrEnum], *, name: str) -> Enum:
-    """A `core.db.lifecycle` enum stored as a checked VARCHAR (V20).
+    """A `core.db.lifecycle` enum stored as a checked VARCHAR.
 
     `native_enum=False` keeps it out of Postgres' own enum types: adding a member to a
     native enum is `ALTER TYPE`, which cannot run inside a transaction block on older
@@ -73,7 +73,7 @@ def lifecycle_enum_type(enum_class: type[StrEnum], *, name: str) -> Enum:
 def lifecycle_enum(
     enum_class: type[StrEnum], *, name: str, default: StrEnum | None = None, **kwargs: Any
 ) -> Mapped[Any]:
-    """Required lifecycle-enum column, optionally DB-defaulted (V20)."""
+    """Required lifecycle-enum column, optionally DB-defaulted."""
     server_default = default.value if default is not None else None
     return mapped_column(
         lifecycle_enum_type(enum_class, name=name),
@@ -84,7 +84,7 @@ def lifecycle_enum(
 
 
 def encrypted_secret() -> Mapped[str]:
-    """Required credential column holding ciphertext (C7, V48).
+    """Required credential column holding ciphertext.
 
     Value format is `enc:v1:fernet:...`; plaintext never lands here. `Text` because
     Fernet output length tracks the plaintext and has no useful bound.

@@ -2,12 +2,12 @@
 
 Direct service call rather than an HTTP request because the routes that will do this —
 `/admin/users/{id}/tokens` and `/me/mcp-tokens` (I.admin-api) — are T51-T55 and not built
-yet. The token itself is the real thing: `McpTokenService.mint` (T10), hashed at rest,
-plaintext returned once (V2), `librechat_user_id` NULL so LibreChat's first call binds it
+yet. The token itself is the real thing: `McpTokenService.mint`, hashed at rest,
+plaintext returned once, `librechat_user_id` NULL so LibreChat's first call binds it
 (V3 TOFU).
 
 The operator row is created the way a first login creates it: through `AuthService` with
-`AUTH_DEV_BYPASS_LDAP=true`, so bootstrap activation (V7) is what activates it rather than
+`AUTH_DEV_BYPASS_LDAP=true`, so bootstrap activation is what activates it rather than
 a hand-written INSERT.
 
     uv run python spikes/librechat-embed-render-gate/mint_mcp_token.py operator@noa.internal
@@ -72,7 +72,7 @@ async def main(email: str, password: str) -> int:
     finally:
         await engine.dispose()
 
-    # Plaintext to stdout once, by design (V2). The harness README says to paste it into
+    # Plaintext to stdout once, by design. The harness README says to paste it into
     # `librechat.yaml`; nothing here writes it to disk.
     print(minted.plaintext)
     return 0

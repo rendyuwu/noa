@@ -12,7 +12,7 @@ import {
 /**
  * The proxy primitives, proven against THIS copy (§T.50).
  *
- * Every guard here was ported from `noa-old` (C13), and `apps/web-embed` carries the same file.
+ * Every guard here was ported from `noa-old`, and `apps/web-embed` carries the same file.
  * V69 is why the tests came with it rather than a citation: upstream — or sibling — provenance is
  * not evidence that a control works. B2 shipped an inert host-key pin precisely because the port
  * trusted its source. So each case below exercises the mechanism in this package.
@@ -42,8 +42,8 @@ describe('proxy/http', () => {
       expect(out.get('cookie')).toBe('noa_session=abc.def.ghi; other=1')
     })
 
-    it('drops the Authorization header — this origin does not relay bearer tokens (C5)', () => {
-      // MCP tokens are LibreChat's to send (C5) and never a browser's. This proxy is a
+    it('drops the Authorization header — this origin does not relay bearer tokens', () => {
+      // MCP tokens are LibreChat's to send and never a browser's. This proxy is a
       // pass-through, so `/api/mcp/` is reachable on this origin; dropping the header is what
       // makes that reachability inert rather than a relay.
       const out = filterRequestHeaders(

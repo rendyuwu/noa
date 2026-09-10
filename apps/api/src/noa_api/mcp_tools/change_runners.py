@@ -1,4 +1,4 @@
-"""The one place a CHANGE tool becomes runnable after approval (T38 — V23, V46).
+"""The one place a CHANGE tool becomes runnable after approval.
 
 A CHANGE tool has two halves and they run at different moments, on different sides of the
 boundary V22 draws:
@@ -31,7 +31,7 @@ reason they typed (T22; a runner whose target system has nowhere to put it simpl
 it, which is T23) — and answers with the ordinary tool envelope
 (`noa_api.mcp_tools.results.tool_ok` / `tool_failure`). Two rules it carries: it should not
 raise, because the executor records what it is handed and a raise arrives as a coarser code
-than the integration layer already knew (V19); and it must not echo the reason back in its
+than the integration layer already knew; and it must not echo the reason back in its
 payload, because `tool_runs.result_summary` is derived from that payload and
 `noa_get_action_result` hands the summary to a model (V45, V96b).
 
@@ -59,11 +59,11 @@ from noa_api.mcp_tools.whm_firewall_change import build_whm_firewall_change_runn
 
 
 def build_change_runners(*, context: McpToolContext) -> dict[str, ChangeRunner]:
-    """Tool name → the thing that performs that change once approved (T22-T29).
+    """Tool name → the thing that performs that change once approved.
 
     `context` carries what every runner needs — the session factory, the cipher, the server
     repositories and, since T27, the secret-delivery seam — so a runner never reaches for its own
-    copy of the world (C7, T15).
+    copy of the world.
     """
     return {
         **build_whm_account_change_runners(context=context),

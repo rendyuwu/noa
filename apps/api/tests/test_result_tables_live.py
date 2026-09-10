@@ -1,4 +1,4 @@
-"""Parking a table and reading it back, against a real Postgres (T56 — V27, V64, V85).
+"""Parking a table and reading it back, against a real Postgres.
 
 `test_result_table_store.py` drives the writer over a double and `test_result_table_routes.py`
 drives the surface over another, which between them prove the cap, the redaction and the one
@@ -215,7 +215,7 @@ async def test_a_table_past_its_deadline_is_not_fetched(session: AsyncSession) -
 
 
 async def test_a_table_a_second_short_of_its_deadline_still_reads(session: AsyncSession) -> None:
-    """The boundary, and the negative control for the test above (V87).
+    """The boundary, and the negative control for the test above.
 
     Without it, "an expired table is refused" passes just as well against a reader that
     refuses everything — which is exactly what a `WHERE` with the comparison inverted would

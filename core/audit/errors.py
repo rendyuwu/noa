@@ -1,4 +1,4 @@
-"""Refusals from the admin audit surface (T55 — V8, V13, V73).
+"""Refusals from the admin audit surface.
 
 Two classes, and the split is what the caller can do about it: one says "no such run", the other
 says "that continuation token is not usable".
@@ -15,8 +15,8 @@ re-read from the first page. See `core.audit.cursor` for why it is a `NoaError` 
 FastAPI's `RequestValidationError`, which is what `noa-old` raised here.
 
 `NoaError` subclasses so `noa_api.api.errors` maps each to a status and the routes raise instead
-of building a response — one envelope for the whole app (V73), diagnostics in `detail` and never
-in the body (V8).
+of building a response — one envelope for the whole app, diagnostics in `detail` and never
+in the body.
 """
 
 from __future__ import annotations

@@ -1,15 +1,15 @@
-"""The executor's SQL, against a real Postgres (T38 — V23, V29, V46, V47).
+"""The executor's SQL, against a real Postgres.
 
 Three claims here are claims *about the database* and cannot be made anywhere else:
 
 - **`status = APPROVED AND tool_run_id = :run` is in the statement**, so a row that is PENDING,
-  DENIED, EXPIRED, or linked to a different run is never fetched (V23). A double can be told to
+  DENIED, EXPIRED, or linked to a different run is never fetched. A double can be told to
   answer `None`; only Postgres can be asked whether the predicate is really there.
 - **One receipt per request**, enforced by T36's `UNIQUE (action_request_id)` through
   `ON CONFLICT DO NOTHING`. T36 stated that constraint naming *this* pair as the reason — the
   executor and the reaper can both reach one finished run — so the end-to-end version of that
   sentence belongs here, with the negative control V87 requires.
-- **The run's terminal status and the receipt commit together** (V46), which is a property of one
+- **The run's terminal status and the receipt commit together**, which is a property of one
   transaction and not of two calls.
 
 The row under test is always produced by the production writers: T33's gate opens the request,
@@ -156,7 +156,7 @@ async def set_status(
 
 
 # --------------------------------------------------------------------------------------
-# The happy path (V29, V46, V47)
+# The happy path
 # --------------------------------------------------------------------------------------
 
 
@@ -275,7 +275,7 @@ async def test_a_change_with_no_runner_is_terminal_rather_than_stuck(factory) ->
 
 
 # --------------------------------------------------------------------------------------
-# The authorization predicate (V23)
+# The authorization predicate
 # --------------------------------------------------------------------------------------
 
 
@@ -389,7 +389,7 @@ async def test_a_second_execution_of_one_run_does_not_double_the_receipt(factory
 
 
 async def test_two_requests_get_two_receipts(factory) -> None:  # type: ignore[no-untyped-def]
-    """The negative control (V87): "the database refuses a second receipt" is a claim about
+    """The negative control: "the database refuses a second receipt" is a claim about
     nothing if it refuses *every* second receipt.
 
     Proven to separate rather than reasoned about — the constraint is on `action_request_id`, so
@@ -409,7 +409,7 @@ async def test_two_requests_get_two_receipts(factory) -> None:  # type: ignore[n
 
 
 # --------------------------------------------------------------------------------------
-# One transaction (V46)
+# One transaction
 # --------------------------------------------------------------------------------------
 
 

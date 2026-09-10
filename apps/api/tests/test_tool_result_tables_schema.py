@@ -1,4 +1,4 @@
-"""`tool_result_tables` table (T56, V64, V85).
+"""`tool_result_tables` table.
 
 Two levels, for two different claims — the split `test_action_receipts_schema.py` draws:
 
@@ -13,7 +13,7 @@ Two levels, for two different claims — the split `test_action_receipts_schema.
 The `SET NULL` is the one worth reading twice. Every other user FK since T35 is `SET NULL`
 because the row still describes something without its subject, and here the reason is
 narrower and sharper: the reader matches on that column, so NULL has to mean *nobody* rather
-than *anybody* (V27). The live half asserts that a deleted operator's table is still on disk
+than *anybody*. The live half asserts that a deleted operator's table is still on disk
 and no longer matches its old owner.
 """
 
@@ -63,7 +63,7 @@ FORBIDDEN_COLUMNS = {
     # stamp, and a `status` would be a lifecycle nothing drives (T34's third-truth rule).
     "updated_at": "written once; there is no second moment to stamp",
     "status": "nothing transitions here — the deadline is the whole lifecycle",
-    # The audit row for the same call lives in `tool_runs` (T73). A link would be a second
+    # The audit row for the same call lives in `tool_runs`. A link would be a second
     # record of one moment, and nothing reads it.
     "tool_run_id": "T73 owns the audit row; a link here would be a second record",
 }
@@ -212,7 +212,7 @@ async def test_postgres_refuses_a_second_row_under_one_token(session: AsyncSessi
 
 
 async def test_two_tokens_are_two_rows(session: AsyncSession) -> None:
-    """The negative control (V87).
+    """The negative control.
 
     "Postgres refuses a second row under one token" is a claim about nothing if the table
     refuses every second row — which is exactly what a unique constraint on the wrong column

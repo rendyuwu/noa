@@ -163,7 +163,7 @@ def test_a_repeated_cidr_never_makes_the_id_column_stand_in_for_the_address() ->
 
 
 def test_entries_sort_by_address_rather_than_by_text() -> None:
-    """§V.85's ordering clause, for `pmg_whitelist_list` (T30).
+    """§V.85's ordering clause, for `pmg_whitelist_list`.
 
     `10.9.0.0/24` belongs before `10.10.0.0/24`, and sorting the strings puts it after. That is
     the whole reason this is a key rather than `sorted(entries, key=lambda e: e.normalized)`.

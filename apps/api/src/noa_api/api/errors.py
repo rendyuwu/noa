@@ -1,4 +1,4 @@
-"""One error envelope for every failure the API answers with (T8-T18, T64 — V8, V73).
+"""One error envelope for every failure the API answers with.
 
 Every `NoaError` subclass carries its own `error_code` and operator-facing `message` (see
 `core.errors`, `core.auth.errors`, `core.auth.authorization_errors`,
@@ -16,7 +16,7 @@ V8: the response body carries `error_code`, `message` and `request_id` only. `de
 internal diagnostic — it names configuration faults, directory internals and the ids of rows
 that vanished mid-request — and stays in the logs. A test asserts it never appears in a body.
 
-**T64 (V73): every error response, not only the ones NOA raises.** A `NoaError` handler
+**T64: every error response, not only the ones NOA raises.** A `NoaError` handler
 alone leaves three surfaces answering in Starlette's default shape — no `error_code`, no
 `request_id`:
 
@@ -33,7 +33,7 @@ alone leaves three surfaces answering in Starlette's default shape — no `error
   `x-request-id` on every error response itself rather than relying on that wrapper.
 
 `install_error_handling` is the one seam that installs all of it — `noa_api.main` and both
-test harnesses call it, so no surface can end up with a different envelope (V66, V73).
+test harnesses call it, so no surface can end up with a different envelope.
 """
 
 from __future__ import annotations
@@ -139,7 +139,7 @@ logger = structlog.get_logger(__name__)
 
 # Lookup is by exact class with an MRO walk below, so ordering here is for reading only.
 STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
-    # --- Authentication (T8) ---
+    # --- Authentication ---
     # Credentials rejected, or a session that no longer verifies. All 401: the remedy is
     # the same (sign in), and distinguishing them by status would leak which.
     AuthInvalidCredentialsError: status.HTTP_401_UNAUTHORIZED,
@@ -154,8 +154,8 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # misconfiguration stays in `detail`, out of the body).
     AuthConfigurationError: status.HTTP_500_INTERNAL_SERVER_ERROR,
     LdapUnavailableError: status.HTTP_503_SERVICE_UNAVAILABLE,
-    # --- Authorization (T9) ---
-    # Known caller, refused. 403 for "not yours to do" (V13).
+    # --- Authorization ---
+    # Known caller, refused. 403 for "not yours to do".
     AdminAccessRequiredError: status.HTTP_403_FORBIDDEN,
     ReservedRoleError: status.HTTP_403_FORBIDDEN,
     # Absent target.
@@ -166,7 +166,7 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     InternalRoleError: status.HTTP_400_BAD_REQUEST,
     UnknownToolError: status.HTTP_400_BAD_REQUEST,
     UnknownRoleError: status.HTTP_400_BAD_REQUEST,
-    # Well-formed request refused because it would break an invariant (V12). 409, not 403:
+    # Well-formed request refused because it would break an invariant. 409, not 403:
     # the caller is allowed to do this in general, just not to this row right now.
     LastActiveAdminError: status.HTTP_409_CONFLICT,
     SelfDeactivateAdminError: status.HTTP_409_CONFLICT,
@@ -177,14 +177,14 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # test asserts every subclass is mapped above, so reaching this line means a new class
     # arrived without a decision.
     AuthorizationError: status.HTTP_403_FORBIDDEN,
-    # --- Withdrawn capabilities (T65) ---
+    # --- Withdrawn capabilities ---
     # 410, and it sits outside the authorization group on purpose: `DirectGrantsDisabledError`
     # is not an `AuthorizationError`, because that tree's own test pins its statuses to
     # {400, 403, 404, 409} and the pin is the assertion (see `noa_api.api.admin_errors`). 410
     # rather than 404 or 403: the route existed in `noa-old`, the capability is withdrawn
     # permanently, and neither "missing" nor "not allowed" says that.
     DirectGrantsDisabledError: status.HTTP_410_GONE,
-    # --- MCP tokens (T10) ---
+    # --- MCP tokens ---
     # 404 for a token that is absent *or* another user's: the lookup is scoped by user id,
     # so the two cases answer identically and the response is not an enumeration oracle
     # (V2, and the V27/V76 principle).
@@ -194,24 +194,24 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # Bare `McpTokenError`: a request problem, not an infrastructure answer. Same
     # subclass-tree test as above guards this from becoming the default.
     McpTokenError: status.HTTP_400_BAD_REQUEST,
-    # --- Admin audit reads (T55) ---
+    # --- Admin audit reads ---
     # 404 for a run that does not exist *and* for an id that is not a UUID: this surface is
-    # admin-only (V13), so the reason is not secrecy — a 422 for a malformed id would describe
+    # admin-only, so the reason is not secrecy — a 422 for a malformed id would describe
     # what the validator accepts rather than what exists (`core.audit.errors`, T63(e)).
     ToolRunNotFoundError: status.HTTP_404_NOT_FOUND,
     # The caller sent a page token NOA cannot decode. 400 rather than 422: the envelope is the
-    # shared one (V73), not FastAPI's validation-error list, which is what `noa-old` raised here.
+    # shared one, not FastAPI's validation-error list, which is what `noa-old` raised here.
     InvalidAuditCursorError: status.HTTP_400_BAD_REQUEST,
     # Bare `ToolRunAuditError`: a request problem, not "the audit trail is down". Same
     # subclass-tree test as above guards this from becoming the default for a later class.
     ToolRunAuditError: status.HTTP_400_BAD_REQUEST,
-    # --- MCP request-path authentication (T11, T12) ---
+    # --- MCP request-path authentication ---
     # The credential did not authenticate the caller. 401 across all four: absent,
     # unknown, expired and wrong-binding share a remedy (present a valid token of your
     # own), and splitting them by status would let a caller probe which tokens are real.
     # `verify_token` returns `None` for every one of these (R2 gives it no body hook);
     # `noa_api.mcp_request_auth.McpAuthErrorMiddleware` is what renders them, and these
-    # mappings are what it renders with (V3).
+    # mappings are what it renders with.
     McpTokenMissingError: status.HTTP_401_UNAUTHORIZED,
     McpTokenInvalidError: status.HTTP_401_UNAUTHORIZED,
     McpTokenExpiredError: status.HTTP_401_UNAUTHORIZED,
@@ -222,12 +222,12 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     McpUserInactiveError: status.HTTP_403_FORBIDDEN,
     McpUserNotInDirectoryError: status.HTTP_403_FORBIDDEN,
     # Not a verdict about the credential at all: too many failed attempts for this
-    # LibreChat account or this token (V9, T12). Carries `Retry-After` below.
+    # LibreChat account or this token. Carries `Retry-After` below.
     McpAuthRateLimitedError: status.HTTP_429_TOO_MANY_REQUESTS,
     # Bare `McpAuthError`: a request problem, not "NOA is down". Same subclass-tree test
     # guards this from becoming the default for a class added later.
     McpAuthError: status.HTTP_400_BAD_REQUEST,
-    # --- Server inventory admin CRUD (T54) ---
+    # --- Server inventory admin CRUD ---
     # 404 for an absent row on all three tables, and per-system codes rather than one shared
     # `server_not_found`: three panel pages over three tables, and "which inventory" is the
     # first question a log reader asks (`core.servers.errors` carries the reasoning).
@@ -235,8 +235,8 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     ProxmoxServerNotFoundError: status.HTTP_404_NOT_FOUND,
     PMGServerNotFoundError: status.HTTP_404_NOT_FOUND,
     # 409, not 422: the submitted name is a valid server name, and it is the state of the
-    # table that refuses it. `name` is `unique=True` on all three (T4) *and* what
-    # `resolve_*_server_ref` matches an operator's word against (V18).
+    # table that refuses it. `name` is `unique=True` on all three *and* what
+    # `resolve_*_server_ref` matches an operator's word against.
     WHMServerNameExistsError: status.HTTP_409_CONFLICT,
     ProxmoxServerNameExistsError: status.HTTP_409_CONFLICT,
     PMGServerNameExistsError: status.HTTP_409_CONFLICT,
@@ -249,7 +249,7 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # falling through to a 503 that would read as "NOA is down". The same subclass-tree test
     # every taxonomy above has guards this from becoming the default for a later class.
     ServerInventoryError: status.HTTP_409_CONFLICT,
-    # --- Remote execution (T14) ---
+    # --- Remote execution ---
     # 502: a host NOA depends on refused, timed out, or presented an unexpected host key.
     # Mapped now so it does not take `FALLBACK_STATUS` — 503 reads as "authentication is
     # unclassified and NOA may be down", which is the wrong answer for a working NOA and a
@@ -265,22 +265,22 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # throw at the transport and render as an unhandled error instead of a red status chip.
     # This 502 therefore covers the *tool* paths only, where the tools sanitise per V19.
     SSHExecutionError: status.HTTP_502_BAD_GATEWAY,
-    # --- WHM firewall backends (T16) ---
+    # --- WHM firewall backends ---
     # 502, same reading as `SSHExecutionError`: NOA works, csf or imunify360-agent on the
     # remote did not answer usably. One entry for the tree — `CSFCLIError` and
     # `ImunifyCLIError` inherit via the MRO walk, and which backend failed is already in
     # `error_code`. T54's validate route answers 200 with `ok:false` instead (see above).
     WHMFirewallCLIError: status.HTTP_502_BAD_GATEWAY,
-    # --- PMG `pmgsh` CLI (T18) ---
+    # --- PMG `pmgsh` CLI ---
     # 502, same reading again: NOA works, `pmgsh`/`pmgconfig` on the PMG node did not answer
     # usably. One entry for the whole surface — `PMGSHCLIError` carries the specific
     # `error_code`, including the `SSHExecutionError` codes it converts. T54's validate route
     # answers 200 with `ok:false` instead (see above).
     PMGSHCLIError: status.HTTP_502_BAD_GATEWAY,
-    # --- Secrets (T15) ---
+    # --- Secrets ---
     # 500: NOA cannot read or write its own ciphertext. The operator's request was fine and
     # retrying changes nothing — the key is absent, wrong, or the row was never encrypted.
-    # Which of those it is stays in `detail` (V8). Subclasses inherit via the MRO walk.
+    # Which of those it is stays in `detail`. Subclasses inherit via the MRO walk.
     SecretCryptoError: status.HTTP_500_INTERNAL_SERVER_ERROR,
     # 502 for the delivery hop, same reading as `SSHExecutionError`: NOA works, the system it
     # depends on did not answer usably. C15's deliver-first ordering means nothing was
@@ -289,17 +289,17 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # ...except when yopass was never configured. That is NOA's own gap, not the upstream's,
     # so it takes 500 rather than inheriting 502 from `YopassError`.
     YopassNotConfiguredError: status.HTTP_500_INTERNAL_SERVER_ERROR,
-    # --- CHANGE approval gate (T33) ---
-    # 503: NOA could not record a pending request, so it refused to run the change (V23).
+    # --- CHANGE approval gate ---
+    # 503: NOA could not record a pending request, so it refused to run the change.
     # The operator did nothing wrong and retrying is the remedy, which is what 503 says.
     ChangeGateUnavailableError: status.HTTP_503_SERVICE_UNAVAILABLE,
     # 500 for both of the gate's other refusals. Neither is reachable from anything a client
     # sends: a reason-shaped argument means a CHANGE tool declared a parameter C8 forbids,
-    # and missing evidence means it skipped its own in-process preflight (C9, V17). Those are
+    # and missing evidence means it skipped its own in-process preflight. Those are
     # NOA's bugs, and answering 400 would blame the caller for one.
     ChangeReasonForbiddenError: status.HTTP_500_INTERNAL_SERVER_ERROR,
     ChangeEvidenceRequiredError: status.HTTP_500_INTERNAL_SERVER_ERROR,
-    # 500 for the same reason, one step later (T32, V24): the branch that shapes the approval
+    # 500 for the same reason, one step later: the branch that shapes the approval
     # surface is a module constant, never a tool argument, so a caller cannot have selected an
     # unbuilt one. Not 503 — the pending row already exists by then, and "try again" would open
     # a second request for one change.
@@ -308,7 +308,7 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # rather than the fallback by accident. A subclass-tree test asserts every member above
     # is mapped, so reaching this line means a new class arrived without a decision.
     ChangeGateError: status.HTTP_503_SERVICE_UNAVAILABLE,
-    # --- Decisions on an existing request (T37) ---
+    # --- Decisions on an existing request ---
     # 404 for absent *and* for another operator's, which is V27's whole point: a 403 would
     # confirm the request exists. `ActionDecisionError` sits at the end of this group, so
     # note the pairing — these two answer with different statuses and must not collapse.
@@ -321,25 +321,25 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     ActionReceiptNotFoundError: status.HTTP_404_NOT_FOUND,
     # 409 for both terminal refusals. The caller may decide requests in general; this one is
     # past deciding. Two classes rather than one because the remedies differ — reload and
-    # read the outcome (V28) versus ask for the change again (V32).
+    # read the outcome versus ask for the change again.
     ActionRequestAlreadyDecidedError: status.HTTP_409_CONFLICT,
     ActionRequestExpiredError: status.HTTP_409_CONFLICT,
     # 409, and the status is V15's own: a decision without a non-blank reason. Not a 422 —
     # `reason` is a well-formed string, it is the *decision* that is refused, and V15 names
     # both this code and this status.
     ChangeReasonRequiredError: status.HTTP_409_CONFLICT,
-    # 409 for V31's cap (T38). Same reading as "already decided": the caller may approve changes
+    # 409 for V31's cap. Same reading as "already decided": the caller may approve changes
     # in general, just not one more right now. Not 429 — nothing is rate-limiting them, and
     # `Retry-After` would be a number NOA cannot honestly produce.
     ChangeExecutionLimitReachedError: status.HTTP_409_CONFLICT,
     # 403, not 401: the session authenticated fine and signing in again changes nothing
-    # (V39). The remedy is a freshly minted token, which means reloading the card.
+    #. The remedy is a freshly minted token, which means reloading the card.
     DecisionCsrfInvalidError: status.HTTP_403_FORBIDDEN,
     # Bare `ActionDecisionError`: a refusal about one request, so 409 rather than the 503
     # fallback, which would read as "NOA is down" for something NOA decided. The same
     # subclass-tree test guards this from becoming the default for a class added later.
     ActionDecisionError: status.HTTP_409_CONFLICT,
-    # --- Large READ tables (T56, V27, V64) ---
+    # --- Large READ tables ---
     # 404 for all four of its causes — unknown token, another operator's, one whose requester
     # was deleted, and one past its lifetime. V27's rule against an existence oracle, spelled
     # against another table: a status that varied by cause would say which tokens are real.
@@ -358,12 +358,12 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
 # own password. Reached only by `NoaError` subclasses with no mapping at all.
 FALLBACK_STATUS: Final = status.HTTP_503_SERVICE_UNAVAILABLE
 
-# --- Shapes for the failures NOA does not raise (T64) ---
+# --- Shapes for the failures NOA does not raise ---
 #
 # `(error_code, message)` per status, rather than echoing `StarletteHTTPException.detail`.
 # Nothing in this repo builds an `HTTPException` (see the module docstring), so the only
 # ones that reach the handler are Starlette's own routing failures — and a fixed shape means
-# a future raiser cannot put internal text in a body by accident (V8).
+# a future raiser cannot put internal text in a body by accident.
 HTTP_ERROR_SHAPES: Final[dict[int, tuple[str, str]]] = {
     status.HTTP_404_NOT_FOUND: ("not_found", "That endpoint does not exist."),
     status.HTTP_405_METHOD_NOT_ALLOWED: (
@@ -382,7 +382,7 @@ VALIDATION_SHAPE: Final[tuple[str, str]] = (
 )
 
 # The 500 answers exactly as a bare `NoaError` would. Same two strings, read off the class
-# rather than retyped, so the two paths cannot drift (V66).
+# rather than retyped, so the two paths cannot drift.
 INTERNAL_SHAPE: Final[tuple[str, str]] = (NoaError.error_code, NoaError.message)
 
 LOG_VALIDATION_FAILED: Final = "request_validation_failed"
@@ -403,7 +403,7 @@ def status_for(error: NoaError) -> int:
 
 
 def envelope(error_code: str, message: str, request_id: str | None = None) -> dict[str, str]:
-    """The one error-body shape (V8, V73).
+    """The one error-body shape.
 
     `error_code` is what clients branch on, `message` is for humans, `request_id` is what an
     operator quotes when neither is enough — it matches `x-request-id` on the response and
@@ -433,7 +433,7 @@ def error_response(
     request_id: str,
     headers: Mapping[str, str] | None = None,
 ) -> JSONResponse:
-    """Build an error response with the envelope and `x-request-id` (V73).
+    """Build an error response with the envelope and `x-request-id`.
 
     The header is set here rather than left to `RequestContextMiddleware`: the 500 path runs
     in `ServerErrorMiddleware`, outside that middleware, and would otherwise answer without
@@ -460,7 +460,7 @@ def error_headers(error: NoaError) -> dict[str, str]:
     A function beside `error_body` because the FastAPI handler is no longer the only thing
     that renders a `NoaError`: `noa_api.mcp_request_auth.McpAuthErrorMiddleware` writes a
     raw ASGI response for the mounted MCP app, which has no exception-handler graph, and it
-    must not shape one differently (V73).
+    must not shape one differently.
     """
     if isinstance(error, RetryAfterMixin):
         return {"Retry-After": str(error.retry_after_seconds)}
@@ -468,7 +468,7 @@ def error_headers(error: NoaError) -> dict[str, str]:
 
 
 def redacted_validation_errors(errors: list[Any]) -> list[dict[str, str]]:
-    """`loc` + `type` per failing field, for the log. Nothing else (V8).
+    """`loc` + `type` per failing field, for the log. Nothing else.
 
     pydantic's error entries carry `input` — the value that failed validation, which on a
     login is the submitted password — and `ctx`, which can carry an exception. Neither is
@@ -491,7 +491,7 @@ def redacted_validation_errors(errors: list[Any]) -> list[dict[str, str]]:
 
 
 def install_error_handling(app: FastAPI) -> None:
-    """Install the request-id middleware and every error handler on `app` (V73).
+    """Install the request-id middleware and every error handler on `app`.
 
     One function, called by `noa_api.main` and by both test harnesses, because V73's "shared
     handler, not per-route" is only true if there is one place that decides. Four handlers:
@@ -553,7 +553,7 @@ def install_error_handling(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def handle_unhandled_exception(request: Request, exc: Exception) -> JSONResponse:
-        # The one place a stack trace is welcome. The body says nothing about it (V8): an
+        # The one place a stack trace is welcome. The body says nothing about it: an
         # unhandled exception is by definition a case nobody decided was safe to describe.
         logger.exception(LOG_UNHANDLED, error_type=type(exc).__name__, exc_info=exc)
 

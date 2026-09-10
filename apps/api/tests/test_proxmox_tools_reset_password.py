@@ -1,4 +1,4 @@
-"""`proxmox_reset_vm_password` — the call that opens a question (T27).
+"""`proxmox_reset_vm_password` — the call that opens a question.
 
 The tool half: the guards, the in-process preflight, the `ciuser` refusal, the gate response and
 the mount. Its runner lives on the far side of §V.22's boundary and is asserted in
@@ -72,7 +72,7 @@ from support.proxmox_password import (
 )
 from support.servers import EMBED_BASE_URL, SECRETS, proxmox_server
 
-# --- Guards, before any I/O (V21) ---
+# --- Guards, before any I/O ---
 
 
 @pytest.mark.parametrize(
@@ -129,7 +129,7 @@ async def test_an_ambiguous_server_returns_choices_rather_than_a_pick() -> None:
     assert vm.requests == []
 
 
-# --- The preflight, in-process (C9, V17) ---
+# --- The preflight, in-process ---
 
 
 async def test_a_well_formed_call_opens_a_pending_request_and_changes_nothing() -> None:
@@ -146,7 +146,7 @@ async def test_a_well_formed_call_opens_a_pending_request_and_changes_nothing() 
     assert created.tool_name == TOOL_PROXMOX_RESET_VM_PASSWORD
     assert created.requested_by_user_id == caller
     assert created.status is ActionRequestStatus.PENDING
-    # Committed, not merely flushed: V23 reads a row that is durable (T33).
+    # Committed, not merely flushed: V23 reads a row that is durable.
     assert created.committed == 1
     assert isinstance(answer, ToolResult)
     assert vm.config_writes == []
@@ -312,7 +312,7 @@ async def test_the_tool_schema_carries_no_reason_parameter() -> None:
     server = build_mcp_server(tool_context=context)
     register_mcp_tools(server, context=context)
 
-    # `run_middleware=False`: the RBAC gate reads a caller off the request context (V1), and
+    # `run_middleware=False`: the RBAC gate reads a caller off the request context, and
     # this test is about the *schema* a tool declares, not about who may see it.
     [tool] = [
         tool
@@ -336,7 +336,7 @@ async def test_the_tool_schema_carries_no_password_parameter() -> None:
     server = build_mcp_server(tool_context=context)
     register_mcp_tools(server, context=context)
 
-    # `run_middleware=False`: the RBAC gate reads a caller off the request context (V1), and
+    # `run_middleware=False`: the RBAC gate reads a caller off the request context, and
     # this test is about the *schema* a tool declares, not about who may see it.
     [tool] = [
         tool
@@ -377,7 +377,7 @@ async def test_the_recorded_arguments_are_what_the_model_asked_for() -> None:
     }
 
 
-# --- The gate response (V24, V25, V26) ---
+# --- The gate response ---
 
 
 async def test_the_gate_response_carries_the_text_first_then_the_card() -> None:

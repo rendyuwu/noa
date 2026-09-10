@@ -1,4 +1,4 @@
-"""Session JWT + cookie guards (T7, V6, V8).
+"""Session JWT + cookie guards.
 
 No app and no DB: `JWTService` takes only `Settings`, so mint/verify run directly
 and the cookie paths run against a bare Starlette `Response`. Cookie assertions
@@ -166,7 +166,7 @@ def test_absent_or_malformed_token_rejected(token: str) -> None:
 
 
 def test_expired_token_reports_expiry_not_invalid() -> None:
-    """Routine expiry is its own error so the UI ⊥ imply tampering (V6)."""
+    """Routine expiry is its own error so the UI ⊥ imply tampering."""
     service = build_service(auth_jwt_access_token_ttl_seconds=60)
     past = datetime.now(UTC) - timedelta(hours=2)
     token = jwt.encode(
@@ -420,7 +420,7 @@ def test_clear_session_cookie_is_idempotent_and_needs_no_auth() -> None:
 
     Compared through `cookie_shape`, not the raw header: `delete_cookie` stamps `Expires`
     from the clock, so two calls that straddle a second boundary emit different header
-    strings while clearing the very same cookie (B4).
+    strings while clearing the very same cookie.
     """
     service = build_service()
     first, second = Response(), Response()
@@ -434,8 +434,8 @@ def test_clear_session_cookie_is_idempotent_and_needs_no_auth() -> None:
 def test_cookie_shape_still_separates_cookies_that_differ() -> None:
     """Dropping the clock stamp must not soften the comparison into a tautology.
 
-    A clear aimed at another `Domain` leaves the live cookie standing (V6), so the two
-    headers above have to stay distinguishable through `cookie_shape` (B4).
+    A clear aimed at another `Domain` leaves the live cookie standing, so the two
+    headers above have to stay distinguishable through `cookie_shape`.
     """
     same, other = Response(), Response()
 
@@ -470,7 +470,7 @@ def test_read_session_cookie_returns_none_when_absent_or_blank(cookies: dict[str
     assert build_service().read_session_cookie(cookies) is None
 
 
-# --- Isolation from the MCP token mechanism (C5) ---
+# --- Isolation from the MCP token mechanism ---
 
 
 def test_session_token_is_not_an_mcp_credential() -> None:

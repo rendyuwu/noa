@@ -1,4 +1,4 @@
-"""Refusals the admin surface owns, that no core service can raise (T65 — V75).
+"""Refusals the admin surface owns, that no core service can raise.
 
 One class today, and it is here rather than in `core.auth.authorization_errors` for the
 reason that file already records: V75 disables direct per-user tool grants, so the RBAC
@@ -12,7 +12,7 @@ test walks the subclass tree and asserts every member maps to one of 400, 403, 4
 (`test_rbac_routes.py::test_every_authorization_error_is_mapped_explicitly`). A 410 in that
 tree would either fail the test or force its status set open, and the set is the assertion —
 it is what stops a permission problem answering "service unavailable". So this derives from
-`NoaError` directly and takes its own entry in `STATUS_BY_ERROR` (V73).
+`NoaError` directly and takes its own entry in `STATUS_BY_ERROR`.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from core.errors import NoaError
 
 
 class DirectGrantsDisabledError(NoaError):
-    """`PUT /admin/users/{id}/tools` — direct per-user grants are gone (V75, T65).
+    """`PUT /admin/users/{id}/tools` — direct per-user grants are gone.
 
     **410, not 404 and not 403.** 410 is the one status that says "this route existed and
     the capability behind it has been withdrawn permanently", which is exactly the fact: the

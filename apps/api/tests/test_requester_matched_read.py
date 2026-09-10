@@ -52,7 +52,7 @@ def compiled(session: RecordingSession) -> str:
     """The one statement this session was handed, as PostgreSQL SQL.
 
     Named dialect rather than the default: the joins are what is being read, and compiling
-    against the dialect NOA ships (C12) means this is the text the database would see.
+    against the dialect NOA ships means this is the text the database would see.
     """
     assert len(session.statements) == 1
     return str(session.statements[0].compile(dialect=postgresql.dialect()))
@@ -77,7 +77,7 @@ async def read_as_result() -> str:
 
 
 async def test_the_cards_read_joins_the_receipt() -> None:
-    """T42(b): the card renders what the change did, so its statement has to fetch it (V46)."""
+    """T42(b): the card renders what the change did, so its statement has to fetch it."""
     sql = await read_as_card()
 
     assert "action_receipts" in sql
@@ -92,7 +92,7 @@ async def test_the_models_read_does_not_join_the_receipt() -> None:
     unassertable anywhere else. Here it is asserted.
 
     The `tool_runs` join is checked too, so this cannot pass because the reader stopped joining
-    anything (V87): what a model may be told about an approved change still includes its run.
+    anything: what a model may be told about an approved change still includes its run.
     """
     sql = await read_as_result()
 

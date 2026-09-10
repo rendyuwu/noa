@@ -1,10 +1,10 @@
-"""Doubles and a probe app for the RBAC engine (T9).
+"""Doubles and a probe app for the RBAC engine.
 
 Same split as `support.auth`: the in-memory repository covers policy, and
 `SQLAuthorizationRepository` gets its own coverage against a live scratch database in
 `test_rbac_repository.py`. The *real* `AuthorizationService` runs against these doubles, so
-the admin bypass (V10), the disabled-user rule (V11), the V12 guards and the internal-role
-rules (V13) are all exercised for real — only the SQL is faked.
+the admin bypass, the disabled-user rule, the V12 guards and the internal-role
+rules are all exercised for real — only the SQL is faked.
 
 `FakeAuthorizationRepository` counts reads. Two invariants are about *when* the database is
 consulted rather than what it answers: V6 (permission resolution reads the row, never the
@@ -59,13 +59,13 @@ from support.auth import (
 TOOL_READ = "whm_list_accounts"
 TOOL_CHANGE = "whm_suspend_account"
 
-# Never in the catalog: what a stale grant or an injected tool name looks like (V10).
+# Never in the catalog: what a stale grant or an injected tool name looks like.
 TOOL_UNKNOWN = "whm_delete_everything"
 
 ROLE_SUPPORT = "support"
 ROLE_NOC = "noc"
 
-# An internal role, spelled the way NOA spells them (V13, V75).
+# An internal role, spelled the way NOA spells them.
 INTERNAL_ROLE = f"{INTERNAL_ROLE_PREFIX}legacy"
 
 PROBE_PATH = "/admin/probe"
@@ -97,24 +97,24 @@ class FakeAuthorizationRepository:
         self.roles: set[str] = set()
         self.role_tools: dict[str, set[str]] = {}
         self.user_roles: dict[UUID, set[str]] = {}
-        # How many MCP tokens each user holds (T11, V4). A count rather than rows: the
+        # How many MCP tokens each user holds. A count rather than rows: the
         # service only decides *whether* to revoke and reports how many went, and the SQL
         # that proves the rows really disappear has its own test.
         self.mcp_tokens: dict[UUID, int] = {}
-        # Read counters — see the module docstring (V6, V14).
+        # Read counters — see the module docstring.
         self.user_reads = 0
         self.grant_reads = 0
-        # An ordered log this repository shares with `RecordingToolListNotifier` (T66). The
+        # An ordered log this repository shares with `RecordingToolListNotifier`. The
         # notification's *position* relative to the commit is the assertion, and two independent
         # counters cannot express an order.
         self.calls: list[str] = []
-        # Commit counter and snapshot (T51). Same trick as `FakeAuthRepository`: a double that
+        # Commit counter and snapshot. Same trick as `FakeAuthRepository`: a double that
         # only mutated dicts cannot tell a written row from a committed one, and "a refused
         # disable persists nothing" is a claim about the second.
         self.commits = 0
         self.committed_users: dict[UUID, FakeUserRecord] = {}
         self.committed_user_roles: dict[UUID, set[str]] = {}
-        # Role state is snapshotted too (T52). The role routes' writes land here and nowhere
+        # Role state is snapshotted too. The role routes' writes land here and nowhere
         # else, so without these a "the refused grant write persisted nothing" assertion could
         # only read the mutable dict — which cannot tell a written row from a committed one.
         self.committed_roles: set[str] = set()
@@ -140,7 +140,7 @@ class FakeAuthorizationRepository:
         return sorted(self.users.values(), key=lambda user: user.email)
 
     async def list_user_ids_with_role(self, role_name: str) -> list[UUID]:
-        """T66's notification audience (V74).
+        """T66's notification audience.
 
         Mirrors the SQL exactly, including what it does *not* filter: a disabled user still
         appears, because their catalog moved too and their session may still be open. Derived
@@ -182,7 +182,7 @@ class FakeAuthorizationRepository:
         self.role_tools[role_name] = set(tool_names)
 
     async def replace_user_assignable_roles(self, user_id: UUID, role_names: list[str]) -> None:
-        # Mirrors the SQL: internal roles survive replacement (V13, V75).
+        # Mirrors the SQL: internal roles survive replacement.
         kept = {name for name in self.user_roles.get(user_id, set()) if is_internal_role(name)}
         self.user_roles[user_id] = kept | {name for name in role_names if name in self.roles}
 
@@ -212,12 +212,12 @@ class FakeAuthorizationRepository:
         return True
 
     async def delete_mcp_tokens_for_user(self, user_id: UUID) -> int:
-        """V4's cascade revoke (T11). Token *count* per user, since that is all the
+        """V4's cascade revoke. Token *count* per user, since that is all the
         service asserts on — the SQL that proves rows really go is in
         `test_rbac_repository.py`."""
         return self.mcp_tokens.pop(user_id, 0)
 
-    # --- Transaction boundary (T51) ---
+    # --- Transaction boundary ---
 
     async def commit(self) -> None:
         """Snapshot every row, so a test can separate "written" from "committed"."""
@@ -266,13 +266,13 @@ class FakeAuthorizationRepository:
         self.role_tools.setdefault(role_name, set()).update(tool_names)
 
     def assign_internal_role(self, user_id: UUID, role_name: str) -> None:
-        """Assign a `user:`-prefixed role the way NOA itself would (V13, V75)."""
+        """Assign a `user:`-prefixed role the way NOA itself would."""
         self.roles.add(role_name)
         self.user_roles.setdefault(user_id, set()).add(role_name)
 
 
 class RecordingAuditSink:
-    """`AdminAuditSink` that keeps every event for assertion (V14)."""
+    """`AdminAuditSink` that keeps every event for assertion."""
 
     def __init__(self) -> None:
         self.events: list[AdminAuditEvent] = []
@@ -286,7 +286,7 @@ class RecordingAuditSink:
 
 
 class RecordingToolListNotifier:
-    """`ToolListChangedNotifier` that keeps every audience for assertion (T66, V74).
+    """`ToolListChangedNotifier` that keeps every audience for assertion.
 
     Records the *audiences*, not a count, because T66's questions are about who: a role's grant
     change reaches its holders, a disable reaches one account, a role creation reaches nobody. A
@@ -340,7 +340,7 @@ def build_service(
 ) -> RbacFixture:
     """A real `AuthorizationService` over in-memory doubles.
 
-    The notifier shares the repository's `calls` log (T66), so any test built here can assert
+    The notifier shares the repository's `calls` log, so any test built here can assert
     that a notification followed the commit rather than preceded it — including the tests that
     were written before T66 existed and now cover the ordering for free.
     """
@@ -378,7 +378,7 @@ class AdminProbeHarness:
 
 @contextmanager
 def admin_probe_app() -> Iterator[AdminProbeHarness]:
-    """An app whose only route sits behind `require_admin` (V13).
+    """An app whose only route sits behind `require_admin`.
 
     Everything on the path is production code — `require_session_user`, `AuthService`, the
     real `JWTService`, the shared error handler — so a 403 here is the same 403 the `/admin`

@@ -1,4 +1,4 @@
-"""`whm_unsuspend_account` — the suspend tool's mirror, and its two extra states (T23).
+"""`whm_unsuspend_account` — the suspend tool's mirror, and its two extra states.
 
 Same three lanes as `test_whm_tools_suspend_account.py`, because the tool and the runner sit on
 opposite sides of V22's boundary and the mount is a third claim again:
@@ -27,7 +27,7 @@ asserted because a mirror can be built crooked, but three claims exist only on t
    the card would buy an operator's decision and then a failed run. Asserted with its negative
    control: a suspended, *unlocked* account still opens a request, and an account whose WHM
    version never sent the field is not refused either — without those two the refusal would pass
-   against a tool that refuses everything (V87).
+   against a tool that refuses everything.
 3. **The preflight summary carries `suspendreason` here.** An account being unsuspended is
    suspended right now, so WHM's suspension note — which as of T22 is the operator's own reason —
    is on the row this tool reads. T22 never met that: it reads *live* accounts. Both answers this
@@ -198,7 +198,7 @@ async def unsuspend(
     """Call the tool inside a real request context; return its answer and the caller's id.
 
     The context is not decoration: `open_change_request` reads the requester from the
-    authenticated identity rather than from an argument (V23, V27), so a call outside it would
+    authenticated identity rather than from an argument, so a call outside it would
     be asserting against an identity the test planted.
     """
     user, resolved = authenticated_caller(user_id)
@@ -218,7 +218,7 @@ def execution_request(
 ) -> ChangeExecutionRequest:
     """What `core.approvals.execution` hands a runner for an approved unsuspension.
 
-    `reason` is carried because the executor carries it for *every* approved change (V43) — the
+    `reason` is carried because the executor carries it for *every* approved change — the
     point of the runner tests below is that this one never sends it anywhere.
     """
     return ChangeExecutionRequest(
@@ -276,7 +276,7 @@ async def test_the_preflight_runs_inside_the_call_and_lands_on_the_row() -> None
     """C9, V17, V33, V35: one call, evidence born in it, persisted for the card.
 
     One `listaccts` request, not two: the preflight is `fetch_whm_accounts` through
-    `collect_account_state`, shared with T20/T21/T22 rather than re-implemented (V66), and a
+    `collect_account_state`, shared with T20/T21/T22 rather than re-implemented, and a
     second read here would mean the card describes a state the tool did not gather.
     """
     fixture, api = unsuspend_context()
@@ -384,7 +384,7 @@ def test_both_account_change_runners_come_from_one_builder() -> None:
 
 
 async def test_an_account_that_is_not_suspended_opens_no_request() -> None:
-    """T22's no-op, running the other way (T23).
+    """T22's no-op, running the other way.
 
     The preflight is what discovers there is nothing to do, so it answers instead of gating: a
     card for a change that would do nothing costs an operator a decision and leaves a row
@@ -403,7 +403,7 @@ async def test_an_account_that_is_not_suspended_opens_no_request() -> None:
 
 
 async def test_a_locked_suspension_is_refused_before_a_card_is_opened() -> None:
-    """`unsuspendacct` will not lift a locked suspension, so NOA does not ask (T23).
+    """`unsuspendacct` will not lift a locked suspension, so NOA does not ask.
 
     The same argument as the no-op one state over: an approval request here buys an operator's
     decision and then a run that fails. The lock is on the summary the preflight already read,
@@ -439,7 +439,7 @@ async def test_the_older_suspendlock_spelling_is_refused_too() -> None:
 
 
 async def test_a_suspended_but_unlocked_account_still_opens_a_request() -> None:
-    """The lock guard's negative control (V87).
+    """The lock guard's negative control.
 
     Without it, "a locked account is refused" passes just as well against a tool that refuses
     every unsuspension — the refusal has to be about the lock, and that is only visible next to
@@ -456,7 +456,7 @@ async def test_a_suspended_but_unlocked_account_still_opens_a_request() -> None:
 
 
 async def test_an_account_whose_whm_never_reported_a_lock_is_not_refused() -> None:
-    """The bound on the guard, asserted rather than left in a docstring (T23).
+    """The bound on the guard, asserted rather than left in a docstring.
 
     `listaccts` omits the field entirely on cPanel versions that do not have it. Refusing on an
     absent field would take the tool away from every one of those servers, and WHM's own refusal
@@ -634,7 +634,7 @@ async def test_the_runner_payload_never_carries_the_reason_back() -> None:
     the summary to a model.
 
     The reason is on the `ChangeExecutionRequest` — the executor reads it off the row for every
-    approved change (V43) — and the evidence carries WHM's older note, so both strings are in
+    approved change — and the evidence carries WHM's older note, so both strings are in
     front of this runner even though it writes neither. Asserted on the derived summary as well
     as on the payload, because the summary is the thing a model actually reads.
     """
@@ -783,7 +783,7 @@ async def test_the_mounted_call_opens_a_request_and_writes_no_tool_runs_row(
         )
 
     assert result.get("isError") is not True
-    # Both blocks survive the transport, in order (V24, V25).
+    # Both blocks survive the transport, in order.
     assert [block["type"] for block in result["content"]] == ["text", "resource"]
 
     request = tools.action_requests.only
@@ -797,7 +797,7 @@ async def test_the_mounted_call_opens_a_request_and_writes_no_tool_runs_row(
 async def test_a_grant_for_one_direction_does_not_reach_the_other(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """DECISIONS §9's whole reason for two names rather than an `action` enum, asserted (V1).
+    """DECISIONS §9's whole reason for two names rather than an `action` enum, asserted.
 
     Suspend and unsuspend carry opposite risk, so a role granted one must not receive the other.
     The merged pairs (`proxmox_vm_nic`, `pmg_whitelist`) accepted exactly that coarsening and
@@ -821,14 +821,14 @@ async def test_a_grant_for_one_direction_does_not_reach_the_other(
 
 
 # --------------------------------------------------------------------------------------
-# The delta the runner publishes beside its envelope (V85, V86)
+# The delta the runner publishes beside its envelope
 # --------------------------------------------------------------------------------------
 
 
 async def test_the_unsuspend_delta_moves_the_same_field_the_other_way() -> None:
     """The mirror of T22's delta, and the only thing that differs is the direction's value.
 
-    One postflight serves both tools and `target_suspended` is the whole difference (V66), so
+    One postflight serves both tools and `target_suspended` is the whole difference, so
     this is the assertion that a mutation flipping it turns the change's meaning over — in the
     delta as well as in the payload, since the `new` side is read from the same field.
     """

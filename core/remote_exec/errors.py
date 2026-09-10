@@ -1,17 +1,17 @@
-"""Remote-execution error (T14, V73).
+"""Remote-execution error.
 
 `noa-old` had `SSHExecutionError(Exception)` with `code` / `message` attributes. Here it
 derives from `core.errors.NoaError` instead, because these failures do reach an HTTP
 response: T54's `POST /admin/{whm,proxmox,pmg}/servers/{id}/validate` connects over SSH, and
 `core/errors.py` is explicit that anything a route may raise subclasses `NoaError` so one
-handler shapes every body (V73). A second parallel taxonomy would make "one handler" a lie.
+handler shapes every body. A second parallel taxonomy would make "one handler" a lie.
 
 The keyword-only `code=` / `message=` constructor is kept verbatim from `noa-old` so the
 ~10 copied raise sites in `ssh.py` — and the integration layers landing with T16-T18 — read
-identically to the source they were hardened in (C13/V69). `code` maps onto `NoaError`'s
+identically to the source they were hardened in. `code` maps onto `NoaError`'s
 `error_code`, which is the field clients and tests branch on.
 
-Messages here are operator-facing and must stay credential-free (V8): they name *what* the
+Messages here are operator-facing and must stay credential-free: they name *what* the
 host refused (auth, host key, timeout), never the key, password or passphrase that was
 presented. `ssh_connection_failed` interpolates asyncssh's own text, which reports transport
 state, not the secret.

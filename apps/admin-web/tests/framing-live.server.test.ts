@@ -64,7 +64,7 @@ async function freePort(): Promise<number> {
 }
 
 /**
- * Readiness gate: a TCP connect, one layer below the routes under test (V90).
+ * Readiness gate: a TCP connect, one layer below the routes under test.
  *
  * Pointing this at `/healthz` — or at any route — would turn a missing header, a failed render or a
  * broken route into a *timeout*, and a timeout names nothing. The socket is the subject's floor:
@@ -134,7 +134,7 @@ describe('§T.49 — every response carries the framing header', () => {
   it('answers at all — the server under test is the one being measured', async () => {
     // Without this the suite below could pass against a server that errors on everything: an error
     // page carries the config headers too. `/healthz` returning its own body is the proof that the
-    // app booted and is serving its own routes (V87).
+    // app booted and is serving its own routes.
     const response = await get('/healthz')
 
     expect(response.status).toBe(200)

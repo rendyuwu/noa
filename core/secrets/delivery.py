@@ -1,10 +1,10 @@
-"""Getting one generated credential to the operator, as a seam (T27 — C15, V49, V50).
+"""Getting one generated credential to the operator, as a seam.
 
-`_yopass_store` is the mechanism (T15). This is the *shape* the tool path asks for it in, and it
+`_yopass_store` is the mechanism. This is the *shape* the tool path asks for it in, and it
 exists for one reason: `_yopass_store` needs three settings — the base URL, the expiration and
 the one-time flag — and `McpToolContext` deliberately holds no `Settings`. T15 removed the
 settings singleton `noa-old` imported from three places, and `noa_api.main.build_runtime` is the
-single `get_settings()` caller (C7). A tool reaching for its own copy of configuration would be a
+single `get_settings()` caller. A tool reaching for its own copy of configuration would be a
 second world.
 
 So the settings are bound **once, at startup**, into a callable the tool context carries. Two
@@ -54,7 +54,7 @@ def build_yopass_delivery(
     settings: Settings,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> SecretDelivery:
-    """The production `SecretDelivery`, with configuration bound once (C15, V50).
+    """The production `SecretDelivery`, with configuration bound once.
 
     A closure over `settings` rather than a class, the way the CHANGE runners are closures over
     their tool context: what it needs is three values that do not change for the life of the

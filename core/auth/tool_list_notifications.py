@@ -1,4 +1,4 @@
-"""Telling connected MCP clients their tool catalog moved (T66 — V14, V74).
+"""Telling connected MCP clients their tool catalog moved.
 
 V74 requires NOA to emit `notifications/tools/list_changed` when a permission changes. The
 trigger for that emit is a *write* — a role's grants replaced, a user's roles replaced, an
@@ -16,7 +16,7 @@ Same shape as `core.audit.admin_events.AdminAuditSink`, and for the same reasons
 - **It takes user ids, not a role name or a user object.** The service is what knows which
   operators a write affected — a role's grant change affects its holders, a disable affects
   one account — and resolving that from a role name inside the notifier would put the same
-  question in two places (V66).
+  question in two places.
 
 **This is best-effort, and that is a measured position rather than a shrug.** R30 settled
 what LibreChat does with the notification at pin `45cc53c4`: nothing. Zero handlers for
@@ -36,7 +36,7 @@ from uuid import UUID
 
 
 class ToolListChangedNotifier(Protocol):
-    """Where "these operators' tool catalogs changed" goes (V74).
+    """Where "these operators' tool catalogs changed" goes.
 
     One method, and it announces rather than asks. A notifier that could also report which
     sessions exist would tempt the engine into deciding something from the answer, and "may

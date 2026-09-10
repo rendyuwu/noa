@@ -1,4 +1,4 @@
-"""Dependency-pin guards (C1, C23).
+"""Dependency-pin guards.
 
 These pins are load-bearing decisions, not incidental versions. A drive-by bump
 should fail here and force a deliberate re-verification.
@@ -65,7 +65,7 @@ def test_pin_docs_track_the_servable_set(doc_name: str) -> None:
     """T70: the prose about the pin is bound to the SDK, not written once and trusted.
 
     The `2025-06-18`-as-the-era claim survived in four files because nothing compared it
-    to the SDK (T71, R9). This closes that: both directions are asserted, so widening the
+    to the SDK. This closes that: both directions are asserted, so widening the
     supported set leaves the docs incomplete and narrowing it leaves them wrong, and
     either way a bump has to stop and edit the prose.
 

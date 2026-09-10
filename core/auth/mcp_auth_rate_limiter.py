@@ -1,7 +1,7 @@
-"""Rate limiting for failed MCP authentication (T12, V9).
+"""Rate limiting for failed MCP authentication.
 
 New work — `noa-old` had no MCP credential to limit. The counting lives in
-`core.auth.attempt_limiter.AttemptLimiter`, shared with the login path (V66); this module
+`core.auth.attempt_limiter.AttemptLimiter`, shared with the login path; this module
 decides the two things that are specific to the MCP surface: which keys an attempt lands
 in, and which denials count as attempts at all.
 
@@ -16,11 +16,11 @@ it prevents.
 The two keys below are stable in that environment and answer different attacks, which is
 why both exist (the same reasoning as login's IP+email pair — one key alone leaves a hole):
 
-- `mcp_client` — the `X-Noa-LibreChat-User` value, required on every request (C24, V3).
+- `mcp_client` — the `X-Noa-LibreChat-User` value, required on every request.
   Catches an operator inside LibreChat working through guesses; the blast radius of a
   block is that one LibreChat account.
 - `mcp_token` — the SHA-256 digest of the presented bearer, the same digest `mint()`
-  stores (V2). Catches replay of one stolen token while the header is rotated to dodge the
+  stores. Catches replay of one stolen token while the header is rotated to dodge the
   bucket above. The digest, never the plaintext: this value is the class of thing
   `mcp_tokens.token_hash` already holds at rest, and V2/V8 forbid the other one.
 
@@ -65,8 +65,8 @@ from core.auth.mcp_auth_errors import (
 
 # Bucket scopes. Values reach `login_rate_limits.scope` (String(20)) and are stable —
 # renaming one orphans every live bucket under the old name. The table is named for the
-# login path it was built for (T8); it holds a generic (scope, key) counter and T12 reuses
-# it rather than duplicating the schema (V66). See `core.db.models.LoginRateLimit`.
+# login path it was built for; it holds a generic (scope, key) counter and T12 reuses
+# it rather than duplicating the schema. See `core.db.models.LoginRateLimit`.
 SCOPE_MCP_CLIENT: Final = "mcp_client"
 # S105: a bucket scope name, not a credential — the `TOKEN` in the constant name trips it.
 SCOPE_MCP_TOKEN: Final = "mcp_token"  # noqa: S105
@@ -83,7 +83,7 @@ COUNTED_DENIALS: Final[tuple[type[McpAuthError], ...]] = (
 
 
 def counts_against_limit(error: McpAuthError | LdapUnavailableError) -> bool:
-    """Whether `error` is the kind of refusal that moves a counter (V9).
+    """Whether `error` is the kind of refusal that moves a counter.
 
     A function rather than a set membership test so subclasses inherit their parent's
     answer, matching how `noa_api.api.errors.status_for` walks the MRO. `LdapUnavailableError`

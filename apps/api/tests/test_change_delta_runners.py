@@ -1,4 +1,4 @@
-"""What each CHANGE runner publishes as its before→after delta (T38 — V85, V86).
+"""What each CHANGE runner publishes as its before→after delta.
 
 One lane per tool, including the failure branches, because the failure branches are where the
 shape earns its keep: an executor refusal and a runner failure are both `ok: False`, so the only
@@ -9,7 +9,7 @@ large these payloads are — the `result_summary` pin, and what folding a delta 
 — is `test_change_receipt_halves.py`, which measures all seven rather than pinning one of them
 here and asserting the ordering there. The two WHM account runners are asserted in
 `test_whm_tools_suspend_account.py` and `test_whm_tools_unsuspend_account.py`, where their WHM
-endpoint fixtures live — moving them here would mean a second copy of that wiring (V66).
+endpoint fixtures live — moving them here would mean a second copy of that wiring.
 
 Every branch that measured nothing is asserted on a facet **being absent**, and every branch that
 measured "nothing moved" on the same facet being **present and empty**. Those are two different
@@ -101,7 +101,7 @@ def firewall_evidence(request: Any, **keys: Any) -> None:
 
 
 # --------------------------------------------------------------------------------------
-# `whm_firewall_release_and_allow` (T25)
+# `whm_firewall_release_and_allow`
 # --------------------------------------------------------------------------------------
 
 
@@ -111,7 +111,7 @@ async def test_the_release_delta_names_the_verdict_it_moved(
     """One field, both sides measured: the `old` off the evidence, the `new` off the postflight.
 
     The `old` side is the reading the operator authorised against and not a second reading taken
-    later (V33) — re-deriving it here would be a delta about a decision nobody made.
+    later — re-deriving it here would be a delta about a decision nobody made.
     """
     fixture, _ = release_context(monkeypatch, box=released_box())
     runner = build_whm_firewall_release_runner(context=fixture.context)
@@ -135,7 +135,7 @@ async def test_the_release_delta_names_the_verdict_it_moved(
 async def test_the_release_delta_reports_every_backend_it_drove(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Driven and answered are two facts, joined by name and kept apart in the row (V86).
+    """Driven and answered are two facts, joined by name and kept apart in the row.
 
     A backend that ran the commands and then went silent on the confirming read is the case the
     pair exists for, and one boolean could not say it.
@@ -155,7 +155,7 @@ async def test_the_release_delta_reports_every_backend_it_drove(
 async def test_a_release_that_did_not_take_publishes_a_measured_delta(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The runner-failure path, and the `false`s beside it are *earned* (V86).
+    """The runner-failure path, and the `false`s beside it are *earned*.
 
     The address is still blocked after the release ran. Every backend was driven and every one
     answered the confirming read, so the verdict is a measurement and the delta says so:
@@ -195,7 +195,7 @@ async def test_an_allow_that_did_not_take_renders_the_half_that_did(
     **And no resolved expiry rides beside it.** Every backend accepted the allow command, so a
     facet keyed off the commands alone publishes an absolute `expires_at` here — a precise window
     for an entry the same delta's verdict says does not exist. `not_found` is the one reading that
-    refutes the entry; `blocked` above is not, and keeps its expiry (V86).
+    refutes the entry; `blocked` above is not, and keeps its expiry.
     """
     fixture, _ = release_context(
         monkeypatch, box=released_box(csf_after=CSF_CLEAN_OUTPUT, imunify_after=IMUNIFY_CLEAN)
@@ -216,7 +216,7 @@ async def test_an_allow_that_did_not_take_renders_the_half_that_did(
 async def test_a_backend_that_could_not_be_driven_states_no_verdict(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """No verdict was consulted on this branch, so none is claimed (V86).
+    """No verdict was consulted on this branch, so none is claimed.
 
     What *was* measured rides in the backend's own row — it was not driven, and the code that
     names the remedy is beside it. `changed_fields` is absent rather than empty: NOA did not
@@ -315,7 +315,7 @@ async def test_a_capped_before_state_ships_its_bound_into_the_delta(
 async def test_an_evidence_row_with_no_bound_states_none(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The negative control (V87), and V86's rule: a bound nobody recorded is not a bound of
+    """The negative control, and V86's rule: a bound nobody recorded is not a bound of
     nothing. A row opened before those keys existed answers an absent facet, not `0`."""
     fixture, _ = release_context(monkeypatch, box=released_box())
     runner = build_whm_firewall_release_runner(context=fixture.context)
@@ -357,7 +357,7 @@ async def test_a_verdict_that_did_not_move_renders_a_measured_empty_diff(
 async def test_a_before_state_with_no_usable_verdict_states_no_field_change(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """One side of the comparison is missing, so no comparison is stated (V86).
+    """One side of the comparison is missing, so no comparison is stated.
 
     `evidence_verdict` answers `None` when the evidence has no usable verdict, and its docstring
     says a caller treats that as "no field change can be stated" rather than substituting a
@@ -414,7 +414,7 @@ async def test_the_release_delta_never_carries_the_operators_reason(
 
 
 # --------------------------------------------------------------------------------------
-# `whm_firewall_allowlist_remove` (T26)
+# `whm_firewall_allowlist_remove`
 # --------------------------------------------------------------------------------------
 
 
@@ -450,7 +450,7 @@ async def test_a_removal_that_did_not_take_claims_no_list_move(
     `holds_allow_entry` is an aggregate over the backends that answered: where it still reads
     true NOA knows an entry survived somewhere and does *not* know whether another backend's
     entry went. `removed: []` beside the per-backend rows would read as "nothing left any list",
-    which is more than the aggregate said (V86).
+    which is more than the aggregate said.
     """
     fixture, _ = release_context(monkeypatch, box=removed_box(csf_after=CSF_ALLOW_LINE))
     runner = build_whm_firewall_allowlist_remove_runner(context=fixture.context)
@@ -468,7 +468,7 @@ async def test_a_removal_that_did_not_take_claims_no_list_move(
 
 
 # --------------------------------------------------------------------------------------
-# `proxmox_vm_nic` (T28)
+# `proxmox_vm_nic`
 # --------------------------------------------------------------------------------------
 
 
@@ -520,14 +520,14 @@ async def test_a_confirmed_flip_renders_one_row(monkeypatch: pytest.MonkeyPatch)
 async def test_evidence_with_no_link_state_states_no_field_change(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """One side of the comparison is missing, so no comparison is stated (V86).
+    """One side of the comparison is missing, so no comparison is stated.
 
     `_evidence_link_state` answers `None` when the evidence's `nic` half carries no usable value,
     and its docstring says a caller treats that as "no field change can be stated", never as a
     default. This is that caller. The flip took and was confirmed; only the diff is withheld,
     because an empty one would read as a comparison, about an interface that verifiably moved.
 
-    Paired with the control below (V87): a builder answering `()` for both a missing side and two
+    Paired with the control below: a builder answering `()` for both a missing side and two
     matching sides would pass whichever of the two was written alone.
     """
     no_polling_delay(monkeypatch)
@@ -552,7 +552,7 @@ async def test_a_link_state_that_already_matched_renders_a_measured_empty_diff(
 
     The card described an interface already down, the runner's pre-write read found it up, so the
     write went out and the postflight confirms it down again — edited away and back while the
-    request sat pending. The `old` side is the card's, not the pre-write read's (V33).
+    request sat pending. The `old` side is the card's, not the pre-write read's.
     """
     no_polling_delay(monkeypatch)
     fixture, _ = nic_context()
@@ -605,7 +605,7 @@ NIC_MEASURED_EMPTY: dict[str, tuple[FakeProxmoxNICVM, str]] = {
 async def test_every_nic_branch_that_knows_nothing_moved_says_so(
     case: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The other side of the pair above (V87), and the reason the two spellings both exist.
+    """The other side of the pair above, and the reason the two spellings both exist.
 
     A refused write is Proxmox saying it did not apply, a terminal non-`OK` task is Proxmox saying
     it one step later, a postflight reading the old line is the interface saying it, and a config
@@ -637,7 +637,7 @@ async def test_every_nic_branch_that_knows_nothing_moved_says_so(
 
 
 # --------------------------------------------------------------------------------------
-# `proxmox_reset_vm_password` (T27)
+# `proxmox_reset_vm_password`
 # --------------------------------------------------------------------------------------
 
 
@@ -667,7 +667,7 @@ async def test_a_confirmed_reset_states_a_credential_and_no_field(
 async def test_a_reset_proxmox_refused_delivers_no_credential(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The absence is the claim: NOA is saying the VM never got this password (V62).
+    """The absence is the claim: NOA is saying the VM never got this password.
 
     Same rule the payload's `yopass_url` follows and read off the same field, so the two cannot
     disagree about whether a live credential exists. Handing an operator a link to a password the
@@ -691,7 +691,7 @@ async def test_a_reset_proxmox_refused_delivers_no_credential(
 async def test_a_reset_that_may_be_live_delivers_the_credential_with_its_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The negative control for the case above (V87), and V62's own decision.
+    """The negative control for the case above, and V62's own decision.
 
     Proxmox accepted the write and the task never finished, so the password may be on the VM —
     and withholding the only copy of a live credential is a lockout NOA created. Without this
@@ -711,14 +711,14 @@ async def test_a_reset_that_may_be_live_delivers_the_credential_with_its_failure
 
 
 # --------------------------------------------------------------------------------------
-# `pmg_whitelist` (T29)
+# `pmg_whitelist`
 # --------------------------------------------------------------------------------------
 
 
 async def test_a_confirmed_add_states_the_line_it_wrote(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """List membership again, and both spellings of the address on the identity (V59).
+    """List membership again, and both spellings of the address on the identity.
 
     `total_entries` comes off the evidence, because it is the only place the whole list was
     counted: this runner reads the lines that *match* its target and never the rest, so a total
@@ -790,10 +790,10 @@ async def test_a_refused_write_states_the_empty_list_move_it_measured(
 async def test_a_list_that_could_not_be_read_states_no_list_move(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The other spelling (V87): the list was never seen, so nothing is said about it.
+    """The other spelling: the list was never seen, so nothing is said about it.
 
     This is the branch before any write. `mynetworks` did not answer, so "nothing moved" is not
-    a measurement NOA has — it is the absence of one, and the facet is absent to match (V86).
+    a measurement NOA has — it is the absence of one, and the facet is absent to match.
     """
     fixture, _ = whitelist_change_context(
         monkeypatch,

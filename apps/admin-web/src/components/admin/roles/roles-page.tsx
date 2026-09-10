@@ -20,9 +20,9 @@ import type { RoleRow } from './role-row'
 // controller owns every race guard.
 //
 // The legacy direct-grant migration control that shipped with the ported panel
-// is gone (T65). NOA has no per-user grant table and no migration endpoint —
+// is gone. NOA has no per-user grant table and no migration endpoint —
 // permissions flow role → user only, and `PUT /admin/users/{id}/tools` answers
-// 410 `direct_tool_grants_disabled` (V75). A button posting to a route that does
+// 410 `direct_tool_grants_disabled`. A button posting to a route that does
 // not exist is worse than no button: it reads as a capability.
 export function RolesPage() {
   const {

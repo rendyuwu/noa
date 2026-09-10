@@ -1,4 +1,4 @@
-"""Identity fields of a server row: names, base URLs, SSH hosts (T54, C13, V21, V66).
+"""Identity fields of a server row: names, base URLs, SSH hosts.
 
 Ported from `noa-old` branch `MCP` (`api/routes/server_validation.py`), which is where the
 three admin route files shared it. It sits in `core/` here rather than beside the routes for
@@ -10,14 +10,14 @@ Every function raises `ValueError`, not a `NoaError`, and that is deliberate: th
 as pydantic `field_validator`s, so pydantic collects them into a `RequestValidationError`
 and the shared handler answers 422 with `request_validation_error` + `request_id` (T64,
 V73). The failing *value* never reaches the body or the log — `redacted_validation_errors`
-keeps `loc` and `type` only (V8), which matters here because these fields sit in the same
+keeps `loc` and `type` only, which matters here because these fields sit in the same
 request body as an API token.
 
 Three fields, three different shapes, and the differences are all forced by what reads them
 afterwards:
 
 - **`name`** — `[A-Za-z0-9._:-]+`. This is what `resolve_*_server_ref` matches an operator's
-  word against (V18), and it travels into `choices` entries a model reads, so it stays to a
+  word against, and it travels into `choices` entries a model reads, so it stays to a
   character set that cannot be confused with a URL, a shell token or a UUID. `+` rather than
   `*` is V21's "whitespace-only required strings rejected": there is no blank name that
   passes.
@@ -45,7 +45,7 @@ import re
 from typing import Final
 from urllib.parse import urlsplit
 
-# `resolve_*_server_ref`'s vocabulary (V18). Same expression as `noa-old`.
+# `resolve_*_server_ref`'s vocabulary. Same expression as `noa-old`.
 _SERVER_NAME_RE: Final = re.compile(r"^[A-Za-z0-9._:-]+$")
 
 # One DNS label: alphanumeric ends, hyphens inside, 63 characters at most (RFC 1035 §2.3.1).
@@ -131,11 +131,11 @@ def normalize_whm_identity(value: str) -> str:
     """`strip().lower()` — the one comparison a WHM account name is ever made under.
 
     Two sites compare WHM identity strings and they must agree, so the normalisation is a
-    function rather than a repeated expression (V66):
+    function rather than a repeated expression:
 
     - the admin write refuses a reseller row whose `name` is not its `api_username` (V109(b));
     - an account CHANGE refuses before writing anything when the account's `owner` is not the
-      resolved row's `api_username` (V106).
+      resolved row's `api_username`.
 
     Lowercase because cPanel usernames are lowercase and an operator types what they read;
     stripped because a trailing space pasted into a form is not a different reseller. Not a

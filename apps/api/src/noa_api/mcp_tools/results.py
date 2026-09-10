@@ -1,12 +1,12 @@
-"""Tool result shapes and the error boundary in front of the model (T19, V18, V19).
+"""Tool result shapes and the error boundary in front of the model.
 
-Every exposed tool answers with the same envelope, ported from `noa-old` (C13):
+Every exposed tool answers with the same envelope, ported from `noa-old`:
 
     {"ok": True,  ...payload}
     {"ok": False, "error_code": "...", "message": "...", "choices": [...]}
 
 `ok` is the only field a caller has to branch on, `error_code` is the stable machine string
-and `message` is what an operator reads. `choices` appears only on an ambiguity (V18).
+and `message` is what an operator reads. `choices` appears only on an ambiguity.
 
 **Why a decorator and not middleware.** V19 says a raw exception must not reach the LLM,
 with two named mappings. That cannot be enforced from a FastMCP middleware, and the reason
@@ -53,7 +53,7 @@ ERROR_TIMEOUT = "timeout"
 # The `error_code` a failure that carries none falls back to. Verbatim from `noa-old`, and here
 # rather than beside one system's tools because every tool that resolves a `server_ref` or reads
 # a client's failure dict needs the same fallback — it started in `whm_read` and `whm_firewall`
-# already reached across for it, which is one import away from a second spelling (V66).
+# already reached across for it, which is one import away from a second spelling.
 ERROR_UNKNOWN = "unknown"
 
 MESSAGE_TOOL_EXECUTION_FAILED = (
@@ -64,9 +64,9 @@ MESSAGE_TIMEOUT = "The tool timed out before the target system answered. Try aga
 ToolPayload = dict[str, Any]
 
 # What an exposed tool may answer with. Most answer the envelope above and let fastmcp turn it
-# into structured content. A tool whose answer is a *surface* — the large-READ table (T20, V64),
-# and the CHANGE gate when its tools land (T32) — returns content blocks itself, because the
-# order of those blocks is part of what the operator is told (V25).
+# into structured content. A tool whose answer is a *surface* — the large-READ table,
+# and the CHANGE gate when its tools land — returns content blocks itself, because the
+# order of those blocks is part of what the operator is told.
 ToolAnswer = ToolResult | ToolPayload
 
 P = ParamSpec("P")
@@ -95,7 +95,7 @@ def tool_failure(
     """A refused or failed tool result.
 
     `choices` is omitted when empty rather than sent as `[]`: an empty list invites a model
-    to report "here are the options" when there are none (V18).
+    to report "here are the options" when there are none.
     """
     failure: ToolPayload = {"ok": False, "error_code": error_code, "message": message}
     if choices:
@@ -106,12 +106,12 @@ def tool_failure(
 def sanitize_tool_errors(
     tool_name: str,
 ) -> Callable[[Callable[P, Awaitable[AnswerT]]], Callable[P, Awaitable[AnswerT | ToolPayload]]]:
-    """Turn any exception out of a tool into a named structured failure (V19).
+    """Turn any exception out of a tool into a named structured failure.
 
     **The failure is always the envelope, whatever the success was.** A tool that answers with
     content blocks (T20's table surface) still fails as `{"ok": False, ...}`, which is what
     keeps one refusal shape in front of the model however the tool succeeds — and what lets
-    `status_for_payload` read a failure off any tool's result (V20).
+    `status_for_payload` read a failure off any tool's result.
 
     Three branches, narrowest first:
 
@@ -124,8 +124,8 @@ def sanitize_tool_errors(
     - anything else — `tool_execution_failed`.
 
     The real cause is logged, never returned: `detail` and tracebacks may name hosts, paths
-    and configuration (V8), and everything past this line is transcript the LibreChat admin
-    can read (V26).
+    and configuration, and everything past this line is transcript the LibreChat admin
+    can read.
     """
 
     def decorate(

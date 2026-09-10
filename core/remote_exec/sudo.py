@@ -1,12 +1,12 @@
-"""`sudo -n` escalation for remote commands (T14, V55).
+"""`sudo -n` escalation for remote commands.
 
 Ported from `noa-old` branch `MCP`, where these helpers sat in
 `whm/integrations/ssh.py` and the prefix itself was assembled per caller
 (`csf_cli.build_csf_command`, `imunify_cli.build_imunify_command`). Two changes, both
 required here:
 
-1. **Moved to `core/`.** PMG (T18) needs the same escalation as WHM (T16), and §T.14 names
-   `sudo -n` as `remote_exec`'s job. One home, ⊥ a copy per integration (V66).
+1. **Moved to `core/`.** PMG needs the same escalation as WHM, and §T.14 names
+   `sudo -n` as `remote_exec`'s job. One home, ⊥ a copy per integration.
 2. **The escalation decision is not a caller argument.** `noa-old` exposed
    `build_*_command(args, escalate=…)` and each call site passed
    `escalate=should_escalate(config)`. V55 is a biconditional — prefix ⟺ user ≠ `root` — and a
@@ -85,7 +85,7 @@ def build_remote_command(
     config: SSHConnectionConfig,
     env: Mapping[str, str] | None = None,
 ) -> str:
-    """Compose one shell-safe command string, escalating iff the SSH user is not root (V55).
+    """Compose one shell-safe command string, escalating iff the SSH user is not root.
 
     Token order matches `noa-old` exactly — environment assignments, then `sudo -n`, then the
     binary and its arguments:

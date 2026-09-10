@@ -1,4 +1,4 @@
-"""`whm_firewall_allowlist_remove` — the call that opens a question (T26).
+"""`whm_firewall_allowlist_remove` — the call that opens a question.
 
 The tool half: the guards, the in-process preflight, the no-op, the gate response and the mount.
 Its runner lives on the far side of V22's boundary and is asserted in
@@ -139,7 +139,7 @@ async def test_the_preflight_runs_inside_the_call_and_lands_on_the_row(
 
     The before-state is the allow entry the operator is deciding to delete, shown with the
     comment NOA wrote on it — uncut, because the card is the operator's own surface behind their
-    cookie and is one of the two places V96 deliberately does *not* withhold from (V27, V76).
+    cookie and is one of the two places V96 deliberately does *not* withhold from.
     """
     fixture, _ = release_context(monkeypatch, box=_allowlisted_box(csf=NOA_ALLOW_LINE))
 
@@ -180,7 +180,7 @@ async def test_the_recorded_arguments_are_the_two_the_schema_declares(
 
 
 # --------------------------------------------------------------------------------------
-# The no-op, and the bound on it (T22, T23, V86, V96)
+# The no-op, and the bound on it
 # --------------------------------------------------------------------------------------
 
 
@@ -239,7 +239,7 @@ async def test_an_address_blocked_but_not_allowed_is_also_a_no_op(
 async def test_an_allow_entry_a_block_outranks_still_opens_a_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The no-op's negative control, and the reason `allow_entry` exists (V87, T26).
+    """The no-op's negative control, and the reason `allow_entry` exists.
 
     The combined verdict here is `blocked`, because both backends resolve a conflict block-first
     — and there *is* an allow entry to remove. A no-op decided from the verdict would refuse to
@@ -459,7 +459,7 @@ async def test_only_an_ipv4_address_is_accepted(
 
 
 async def test_an_ipv4_address_is_not_refused(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The V54 guard's negative control (V87).
+    """The V54 guard's negative control.
 
     Without it, "every non-IPv4 target is refused" passes just as well against a tool that
     refuses every target.
@@ -622,7 +622,7 @@ async def test_the_mounted_call_opens_a_request_and_writes_no_tool_runs_row(
         )
 
     assert result.get("isError") is not True
-    # Both blocks survive the transport, in order (V24, V25).
+    # Both blocks survive the transport, in order.
     assert [block["type"] for block in result["content"]] == ["text", "resource"]
 
     request = tools.action_requests.only

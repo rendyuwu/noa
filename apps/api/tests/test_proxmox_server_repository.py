@@ -1,4 +1,4 @@
-"""`SQLProxmoxServerRepository` against a live database (T27).
+"""`SQLProxmoxServerRepository` against a live database.
 
 `test_proxmox_server_ref.py` and `test_proxmox_tools_reset_password.py` cover policy over
 in-memory doubles; this covers the SQL. The same split `test_whm_server_repository.py` and
@@ -73,7 +73,7 @@ async def insert(
     base_url: str | None = None,
     verify_ssl: bool | None = None,
 ) -> ProxmoxServer:
-    """One `proxmox_servers` row, written the way the admin routes will (T54)."""
+    """One `proxmox_servers` row, written the way the admin routes will."""
     server = ProxmoxServer(
         name=name,
         base_url=base_url or f"https://{name}.example.net:8006",
@@ -125,7 +125,7 @@ async def test_get_by_id_answers_none_for_a_missing_row(
     repository: SQLProxmoxServerRepository,
 ) -> None:
     """`None`, not a raise: `resolve_proxmox_server_ref` turns it into `host_not_found` (§V.18),
-    and on the CHANGE path (T27) a raise here would reach an operator as a failed run rather than
+    and on the CHANGE path a raise here would reach an operator as a failed run rather than
     as a question they can answer."""
     assert await repository.get_by_id(uuid4()) is None
 

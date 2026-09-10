@@ -1,4 +1,4 @@
-"""`NoaTokenVerifier`, the fastmcp adapter (T11 — C5, C20, V2, V3, V4, V5, V8, R1-R5).
+"""`NoaTokenVerifier`, the fastmcp adapter.
 
 `test_mcp_identity_resolver.py` owns the gate rules. This file owns everything that is
 about fastmcp rather than about policy: whether the header is readable where R4 says it
@@ -83,7 +83,7 @@ MCP_ACCEPT = "application/json, text/event-stream"
 
 @contextmanager
 def http_context(headers: dict[str, str] | None = None) -> Iterator[None]:
-    """This file's spelling of `support.mcp_identity.http_request_context` (V66).
+    """This file's spelling of `support.mcp_identity.http_request_context`.
 
     Shared with `test_mcp_request_auth.py` rather than copied: both files need a request
     whose headers they chose, and two copies of an ASGI scope literal is two places for
@@ -175,7 +175,7 @@ async def test_access_token_carries_the_digest_not_the_plaintext() -> None:
 
 
 async def test_access_token_identifies_the_user_not_the_token() -> None:
-    """`streamable_http_manager` pins a session to `client_id`/`subject` (R8).
+    """`streamable_http_manager` pins a session to `client_id`/`subject`.
 
     Keying either on the token id would 404 a live session the moment an operator rotated
     their credential, so both carry the user id and two tokens for one operator agree.

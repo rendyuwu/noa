@@ -1,4 +1,4 @@
-"""Operator word → one server of any system, or a structured refusal (T27 — V18, V21, V66).
+"""Operator word → one server of any system, or a structured refusal.
 
 **This module is the answer to a question T19 parked and T31 restated.** `noa-old` had one
 `server_ref.py` per system; this repo ported two of them and left a note in the package
@@ -18,7 +18,7 @@ What varies between the three is small enough to name:
 Everything else is policy, and the policy is what must not drift: id, then name, then host;
 **any** tie is `choices` rather than a pick; a well-formed id that matches nothing stops rather
 than falling through; both fallbacks compare case-insensitively; a whitespace-only reference is
-a bad call rather than a wildcard (V21).
+a bad call rather than a wildcard.
 
 **Order matters and is not cosmetic.**
 
@@ -32,7 +32,7 @@ a bad call rather than a wildcard (V21).
   a naming problem for a human, not a reason to prefer the derived value.
 
 Case-insensitive comparison is what makes the name tie *reachable*: every `name` column is
-`unique=True` (T4), but Postgres uniqueness is case-sensitive, so `Node1` and `node1` can both
+`unique=True`, but Postgres uniqueness is case-sensitive, so `Node1` and `node1` can both
 exist and both match `NODE1`. Dropping the ambiguity branch because "the column is unique" would
 be wrong for exactly that case.
 
@@ -41,7 +41,7 @@ because they are the strings the model and the admin panel already branch on. Th
 rather than three times; `whm_ref`, `pmg_ref` and `proxmox_ref` re-export them so no caller's
 import path changed when this module landed.
 
-**The resolved row keeps its own type** (T21). Matching only ever reads `id`, `name` and the host
+**The resolved row keeps its own type**. Matching only ever reads `id`, `name` and the host
 accessor's output — the `ServerRowLike` bound — but a tool that resolves a server then *calls* it
 needs the credentials off the row it resolved, and re-reading it by id would let a second query
 disagree with the list the tie was judged against. So this is generic in the row, and a caller
@@ -92,7 +92,7 @@ class ServerRefRepository(Protocol[RowT_co]):
     Structurally what `WHMServerReadRepository`, `PMGServerReadRepository` and
     `ProxmoxServerReadRepository` already are, named here so this module depends on none of
     them — the per-system repositories keep their own names because each also states which
-    `to_safe_dict` renders it outward (V8), which is a claim about that table and not about
+    `to_safe_dict` renders it outward, which is a claim about that table and not about
     resolution.
     """
 
@@ -135,7 +135,7 @@ def hostname_of(base_url: str) -> str | None:
 
 
 def required_message(subject: str) -> str:
-    """The `host_required` sentence for one system (V21)."""
+    """The `host_required` sentence for one system."""
     return f"{subject} server reference is required"
 
 
@@ -147,11 +147,11 @@ async def resolve_server_ref(
     host_of: Callable[[RowT], str | None],
     describe: Callable[[RowT], dict[str, str]],
 ) -> ServerRefResolution[RowT]:
-    """Resolve `server_ref` to one server, or refuse with a named code (V18, V21).
+    """Resolve `server_ref` to one server, or refuse with a named code.
 
     Never raises for a bad reference: every outcome is a `ServerRefResolution` the tool layer
     turns into a structured result, because "I could not tell which server" is information the
-    model can act on, while an exception is not (V19).
+    model can act on, while an exception is not.
 
     `subject` is the noun in the four messages ("WHM", "PMG", "Proxmox"). `host_of` may answer
     `None` for a row whose host does not parse, and such a row simply does not match — it is not

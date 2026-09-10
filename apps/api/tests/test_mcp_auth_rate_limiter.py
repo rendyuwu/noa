@@ -1,4 +1,4 @@
-"""`McpAuthRateLimiter` policy guards (T12, V9).
+"""`McpAuthRateLimiter` policy guards.
 
 `test_login_rate_limiter.py` covers the arithmetic shared through `AttemptLimiter` — window
 rollover, the block boundary, the count restarting at 1. This file covers only what is
@@ -88,7 +88,7 @@ async def fail(
 
 
 async def test_a_failure_lands_in_both_buckets() -> None:
-    """Either key alone leaves a hole, so both are written (V9)."""
+    """Either key alone leaves a hole, so both are written."""
     limiter, store = build_limiter()
 
     await fail(limiter, times=1)
@@ -265,7 +265,7 @@ def test_non_credential_denials_do_not_count(error: McpAuthError) -> None:
 
 
 def test_a_directory_outage_does_not_count() -> None:
-    """T8's lesson: counting an LDAP outage locks every operator out for the block (V4)."""
+    """T8's lesson: counting an LDAP outage locks every operator out for the block."""
     assert counts_against_limit(LdapUnavailableError("directory unreachable")) is False
 
 

@@ -1,4 +1,4 @@
-"""The one door onto the firewall backends (T68, V57).
+"""The one door onto the firewall backends.
 
 `availability` answers *which backends work here*. This module is what every firewall
 operation goes through to act on that answer, and it is the place the zero-backend refusal
@@ -27,10 +27,10 @@ tools here" sends them to install software that is already installed.
 `WHMFirewallCLIError` rather than a class per code: `errors.py` already covers "a firewall
 backend command could not be run, or could not be trusted to have run" — which is exactly the
 zero-usable-backend case — already lists `ssh_sudo_required` among the codes it raises, and is
-already mapped once to 502 for the routes that reach it (V73). Which failure it is stays in
+already mapped once to 502 for the routes that reach it. Which failure it is stays in
 `error_code`, as it does for every other code in that tree. On the MCP tool path
 `sanitize_tool_errors` turns the raise into `{"ok": false, "error_code": …, "message": …}`
-with the code intact (V19).
+with the code intact.
 """
 
 from __future__ import annotations
@@ -92,7 +92,7 @@ async def run_on_usable_backends(
     csf: Callable[[], Awaitable[T]],
     imunify: Callable[[], Awaitable[T]],
 ) -> dict[str, T]:
-    """Run one operation on every usable backend at once, keyed by backend (V57).
+    """Run one operation on every usable backend at once, keyed by backend.
 
     The gate runs first, so this never returns an empty mapping — the caller cannot mistake
     "nothing to do" for "done".

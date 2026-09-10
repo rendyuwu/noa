@@ -43,7 +43,7 @@ from support.mcp_tokens import LABEL, OTHER_LABEL
 from support.rbac import ROLE_SUPPORT
 
 # The three admin routes, as (method, path template, body). Parametrized rather than repeated so
-# a fourth route added without its own gate test fails these (V13).
+# a fourth route added without its own gate test fails these.
 ADMIN_ROUTES: tuple[tuple[str, str, dict[str, Any] | None], ...] = (
     ("GET", "/admin/users/{user}/tokens", None),
     ("POST", "/admin/users/{user}/tokens", {"label": LABEL}),
@@ -82,7 +82,7 @@ def _plaintexts_in(text: str) -> bool:
 
 
 def _without_request_id(body: dict[str, Any]) -> dict[str, Any]:
-    """The error body minus the one field that must differ per request (V73, V87)."""
+    """The error body minus the one field that must differ per request."""
     return {key: value for key, value in body.items() if key != "request_id"}
 
 
@@ -305,7 +305,7 @@ def test_revoking_another_users_token_answers_the_same_404_as_an_unknown_id() ->
 
     Compared field for field rather than by status alone — a differing `error_code` or `message`
     would be the same oracle wearing a different hat. `request_id` differs per request by
-    design (V73), so it is dropped from the comparison and asserted present instead.
+    design, so it is dropped from the comparison and asserted present instead.
     """
     with admin_harness() as harness:
         harness.sign_in()
@@ -326,7 +326,7 @@ def test_revoking_another_users_token_answers_the_same_404_as_an_unknown_id() ->
 
 
 def test_the_two_error_bodies_would_have_separated_if_they_differed() -> None:
-    """The negative control for the comparison above (V87).
+    """The negative control for the comparison above.
 
     Without it, `_without_request_id(a) == _without_request_id(b)` also passes for a comparison
     that has eaten every distinguishing field. An unknown *user* is a genuinely different
@@ -357,7 +357,7 @@ def test_a_list_for_an_unknown_user_is_404_not_an_empty_list() -> None:
     assert response.json()["error_code"] == "admin_user_not_found"
 
 
-# --- The self-service surface (V6, V2) ---
+# --- The self-service surface ---
 
 
 def test_the_me_routes_reach_only_the_callers_own_tokens() -> None:
@@ -437,7 +437,7 @@ def test_mint_and_revoke_each_record_one_audit_event() -> None:
     """The actor is the signed-in admin, resolved from the cookie and never from the body.
 
     Metadata carries ids, prefix and label so a reader can match an event to the row they see;
-    it carries no digest and no plaintext (V2, V8).
+    it carries no digest and no plaintext.
     """
     with admin_harness() as harness:
         harness.sign_in()
@@ -488,7 +488,7 @@ def test_the_token_read_routes_record_nothing() -> None:
 
 def test_a_mint_and_a_revoke_each_commit_once() -> None:
     """V100: `get_db_session` never commits, so a write that does not end its own transaction
-    answers 200 over a rollback (B10) — here, handing back a credential for a row that
+    answers 200 over a rollback — here, handing back a credential for a row that
     disappears at teardown. One commit per mutation, not one per statement."""
     with admin_harness() as harness:
         harness.sign_in()

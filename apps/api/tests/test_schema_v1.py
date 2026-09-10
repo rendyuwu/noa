@@ -1,4 +1,4 @@
-"""Schema v1 model guards (T4).
+"""Schema v1 model guards.
 
 No DB needed — these assert on `Base.metadata` and on the safe-view helpers.
 Live migration behaviour is covered by `test_migrations.py`.
@@ -34,11 +34,11 @@ SCHEMA_V1_TABLES = {
 
 # Added after schema v1 by the task named alongside each.
 LATER_TABLES = {
-    "login_rate_limits": "T8 (V9)",
-    "tool_runs": "T35 (V20, V45-V47)",
-    "action_requests": "T34 (V20, V32, V33, V43)",
-    "action_receipts": "T36 (V46)",
-    "tool_result_tables": "T56 (V64, V85)",
+    "login_rate_limits": "T8",
+    "tool_runs": "T35",
+    "action_requests": "T34",
+    "action_receipts": "T36",
+    "tool_result_tables": "T56",
 }
 
 # Named so the assertion below says what it is guarding against rather than only
@@ -46,8 +46,8 @@ LATER_TABLES = {
 # means a migration landed ahead of the task that specifies its columns.
 NOT_YET_TABLES = {"audit_log"}
 
-# Columns that hold Fernet ciphertext (C7, V48). None may ever surface in a
-# `to_safe_dict()` payload (V2, V8).
+# Columns that hold Fernet ciphertext. None may ever surface in a
+# `to_safe_dict()` payload.
 SECRET_COLUMNS = {
     "whm_servers": {
         "api_token",
@@ -105,7 +105,7 @@ def test_mcp_token_carries_tofu_and_revalidation_fields() -> None:
     """V3 binding + V4 staleness live on the token row."""
     columns = Base.metadata.tables["mcp_tokens"].c
 
-    # NULL until the first `X-Noa-LibreChat-User` header binds it (C20).
+    # NULL until the first `X-Noa-LibreChat-User` header binds it.
     assert columns.librechat_user_id.nullable is True
     assert columns.last_ldap_check_at.nullable is True
     assert columns.expires_at.nullable is True
@@ -189,7 +189,7 @@ def test_server_safe_dict_reports_presence_never_values(
 
 
 def test_secret_columns_are_unbounded_text() -> None:
-    """Fernet output length tracks plaintext; a VARCHAR cap would truncate (V48)."""
+    """Fernet output length tracks plaintext; a VARCHAR cap would truncate."""
     for table_name, columns in SECRET_COLUMNS.items():
         table = Base.metadata.tables[table_name]
         for column_name in columns:

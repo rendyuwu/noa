@@ -11,7 +11,7 @@ import {
 } from './audit-model'
 import { DEFAULT_ACTION_REQUEST_FILTERS, DEFAULT_TOOL_FILTERS } from './types'
 
-// The API-facing half of the audit list (T55). What matters here is that the
+// The API-facing half of the audit list. What matters here is that the
 // query string the panel builds uses the parameter names the API accepts —
 // `apps/api/tests/test_admin_audit_routes.py::FILTER_QUERIES` walks the same
 // seven — so the offered set and the accepted set are each asserted once instead

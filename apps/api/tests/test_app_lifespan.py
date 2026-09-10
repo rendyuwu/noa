@@ -1,4 +1,4 @@
-"""App startup guards (T8, T3).
+"""App startup guards.
 
 T8 requires the long-lived services be constructed once, in the lifespan. The reason is
 specific rather than stylistic: `JWTService.__init__` allowlists the JWT algorithm and
@@ -64,7 +64,7 @@ def spy_on_jwt_service(monkeypatch: pytest.MonkeyPatch) -> list[JWTService]:
     return built
 
 
-# --- Built once (T8) ---
+# --- Built once ---
 
 
 def test_jwt_service_built_once_at_startup(
@@ -233,7 +233,7 @@ def test_the_reaper_starts_with_the_app_and_stops_before_the_engine(
 
     All three settings are asserted, and they are three settings on purpose — how often it looks
     is a resolution, how long a run may sit `STARTED` is a lifetime, and how much one pass may
-    resolve is a bound (V92). A batch size that never left `core.config` would be an unbounded
+    resolve is a bound. A batch size that never left `core.config` would be an unbounded
     pass with a documented limit.
     """
     journal: list[str] = []
@@ -278,7 +278,7 @@ def test_the_reaper_starts_with_the_app_and_stops_before_the_engine(
 def test_the_executor_is_stopped_before_the_engine_and_before_the_loops(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Shutdown order, and every part of it is load-bearing (V30).
+    """Shutdown order, and every part of it is load-bearing.
 
     A change in flight holds a session, so the executor has to finish before `dispose()` like
     everything else. It is stopped *first* because cancelling it is what produces the leftover
@@ -444,7 +444,7 @@ def test_mcp_token_routes_are_mounted_on_the_real_app(pinned_settings: Settings)
     assert set(schema["/me/mcp-tokens/{token_id}"]) == {"delete"}
 
 
-# --- T66: the tool-list notifier reaches the engine (V74) ---
+# --- T66: the tool-list notifier reaches the engine ---
 
 
 def test_the_app_publishes_the_real_tool_list_notifier(pinned_settings: Settings) -> None:

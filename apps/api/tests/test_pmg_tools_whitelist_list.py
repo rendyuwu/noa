@@ -1,10 +1,10 @@
-"""`pmg_whitelist_list` — the whitelist that answers with a surface, not with rows (T30).
+"""`pmg_whitelist_list` — the whitelist that answers with a surface, not with rows.
 
-The V64 half of the PMG whitelist pair. `pmg_whitelist_search` (T31) answers a membership
+The V64 half of the PMG whitelist pair. `pmg_whitelist_search` answers a membership
 question in the transcript; this one answers "what is on this node?" by parking its entries in
 `tool_result_tables` and handing back a summary plus the address of the page that renders them.
 
-**The second producer of that surface**, after `whm_list_accounts` (T20), and the reason this
+**The second producer of that surface**, after `whm_list_accounts`, and the reason this
 file exists as well as that one: V64 says the table surface is a shared capability rather than
 a per-tool special case, and a claim like that is only checkable once two tools from two
 different systems route through it with nothing added for either.
@@ -89,7 +89,7 @@ from support.servers import (
 READ_COMMAND = f"TERM=dumb {PMGSH_BINARY} ls {MYNETWORKS_PATH}"
 
 # A CIDR that exists nowhere else in this suite, so finding it in a serialized tool result can
-# only mean the rows travelled with it (V64).
+# only mean the rows travelled with it.
 SENTINEL_CIDR = "203.0.113.77/32"
 
 

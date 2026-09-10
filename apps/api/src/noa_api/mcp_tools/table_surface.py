@@ -1,4 +1,4 @@
-"""A large READ's answer: a summary, a URL, and the rows parked out of sight (T56 — V64).
+"""A large READ's answer: a summary, a URL, and the rows parked out of sight.
 
 V16 splits the tool surface by risk; V64 splits the READ half by *size*. A bounded question —
 `whm_search_accounts`, `pmg_whitelist_search` — answers in the transcript. A listing does
@@ -7,8 +7,8 @@ the model costs tokens for a body no human reads there anyway. So the rows go to
 `tool_result_tables` (`core.results.tables`) and the tool answers with a summary plus the
 address of the page that renders them.
 
-**Two producers, and nothing here is either of theirs**: `whm_list_accounts` (T20) over HTTP
-and `pmg_whitelist_list` (T30) over SSH hand rows to the same two calls, declare their own
+**Two producers, and nothing here is either of theirs**: `whm_list_accounts` over HTTP
+and `pmg_whitelist_list` over SSH hand rows to the same two calls, declare their own
 columns and their own order, and add no branch to this module. That is what V64 means by a
 shared capability rather than a per-tool special case, and the second producer is what turned
 it from a claim into something a test can fail.
@@ -18,35 +18,35 @@ back the token and the counts; `build_table_result` turns those into the tool re
 for the reason T32/T33 are: the first touches the database and the second is pure, so the
 shape of what a model sees is testable without one.
 
-**Same mechanism as the approval card, not a second one** (V64, V37). The iframe fields come
+**Same mechanism as the approval card, not a second one**. The iframe fields come
 from `noa_api.mcp_tools.ui_resource` — `ui://` scheme, `text/uri-list`, URL as the body — so
 "how NOA renders inside LibreChat's frame" has one spelling. Only the `ui://` name and the
 route differ.
 
-**The text block states the bound** (V85). Whatever the cap dropped is said in the sentence
+**The text block states the bound**. Whatever the cap dropped is said in the sentence
 the model reads, because the model reports what it was handed: "there are twenty accounts" on
 a box with two hundred is a fabrication the *tool* authored. The counts come back from the
 write rather than from a second read of the row that was just written.
 
-**And it is an address, not a link** (V25, V94). No markup: a `target="_blank"` inside
+**And it is an address, not a link**. No markup: a `target="_blank"` inside
 LibreChat's frame opens nothing at all under one of the two render sites' sandboxes, silently
 (R32), so the door that always works is text a human can copy. The wording is one string for
 the whole surface, the way the CHANGE gate's is.
 
 **Nothing about the rows reaches here.** No sample, no first record, no column values — the
-tool result persists in LibreChat's MongoDB (V26), and a "preview row" would be exactly the
+tool result persists in LibreChat's MongoDB, and a "preview row" would be exactly the
 ops data V64 exists to keep out of it.
 
-**And a counts-only envelope beside them, unlike the CHANGE gate** (T20 — V20, V45). T32(b)
+**And a counts-only envelope beside them, unlike the CHANGE gate**. T32(b)
 returns content only, for two reasons: R29 measured a content-only result, and a CHANGE tool's
-call skips the audit middleware (V46), so *no reader is owed an envelope*. The second reason is
+call skips the audit middleware, so *no reader is owed an envelope*. The second reason is
 false here. This surface is a READ, `ToolRunAuditMiddleware` records every READ, and it reads
 the run's status and summary off `structured_content` — where `None` is FAILED, because a
 result that cannot be read as a success is not evidence of one (`core.audit.summaries`). So a
 content-only large READ would be a successful call written into the audit trail as a failure
 with nothing in its summary, silently, for the one tool that answers with thousands of rows.
 
-What the envelope carries is the two counts and the flag, and nothing else: no rows (V64), no
+What the envelope carries is the two counts and the flag, and nothing else: no rows, no
 token, and **no URL** — the half of T32(b)'s reason that does hold here is that an envelope must
 not become a third place the address lives.
 """
@@ -80,7 +80,7 @@ TABLE_SURFACE_PATH: Final = "/tables"
 UI_RESOURCE_URI_PREFIX: Final = "ui://noa/table/"
 
 # One structured event per parked table. Identifiers and counts only — never a row, never a
-# column value (V8, V26).
+# column value.
 LOG_RESULT_TABLE_PARKED: Final = "mcp_result_table_parked"
 
 # The write failed, so the READ has no surface to point at and is refused rather than
@@ -91,7 +91,7 @@ logger = structlog.get_logger(__name__)
 
 
 def table_surface_url(token: str, *, embed_base_url: str) -> str:
-    """The address of one parked table (T56, V26).
+    """The address of one parked table.
 
     **The token and nothing else.** No tool name, no server, no row count: this string ends up
     in a tool result that persists in LibreChat's MongoDB, so everything in it is readable by
@@ -113,10 +113,10 @@ async def park_table_result(
     rows: Sequence[Mapping[str, object]],
     context: McpToolContext,
 ) -> ParkedTable:
-    """Write one large READ's rows where the tool result can point at them (V8, V64, V85).
+    """Write one large READ's rows where the tool result can point at them.
 
     The requester is read here, not passed in: `current_mcp_identity()` is who the call
-    authenticated as, and it is the same column the surface matches on later (V27). A tool
+    authenticated as, and it is the same column the surface matches on later. A tool
     that could pass a requester would be a tool that could park a table under somebody else's
     name — the argument the CHANGE gate makes for reading its own caller.
 
@@ -171,11 +171,11 @@ def build_table_result(
     summary: str,
     context: McpToolContext,
 ) -> ToolResult:
-    """Shape a large READ's result: the summary text, then the table's iframe (T56, V64).
+    """Shape a large READ's result: the summary text, then the table's iframe.
 
     Two content blocks, text **first**, exactly as the CHANGE gate ships its pair: the frame
     is where the operator reads the table, and the address in the text is what remains when
-    the frame does not load (V25). Asserted on the count and the order, because "a resource
+    the frame does not load. Asserted on the count and the order, because "a resource
     exists" stays true when the text block is the half that got dropped.
 
     `summary` is the tool's own one-line answer — what it looked at and what it found — and
@@ -196,7 +196,7 @@ def build_table_result(
 
 
 def table_result_envelope(parked: ParkedTable) -> ToolPayload:
-    """The counts a parked table's result carries as structured content (V20, V45, V85).
+    """The counts a parked table's result carries as structured content.
 
     `tool_ok` rather than a dict literal, so this envelope is the one every other tool answers
     with: `ok` is the field a status is read off, and a surface that spelled its own success
@@ -214,7 +214,7 @@ def table_result_envelope(parked: ParkedTable) -> ToolPayload:
 
 
 def _table_result_text(parked: ParkedTable, *, summary: str, url: str) -> str:
-    """The text block, one wording for the whole surface (V25, V85, V94).
+    """The text block, one wording for the whole surface.
 
     Four things, and the order is what a reader needs in the order they need it: what the
     READ found, where the rows are, that the address is copyable, and what the page does not
@@ -233,7 +233,7 @@ def _table_result_text(parked: ParkedTable, *, summary: str, url: str) -> str:
 
 
 def _rows_sentence(parked: ParkedTable) -> str:
-    """How many matched, and how many the page holds (V85).
+    """How many matched, and how many the page holds.
 
     The total is the count before the cap, so a capped table never reads like a complete one.
     Both numbers are stated even when they agree, so "1,240 of 1,240" and "5,000 of 12,000"

@@ -1,6 +1,6 @@
-"""Server-side password generation (T15, C15, V49).
+"""Server-side password generation.
 
-Copied from `noa-old` branch `MCP` (C13, V69). Two properties carry the whole file.
+Copied from `noa-old` branch `MCP`. Two properties carry the whole file.
 
 **Generated here, never argued in.** `_generate_password` is a code-level helper, ⊥ an MCP
 tool and ⊥ reachable from a tool argument. `noa-old` GH #91 is the reason: the reset tool used
@@ -37,7 +37,7 @@ _DEFAULT_PASSWORD_LENGTH: Final[int] = 24
 
 
 def _generate_password(length: int = _DEFAULT_PASSWORD_LENGTH) -> str:
-    """Return a cryptographically random password (V49).
+    """Return a cryptographically random password.
 
     `secrets.choice`, ⊥ `random`: this value protects a customer VM. Internal helper — the
     plaintext it returns must not be logged, persisted, or returned across the LLM boundary.

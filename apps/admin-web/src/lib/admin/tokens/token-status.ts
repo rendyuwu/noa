@@ -34,7 +34,7 @@ export function deriveTokenStatus(token: McpToken): TokenStatus {
   return expiresAt.getTime() <= Date.now() ? 'Inactive' : 'Active'
 }
 
-// `librechat_user_id` NULL means TOFU binding has not happened yet (C20, V3):
+// `librechat_user_id` NULL means TOFU binding has not happened yet:
 // the token has been minted but no LibreChat identity has claimed it. That is a
 // normal state for a token an operator has just pasted into their config and not
 // yet used, so it reads as a fact, not as a fault.

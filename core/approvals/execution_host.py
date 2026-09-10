@@ -1,4 +1,4 @@
-"""The async host an approval hands its run to (T38 — V29, V30).
+"""The async host an approval hands its run to.
 
 `ApprovedChangeExecutor` is the seam T37 wired and left filled with a placeholder. This is the
 real implementation, and V30 fixes its shape: an **in-process asyncio task** with its **own
@@ -7,13 +7,13 @@ session**, not a worker process, not a queue, not a cron entry.
 **Why in-process.** The alternative is a second deployable, and everything it would need is
 already here: the session factory, the integration layer, the settings. What NOA gains from a
 broker — durability across a restart — it already has in the database, because `action_requests`
-is `APPROVED` and `tool_runs` is `STARTED` before this is ever called (V29), and the reaper is
+is `APPROVED` and `tool_runs` is `STARTED` before this is ever called, and the reaper is
 what resolves the pair a dead process leaves behind. A queue would add an outage mode without
 removing one.
 
 **`start` returns as soon as the task is scheduled.** That is what makes the approve endpoint a
 202: the decision is durable, the change has not finished, and the embed polls the run to a
-terminal state (V29, T42). `start` deliberately does not await the execution — an approval that
+terminal state. `start` deliberately does not await the execution — an approval that
 waited for a slow SSH round trip would hold the operator's request open and time out in front
 of them, for a change that is already authorised and recorded.
 
@@ -71,13 +71,13 @@ def execution_task_name(tool_run_id: UUID) -> str:
 
 
 class AsyncioApprovedChangeExecutor:
-    """`ApprovedChangeExecutor` over in-process asyncio tasks (V29, V30).
+    """`ApprovedChangeExecutor` over in-process asyncio tasks.
 
     One per app, held on `AppRuntime` — a per-request executor would mean a per-request set of
     outstanding tasks, and nothing would be left to cancel them at shutdown.
 
     `runners` is the tool-name → `ChangeRunner` map (`noa_api.mcp_tools.change_runners`). It
-    covers the CHANGE tools that exist (T22, T23) and grows with T25-T29; an unknown name is a
+    covers the CHANGE tools that exist and grows with T25-T29; an unknown name is a
     named terminal failure rather than a silent one — see `core.approvals.execution`.
     """
 
@@ -104,7 +104,7 @@ class AsyncioApprovedChangeExecutor:
         return len(self._tasks)
 
     async def start(self, *, tool_run_id: UUID, action_request_id: UUID) -> None:
-        """Schedule the execution and return (V29).
+        """Schedule the execution and return.
 
         Returns once the task exists, never once the change is done. A failure to *schedule*
         propagates to the caller, where `ActionDecisionService._hand_off` logs and swallows it
@@ -121,7 +121,7 @@ class AsyncioApprovedChangeExecutor:
         task.add_done_callback(self._tasks.discard)
 
     async def stop(self) -> None:
-        """Cancel every outstanding execution and wait for them (V30).
+        """Cancel every outstanding execution and wait for them.
 
         Awaited rather than fired and forgotten: the lifespan disposes the engine right after
         this returns, and an execution still in flight would then be running against a
@@ -144,7 +144,7 @@ class AsyncioApprovedChangeExecutor:
             logger.warning(LOG_EXECUTION_CANCELLED, count=cancelled)
 
     async def _execute(self, *, tool_run_id: UUID, action_request_id: UUID) -> None:
-        """One execution, in its own session (V30).
+        """One execution, in its own session.
 
         Swallows what the service raises, because there is no caller left to answer: the
         approve request returned a 202 long ago and the state lives on the row. What is

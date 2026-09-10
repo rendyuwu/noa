@@ -8,7 +8,7 @@ paths. A handler here resolves the actor, calls one service method, and shapes t
 
 **Two routers, one module.** `admin_router` acts on `{user_id}` from the path behind
 `require_admin`; `me_router` acts on the caller's own id behind `require_session_user`. They
-share `McpTokenResponse` and `_to_token_response` rather than copying them (V66), and that is
+share `McpTokenResponse` and `_to_token_response` rather than copying them, and that is
 the point of keeping them together: the shape an operator sees of their own token and the shape
 an admin sees of someone else's are the same shape, so a field added to one cannot appear in
 one surface and not the other.
@@ -34,7 +34,7 @@ than redacted.
 documented there: the credential grants nothing while `is_active=False` (V11 zeroes their
 permissions, V1 re-checks per request), and setting an operator up before activating them is a
 legitimate order of operations. Note the asymmetry: `/me` is unreachable for such an operator
-anyway, because `require_session_user` refuses their session first (V6).
+anyway, because `require_session_user` refuses their session first.
 """
 
 from __future__ import annotations
@@ -53,7 +53,7 @@ me_router = APIRouter(prefix="/me", tags=["me"])
 
 
 class McpTokenResponse(BaseModel):
-    """One `mcp_tokens` row as every read path returns it (V2).
+    """One `mcp_tokens` row as every read path returns it.
 
     `token_prefix` is the display fragment — the public marker plus eight characters, with
     ~208 bits unrevealed — so an admin can match a row to the credential in a config file
@@ -61,7 +61,7 @@ class McpTokenResponse(BaseModel):
 
     The three nullable timestamps are the ones that make a token worth revoking or not:
     `last_used_at` NULL means it has never authenticated a request, `librechat_user_id` NULL
-    means TOFU binding has not happened yet (C20, V3), and `expires_at` NULL means the row is
+    means TOFU binding has not happened yet, and `expires_at` NULL means the row is
     the only thing retiring it.
     """
 
@@ -73,13 +73,13 @@ class McpTokenResponse(BaseModel):
     last_used_at: str | None
     last_ldap_check_at: str | None
     expires_at: str | None
-    # Not nullable, unlike the four above: `created_at` is a server default (T4), so a row that
+    # Not nullable, unlike the four above: `created_at` is a server default, so a row that
     # exists has one.
     created_at: str
 
 
 class McpTokensResponse(BaseModel):
-    """`GET` on either router. Newest first, ordered in the statement (T10)."""
+    """`GET` on either router. Newest first, ordered in the statement."""
 
     tokens: list[McpTokenResponse]
 
@@ -97,7 +97,7 @@ class MintTokenRequest(BaseModel):
 
 
 class MintedTokenResponse(BaseModel):
-    """`POST` answer: the row, plus the plaintext, once (V2).
+    """`POST` answer: the row, plus the plaintext, once.
 
     The one place in NOA a token plaintext crosses a response boundary. It is not stored, not
     logged, and not recoverable — `MintedMcpToken` even hides it from `repr()` so a traceback
@@ -138,7 +138,7 @@ def _to_tokens_response(views: list[McpTokenView]) -> McpTokensResponse:
     return McpTokensResponse(tokens=[_to_token_response(view) for view in views])
 
 
-# --- Admin surface: any operator's tokens (V13) ---
+# --- Admin surface: any operator's tokens ---
 
 
 @admin_router.get("/users/{user_id}/tokens", response_model=McpTokensResponse)
@@ -147,7 +147,7 @@ async def list_user_tokens(
     admin_user: AdminUserDep,
     tokens: McpTokenServiceDep,
 ) -> McpTokensResponse:
-    """One operator's MCP tokens (T53 — V2, V13).
+    """One operator's MCP tokens.
 
     404 `user_not_found` for an absent operator rather than an empty list: "holds no tokens"
     and "no such user" are different answers, and collapsing them would render a stale panel
@@ -163,7 +163,7 @@ async def mint_user_token(
     admin_user: AdminUserDep,
     tokens: McpTokenServiceDep,
 ) -> MintedTokenResponse:
-    """Mint a token for one operator; return the plaintext once (T53 — V2, V14).
+    """Mint a token for one operator; return the plaintext once.
 
     200 rather than 201: there is no `Location` for the created row — no route reads a token by
     id, by design, because the only useful read is the list and the only useful body is the one
@@ -171,7 +171,7 @@ async def mint_user_token(
 
     `actor_email` is the admin's, not the target's: the audit event answers "who issued this
     credential", which for a token minted on someone else's behalf is the question worth
-    logging (V14). The event carries ids, prefix and label, never the digest or the plaintext
+    logging. The event carries ids, prefix and label, never the digest or the plaintext
     (V2, V8).
     """
     minted = await tokens.mint(user_id, label=payload.label, actor_email=admin_user.email)
@@ -188,7 +188,7 @@ async def revoke_user_token(
     admin_user: AdminUserDep,
     tokens: McpTokenServiceDep,
 ) -> RevokeTokenResponse:
-    """Revoke one token (T53 — V2, V14).
+    """Revoke one token.
 
     Both ids reach the WHERE clause, so a `token_id` belonging to a different operator is not
     deleted and answers 404 — the same 404 an id that never existed gets. That matters even
@@ -199,7 +199,7 @@ async def revoke_user_token(
     return RevokeTokenResponse(ok=True)
 
 
-# --- Self-service surface: the caller's own tokens (V6) ---
+# --- Self-service surface: the caller's own tokens ---
 
 
 @me_router.get("/mcp-tokens", response_model=McpTokensResponse)
@@ -207,10 +207,10 @@ async def list_own_tokens(
     current_user: SessionUserDep,
     tokens: McpTokenServiceDep,
 ) -> McpTokensResponse:
-    """The caller's own MCP tokens (T53 — V2, V6).
+    """The caller's own MCP tokens.
 
     The id comes off the resolved session, never off the request, so there is nothing to
-    substitute. `require_session_user` re-read the `users` row on the way in (V6), which is
+    substitute. `require_session_user` re-read the `users` row on the way in, which is
     what stops a disabled operator from listing credentials with a cookie that has not expired.
     """
     return _to_tokens_response(await tokens.list_for_user(current_user.user_id))
@@ -222,7 +222,7 @@ async def mint_own_token(
     current_user: SessionUserDep,
     tokens: McpTokenServiceDep,
 ) -> MintedTokenResponse:
-    """Mint a token for the caller; return the plaintext once (T53 — V2, V14).
+    """Mint a token for the caller; return the plaintext once.
 
     Self-service, and it grants no privilege: an MCP token authenticates *as* the operator and
     nothing more, so what it can call is whatever their roles already permit — zero for an
@@ -245,7 +245,7 @@ async def revoke_own_token(
     current_user: SessionUserDep,
     tokens: McpTokenServiceDep,
 ) -> RevokeTokenResponse:
-    """Revoke one of the caller's own tokens (T53 — V2).
+    """Revoke one of the caller's own tokens.
 
     The only id a caller supplies on this surface, and the user id it is scoped by is the
     session's — so a colleague's `token_id` deletes nothing and answers 404, exactly as a

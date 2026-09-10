@@ -12,7 +12,7 @@ import { TableView } from './table-view'
  * A READ whose answer is a listing parks its rows and answers the model with a summary and this
  * page's address (`noa_api.mcp_tools.table_surface`). Zero tokens for the table body, and the rows
  * are read here, behind the operator's own session, rather than in a transcript a LibreChat
- * administrator can read (V26).
+ * administrator can read.
  *
  * **This half is the server's, and it is the authenticated one.** The incoming `Cookie` header goes
  * with the read (`lib/tables/detail.ts`), so the HTML that reaches the frame is already the
@@ -25,11 +25,11 @@ import { TableView } from './table-view'
  * **The sign-in address is resolved here** (§T.43's rule, reused), not in the component that renders
  * it: it comes from a server-side variable with no `NEXT_PUBLIC_*` twin, so the page reads it and
  * passes it down. Per request rather than in `next.config.ts`, because `output: 'standalone'` never
- * runs that config at runtime — the framing header is baked there on purpose (V41), and this is not.
+ * runs that config at runtime — the framing header is baked there on purpose, and this is not.
  *
  * **The frame origin rides down the same way**, for the sizing message this surface posts
  * (`components/frame-sizer.tsx`). Unlike the sign-in address it has a build-time twin — the
- * `frame-ancestors` header (V41) — that it must agree with; `lib/embed/frame-origin.ts` says why the
+ * `frame-ancestors` header — that it must agree with; `lib/embed/frame-origin.ts` says why the
  * request-time read is wrapped and what a disagreement looks like from an operator's side.
  */
 

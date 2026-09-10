@@ -1,4 +1,4 @@
-"""The approval gate's clock — now `core.clock`, re-exported here (T37, T39, T56 — V66).
+"""The approval gate's clock — now `core.clock`, re-exported here.
 
 Two doors write the same terminal state for the same event. `ActionDecisionService`
 compares `expires_at <= decided_at` when an operator reaches a stale card, and T39's sweep

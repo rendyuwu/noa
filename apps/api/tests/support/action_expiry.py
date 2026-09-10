@@ -1,4 +1,4 @@
-"""Doubles for the expiry sweep and the check-on-read (T39).
+"""Doubles for the expiry sweep and the check-on-read.
 
 `test_action_request_expiry_live.py` runs `SQLActionRequestExpiryRepository` against a real
 Postgres, because the predicate, the `RETURNING` clause and the "an `UPDATE` re-checks its

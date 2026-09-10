@@ -1,4 +1,4 @@
-"""Doubles for a WHM box's firewall, as the tool layer sees it (T24).
+"""Doubles for a WHM box's firewall, as the tool layer sees it.
 
 A firewall tool call crosses three modules that each bound their own `ssh_exec` name
 (`availability`, `csf_cli`, `imunify_cli`), so the double is installed in all three from one
@@ -13,8 +13,8 @@ about the transport and knows nothing about csf. T25 is the second caller; T26 i
 No live host and no live firewall: everything under test is command composition, output
 parsing, verdict combination and refusal shaping.
 
-**Two boxes, because a CHANGE asks a backend more than one thing.** `FakeFirewall` (T24) answers
-one query per backend and is what a READ needs. `FakeFirewallBox` (T25) dispatches on the
+**Two boxes, because a CHANGE asks a backend more than one thing.** `FakeFirewall` answers
+one query per backend and is what a READ needs. `FakeFirewallBox` dispatches on the
 sub-command — csf's `-g` / `-tr` / `-dr` / `-ta`, Imunify's `list` / `delete` / `add` — and reads
 come from a *queue*, because a CHANGE workflow reads the same backend twice and the whole point
 of the second read is that it answers differently from the first. A double with one answer
@@ -242,7 +242,7 @@ def imunify_backend(
 
 
 class FakeFirewallBox:
-    """One WHM box's answers to every command a firewall CHANGE tool can send (T25).
+    """One WHM box's answers to every command a firewall CHANGE tool can send.
 
     `csf=None` / `imunify=None` means the binary is not there: its probe fails, and the tool must
     then never send it anything — the assertion below turns "drove an unavailable backend" into a

@@ -1,4 +1,4 @@
-"""`sudo -n` escalation (T14, V55).
+"""`sudo -n` escalation.
 
 V55 is a biconditional: the prefix appears **iff** the resolved SSH user is not root. So both
 directions are asserted, and the exact command strings are pinned — `noa-old`'s csf/imunify
@@ -77,7 +77,7 @@ def test_non_root_without_env_starts_with_sudo_n() -> None:
     [("root", False), ("noa-ops", True), ("Root", True), ("toor", True)],
 )
 def test_escalation_decision_is_username_only(username: str, expected: bool) -> None:
-    """Nothing else can flip it — there is no caller-supplied `escalate` flag (V55)."""
+    """Nothing else can flip it — there is no caller-supplied `escalate` flag."""
     assert requires_escalation(_config(username)) is expected
 
 

@@ -99,7 +99,7 @@ export const CARD_FRAME_POLICY: FrameSizePolicy = {
  * defeats `.scroller`, whose reason for existing is stated at the top of that stylesheet.
  *
  * **Why 720.** At ~36px a row that is roughly eighteen rows visible at once, plus the tool name and
- * the bound line (V85) — about one laptop screen inside a chat column, with the sticky column
+ * the bound line — about one laptop screen inside a chat column, with the sticky column
  * headings staying in view while the rest scrolls.
  *
  * A bounded request also unhooks the number from flex resolution in the common case: any listing

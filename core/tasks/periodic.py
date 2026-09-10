@@ -1,7 +1,7 @@
-"""One asyncio task that runs a pass on an interval, forever (T39, T38 — V30, V51).
+"""One asyncio task that runs a pass on an interval, forever.
 
 The loop T39 built for `PendingExpirySweeper`, hoisted so T38's reaper inherits it instead
-of carrying a second copy (V66). The package docstring lists the four properties; this
+of carrying a second copy. The package docstring lists the four properties; this
 module is where each of them lives.
 
 **What this is not.** It is not a scheduler and it holds no state about what a pass does:

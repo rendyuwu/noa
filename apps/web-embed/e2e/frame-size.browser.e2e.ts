@@ -115,7 +115,7 @@ test('a small frame still shows rows, the bound, the flag and the expiry line', 
   // The whole surface at a frame under half the ceiling, with the host's autosizing switched off —
   // so what is measured is the stylesheet alone, not the stylesheet plus a frame that grew to hide
   // a collapse. The capped fixture, because the truncation flag is one of the four things that has
-  // to be on screen (V85).
+  // to be on screen.
   const table = await frameTable(page, TABLE_TOKENS.truncated, undefined, {
     height: SMALL_FRAME_HEIGHT,
     autosize: false,

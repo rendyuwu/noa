@@ -124,7 +124,7 @@ OWNER = "root"
 
 
 # Every clock-stamped instant in a rendered summary, replaced by one of fixed width so a length
-# can be pinned at all (V87). `isoformat()` omits `.ffffff` entirely when the microsecond is
+# can be pinned at all. `isoformat()` omits `.ffffff` entirely when the microsecond is
 # zero, so the raw bytes are seven characters shorter roughly once in a million runs — a pin on
 # them would be a test that fails on a schedule nobody can reproduce.
 _INSTANT = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?\+00:00")
@@ -149,7 +149,7 @@ SUMMARY_HEADROOM = MAX_RESULT_SUMMARY_LENGTH - PINNED_SUMMARY_LENGTH
 
 
 def pinned(summary: str | None) -> str:
-    """One rendered summary with its clock-stamped bytes normalised (V87, B4)."""
+    """One rendered summary with its clock-stamped bytes normalised."""
     return _INSTANT.sub(FIXED_INSTANT, summary or "")
 
 
@@ -429,7 +429,7 @@ async def test_which_payload_the_summary_pin_belongs_on(
     payload where the risk is smaller.
 
     Orderings rather than lengths: the exact figures belong where the cut is argued, and these
-    summaries carry timestamps whose rendered width moves (V87).
+    summaries carry timestamps whose rendered width moves.
     """
     bare: dict[str, int] = {}
     folded: dict[str, int] = {}
@@ -453,7 +453,7 @@ async def test_the_largest_change_payload_stays_where_it_was(
 
     Two claims. The payload carries exactly the twelve keys it carried before a delta existed —
     asserted on the key set, which is the clock-safe form of byte identity here, since two of the
-    values are timestamps (V87). And its rendered summary is 391 characters of the 2000 the
+    values are timestamps. And its rendered summary is 391 characters of the 2000 the
     column holds, leaving 1609 free.
 
     The negative control is the whole argument: folding the delta into the payload takes the same

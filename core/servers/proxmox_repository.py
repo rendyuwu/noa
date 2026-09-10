@@ -1,10 +1,10 @@
-"""SQL behind Proxmox server inventory (T27, C13).
+"""SQL behind Proxmox server inventory.
 
-The third of these, after `whm_repository.py` (T19) and `pmg_repository.py` (T31), and written
+The third of these, after `whm_repository.py` and `pmg_repository.py`, and written
 the same way for the same reasons — so the note here is only about what differs.
 
 **Reads only.** `create`/`update`/`delete` belong to the admin routes of T54 and are not ported;
-landing them now would be untested, unreachable code a reviewer has to treat as live (V67).
+landing them now would be untested, unreachable code a reviewer has to treat as live.
 
 **A narrower row than WHM's.** Proxmox is an HTTP API and nothing else (I.ext), so
 `ProxmoxServerRowLike` carries `id`, `name` and `base_url` — the three fields reference
@@ -59,7 +59,7 @@ RowT_co = TypeVar("RowT_co", bound=ProxmoxServerRowLike, covariant=True)
 class ProxmoxServerReadRepository(Protocol[RowT_co]):
     """What T27's callers need from Proxmox inventory, parametrised by the row it yields.
 
-    Generic for the reason its WHM twin is (T21): resolution is written against the narrow view
+    Generic for the reason its WHM twin is: resolution is written against the narrow view
     above, while a tool that resolves a server then *calls* it needs the credentials off the row
     it resolved — that row, and not a second read by id which could disagree with the list a tie
     was judged against. The parameter holds both at once.
@@ -92,7 +92,7 @@ class SQLProxmoxServerRepository:
         """One server by primary key, or `None`.
 
         `None` rather than a raise: the caller is `resolve_proxmox_server_ref`, and "no server
-        with that id" is a `host_not_found` *result* the model can act on (V18), not an
+        with that id" is a `host_not_found` *result* the model can act on, not an
         exception.
         """
         result = await self._session.execute(

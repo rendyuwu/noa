@@ -6,7 +6,7 @@ import './globals.css'
 export const metadata: Metadata = {
   title: 'NOA',
   // This app is only ever reached as an iframe on the NOA origin or as a
-  // link-out tab from LibreChat (V24, V25). Nothing here should be indexed.
+  // link-out tab from LibreChat. Nothing here should be indexed.
   robots: { index: false, follow: false },
 }
 

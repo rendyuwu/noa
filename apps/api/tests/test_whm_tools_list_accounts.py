@@ -1,6 +1,6 @@
-"""`whm_list_accounts` — the listing that answers with a surface, not with rows (T20).
+"""`whm_list_accounts` — the listing that answers with a surface, not with rows.
 
-The V64 half of the WHM account pair. `whm_search_accounts` (T21) answers a bounded question in
+The V64 half of the WHM account pair. `whm_search_accounts` answers a bounded question in
 the transcript; this one answers an unbounded one by parking its rows in `tool_result_tables`
 and handing back a summary plus the address of the page that renders them.
 
@@ -13,11 +13,11 @@ insert is `test_result_tables_live.py`'s claim, not this file's.
 
 Four properties carry the weight.
 
-**No account reaches the model** (V64, V26). Asserted against the serialized `ToolResult`, with
+**No account reaches the model**. Asserted against the serialized `ToolResult`, with
 a sentinel driven through the real writer — a row that only ever existed in a fixture proves
 nothing about what a tool emits.
 
-**What was parked is what the page will show** (V85). The rows are sorted before they are handed
+**What was parked is what the page will show**. The rows are sorted before they are handed
 over, because `cap_rows` is a prefix and never a re-sort, and `listaccts` order is WHM's own and
 undocumented — so an uncapped listing and a capped one have to be the same first N.
 
@@ -25,7 +25,7 @@ undocumented — so an uncapped listing and a capped one have to be the same fir
 READ; a URL to a table that was never stored is discovered later, by an operator, in a
 transcript that persists.
 
-**A failure is still the ordinary envelope** (V18, V19). The success answers with content
+**A failure is still the ordinary envelope**. The success answers with content
 blocks, so this is where "one refusal shape whatever the success shape" is checked.
 """
 
@@ -110,7 +110,7 @@ async def listing(
     """Call the tool inside a real request context; return its answer and the caller's id.
 
     The identity is read by `park_table_result` from the authenticated request rather than
-    passed in (V27), so the tool has to run inside the contextvar the auth middleware sets.
+    passed in, so the tool has to run inside the contextvar the auth middleware sets.
     """
     user, resolved = authenticated_caller(user_id)
     with http_request_context({}, user=user):
@@ -159,7 +159,7 @@ async def test_the_summary_names_the_server_that_was_actually_read() -> None:
 
 
 async def test_the_address_in_the_text_is_the_parked_table_s() -> None:
-    """The URL an operator can copy names the row that was just written (V25, V94)."""
+    """The URL an operator can copy names the row that was just written."""
     fixture, _ = listing_context(accounts=[whm_account("acme")])
 
     answer, _ = await listing(fixture)
@@ -314,7 +314,7 @@ async def test_a_capped_listing_stores_the_pre_cut_total_and_says_so() -> None:
 
 
 async def test_an_uncapped_listing_does_not_claim_truncation() -> None:
-    """The negative control (V87): without it, the case above passes against a constant."""
+    """The negative control: without it, the case above passes against a constant."""
     fixture, _ = listing_context(accounts=[whm_account("acme")])
 
     answer, _ = await listing(fixture)
@@ -523,7 +523,7 @@ class ExplodingWHMServerRepository:
 async def test_an_exception_reaches_the_caller_as_a_named_failure(
     error: BaseException, expected_code: str, expected_message: str
 ) -> None:
-    """V19's two mappings, and the original text never travels (V8, V26).
+    """V19's two mappings, and the original text never travels.
 
     The success path answers with content blocks, so this is also where "a failure is the same
     envelope whatever the success was" is held — `sanitize_tool_errors` widens a return type
@@ -562,5 +562,5 @@ async def test_cancellation_is_not_swallowed() -> None:
 
 
 def test_the_tool_name_matches_the_catalog() -> None:
-    """The registered name is the one RBAC grants are written against (V10)."""
+    """The registered name is the one RBAC grants are written against."""
     assert TOOL_WHM_LIST_ACCOUNTS in TOOL_CATALOG

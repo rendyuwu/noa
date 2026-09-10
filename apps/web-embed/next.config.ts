@@ -4,7 +4,7 @@ import type { NextConfig } from 'next'
 import { buildFramingHeaders } from './config/framing'
 import { loadRootEnv } from './config/root-env'
 
-// This package is a standalone deploy artifact (C12). It is not part of a pnpm
+// This package is a standalone deploy artifact. It is not part of a pnpm
 // workspace and shares nothing with `apps/admin-web`, so both the Turbopack root
 // and the output file trace stop here — otherwise a lockfile or `node_modules`
 // higher up the monorepo drags unrelated files into the watch set and the

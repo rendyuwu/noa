@@ -1,4 +1,4 @@
-"""`SQLPMGServerRepository` against a live database (T31).
+"""`SQLPMGServerRepository` against a live database.
 
 `test_pmg_server_ref.py` and `test_pmg_tools_whitelist_search.py` cover policy over in-memory
 doubles; this covers the SQL. The same split `test_whm_server_repository.py` makes, and the same
@@ -61,7 +61,7 @@ def repository(session: AsyncSession) -> SQLPMGServerRepository:
 
 
 async def insert(session: AsyncSession, name: str, *, ssh_host: str | None = None) -> PMGServer:
-    """One `pmg_servers` row, written the way the admin routes will (T54)."""
+    """One `pmg_servers` row, written the way the admin routes will."""
     server = PMGServer(
         name=name,
         ssh_host=ssh_host or f"{name}.example.net",

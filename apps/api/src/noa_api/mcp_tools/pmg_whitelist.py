@@ -1,20 +1,20 @@
-"""`pmg_whitelist` — one tool for two directions (T29 — V58, V60, V61).
+"""`pmg_whitelist` — one tool for two directions.
 
 The second of the two **enum collapses** DECISIONS §9 adopted, after T28: `noa-old`'s
 `pmg_whitelist_add` and `pmg_whitelist_remove` become one tool with an `action` parameter. The
 recorded cost is the same one — RBAC gets coarser, because a role can no longer be granted "add"
 without "remove" (DECISIONS §9) — and it is not re-litigated here.
 
-**Two halves, and only the first is here.** This module runs the in-process preflight (C9, V17)
+**Two halves, and only the first is here.** This module runs the in-process preflight
 and opens an `action_requests` row; it executes nothing, and the LLM can reach it. The half that
 edits `mynetworks` is `pmg_whitelist_runner.py`, reachable only from `core.approvals.execution`
-after an operator approved (V22). Two files for C14, split on the boundary the design already
+after an operator approved. Two files for C14, split on the boundary the design already
 draws, and the dependency runs one way — T27's and T28's arrangement, one system over.
 
-**No reason parameter, and nowhere to add one** (C8, V15, V43). `open_change_request` refuses a
+**No reason parameter, and nowhere to add one**. `open_change_request` refuses a
 reason-shaped argument even for a caller reaching this function directly.
 
-**The preflight is `read_pmg_mynetworks`, not a second copy of it** (V66). Both PMG READ tools
+**The preflight is `read_pmg_mynetworks`, not a second copy of it**. Both PMG READ tools
 already run resolve → connect → `pmgsh ls` → parse, and a CHANGE that gathered its before-state
 through its own reader would be a second answer to "what is on this whitelist" that could drift
 from the one the operator got from `pmg_whitelist_search` a minute earlier.
@@ -28,11 +28,11 @@ other.
 
 **Two no-op branches, an answer rather than a question.** `add` against an address already on the
 list, and `remove` against one that is not, have nothing for an operator to authorise — T22, T23,
-T26 and T28's shape. That answer is transcript (V26), so it is built from the server's name, the
+T26 and T28's shape. That answer is transcript, so it is built from the server's name, the
 two spellings of the target and one measured boolean, never from the `pmgsh` output it was decided
 from.
 
-**One source, so §V.86 has no partial case here.** PMG answers over exactly one transport (V58), so
+**One source, so §V.86 has no partial case here.** PMG answers over exactly one transport, so
 there is no second backend to be silent while the first speaks. A `pmgsh ls` that cannot answer
 raises, and `sanitize_tool_errors` hands the model the integration's own code —
 `ssh_sudo_required` and `pmgsh_command_failed` name different remedies (`noa-old` GH #82) — and
@@ -146,7 +146,7 @@ SERVER_REF_DESCRIPTION: Final = (
 )
 
 
-# --- The tool: it opens a question and changes nothing (V16, V22, V23) ---
+# --- The tool: it opens a question and changes nothing ---
 
 
 @sanitize_tool_errors(TOOL_PMG_WHITELIST)
@@ -157,9 +157,9 @@ async def pmg_whitelist(
     target: str,
     context: McpToolContext,
 ) -> ToolAnswer:
-    """Ask for one `mynetworks` entry to be added or removed; change nothing (T29 — V16, V17, V23).
+    """Ask for one `mynetworks` entry to be added or removed; change nothing.
 
-    Three guards run before any I/O, so a malformed call costs no round trip (V21): a blank or
+    Three guards run before any I/O, so a malformed call costs no round trip: a blank or
     whitespace-only `target` is refused — the schema cannot express it, because `min_length` counts
     whitespace — a `target` that is neither an address nor a network is refused, because the only
     alternative is comparing raw strings against normalised entries, and an `action` outside the
@@ -229,7 +229,7 @@ def build_whitelist_evidence(
     normalized_target: str,
     matches: list[MynetworksEntry],
 ) -> dict[str, Any]:
-    """The before-state an operator authorises a whitelist change against (V33, V35).
+    """The before-state an operator authorises a whitelist change against.
 
     JSON-native throughout, for `approval_context` JSONB (T33's rule), and a fixed set of fields
     built by naming what goes in rather than by sanitizing what came out of `pmgsh` — a structure
@@ -237,7 +237,7 @@ def build_whitelist_evidence(
     V93's shape).
 
     **Both spellings of the target.** `target` is what the operator typed and `normalized_target` is
-    what membership was decided on and what an `add` will write (V59). A card showing only the first
+    what membership was decided on and what an `add` will write. A card showing only the first
     would ask an operator to approve `1.2.3.4/24`; showing only the second would ask them to approve
     an address they never named.
 
@@ -277,7 +277,7 @@ def _no_op(
 
     Built from the server's name, the two spellings of the target and one measured boolean — never
     from the `pmgsh` lines it was decided from. This is a plain tool result rather than a gate
-    response, so it lands in the transcript LibreChat persists (V26), and T26's rule one system over
+    response, so it lands in the transcript LibreChat persists, and T26's rule one system over
     says a transcript surface is assembled from facts rather than from the evidence behind them.
 
     The normalised form is in the sentence, not only in the payload: an operator being told
@@ -317,7 +317,7 @@ def register_pmg_whitelist_tools(
     from `tools/list` instead of from the description.
 
     `ToolRisk.CHANGE` is what tells `ToolRunAuditMiddleware` to write no `tool_runs` row for this
-    call (T73) — it opens an approval request and executes nothing — and what makes
+    call — it opens an approval request and executes nothing — and what makes
     `registry.assert_change_runners_cover` demand a runner for the name at startup, rather than
     letting an operator discover the gap after typing a reason and pressing Approve.
     """
@@ -326,7 +326,7 @@ def register_pmg_whitelist_tools(
         name=TOOL_PMG_WHITELIST,
         description=DESCRIPTION_PMG_WHITELIST,
         # Standard MCP hints, and nothing NOA relies on — a client may ignore them. The split that
-        # matters is the approval gate (V16); the classification that matters is the risk returned
+        # matters is the approval gate; the classification that matters is the risk returned
         # below. `idempotentHint` is True because asking for a state the whitelist is already in is
         # a `no_op` rather than a second change.
         annotations={"readOnlyHint": False, "destructiveHint": True, "idempotentHint": True},

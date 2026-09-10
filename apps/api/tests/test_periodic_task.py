@@ -1,14 +1,14 @@
-"""The interval loop both background components run on (T38, T39 — V30, V51).
+"""The interval loop both background components run on.
 
 T39 proved these four properties against `PendingExpirySweeper`. T38 needed the same loop for
 its reaper, so the loop moved to `core.tasks.periodic` and the properties are pinned here,
-once, against `PeriodicTask` itself (V66). The two owners keep their own tests — what those
+once, against `PeriodicTask` itself. The two owners keep their own tests — what those
 assert is that *their* pass does the right thing, and `test_action_request_expiry.py` remains
 the sweeper's regression proof that the delegation did not change its behaviour.
 
 Each property below is a decision that cost something to get right:
 
-- **sleep before the first pass**, so starting the app touches no database (V51);
+- **sleep before the first pass**, so starting the app touches no database;
 - **`except Exception`, not `BaseException`**, so `stop()` still stops the loop in 3.11+
   instead of the cancellation being logged as a failed pass;
 - **`cancel()` and `await`**, so no pass outlives the engine it draws from;
@@ -96,11 +96,11 @@ async def running(task: PeriodicTask) -> AsyncIterator[PeriodicTask]:
         await task.stop()
 
 
-# --- Sleep first (V51) ---
+# --- Sleep first ---
 
 
 async def test_the_first_pass_waits_one_interval() -> None:
-    """No pass at boot: `/health` must answer with Postgres down (V51), and a startup pass
+    """No pass at boot: `/health` must answer with Postgres down, and a startup pass
     would make every boot open a connection to find out whether it can."""
     passes = Passes()
 
@@ -173,7 +173,7 @@ async def test_stop_cancels_the_task() -> None:
 
 
 async def test_a_cancelled_pass_ends_the_loop_instead_of_being_logged() -> None:
-    """`CancelledError` is a `BaseException` in 3.11+, and that is load-bearing (V30).
+    """`CancelledError` is a `BaseException` in 3.11+, and that is load-bearing.
 
     Caught by `except Exception`, a cancellation would be logged as an ordinary failed pass
     and the loop would come back round to `sleep` — so `stop()` would cancel a task that

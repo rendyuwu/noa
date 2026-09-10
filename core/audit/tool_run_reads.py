@@ -7,7 +7,7 @@ statement — the shape V69 keeps insisting on.
 **Reader beside the writer, split by what it can do.** `core.audit.tool_runs` inserts and
 commits; nothing here commits and no statement here is anything but a `SELECT`. Same discipline
 as `core.results.tables` and `core.approvals`: the write side is reachable from the MCP tool path,
-this side only from behind a session cookie and `require_admin` (V13), and neither can be reached
+this side only from behind a session cookie and `require_admin`, and neither can be reached
 from the other's side of that line.
 
 **Every filter is in the `WHERE`, and the statements are functions so a test can prove it**
@@ -30,7 +30,7 @@ gone" rather than as "nobody ran this".
 **Nothing here redacts, and that is not an omission.** `args` and `result_summary` arrive already
 redacted from their writers — `noa_api.mcp_audit.redacted_args` on the READ path and
 `core.approvals.decisions.start_change_run(args=locked.redacted_arguments)` on the CHANGE path.
-A second redactor under the read would be a quieter second home for one rule (V66) and the one an
+A second redactor under the read would be a quieter second home for one rule and the one an
 audit reader would have to trust without seeing it; the same argument `core.audit.tool_runs` makes
 about not redacting under the SQL.
 
@@ -66,7 +66,7 @@ MAX_PAGE_SIZE: Final = 200
 #
 # `LIKE_ESCAPE` is exported because `escape_like` only inserts it — the `ESCAPE '…'` clause that
 # tells Postgres what it means is written by the caller, so the two halves live in two modules and
-# they have to name the same character (V66). A second private copy next to the second caller was
+# they have to name the same character. A second private copy next to the second caller was
 # the shape this replaced: change one to `!` for a driver quirk and the other still declares `\`,
 # so `!%` arrives as a literal `!` beside a live `%` and every address matches while the response
 # still reads as filtered.
@@ -122,7 +122,7 @@ def _duration_ms(created_at: datetime, completed_at: datetime | None) -> int | N
 
 @dataclass(frozen=True)
 class ToolRunListItem:
-    """One run as the audit list renders it (V47).
+    """One run as the audit list renders it.
 
     Every field V47 names except `args`, which the detail read carries: a list page of fifty runs
     would otherwise ship fifty JSONB payloads to draw five columns.
@@ -204,7 +204,7 @@ class ToolRunPage:
 
 
 def _apply_filters(statement: Select[Any], filters: ToolRunAuditFilters) -> Select[Any]:
-    """Add one predicate per set filter. Every one lands in the `WHERE` (V93)."""
+    """Add one predicate per set filter. Every one lands in the `WHERE`."""
     if filters.tool_name:
         statement = statement.where(ToolRun.tool_name == filters.tool_name)
     if filters.status is not None:
@@ -230,9 +230,9 @@ def select_tool_run_page(
     limit: int,
     cursor: KeysetCursor | None,
 ) -> Select[Any]:
-    """The statement one audit page is read with (V45, V47, V93).
+    """The statement one audit page is read with.
 
-    Built as a function for the reason `select_table_for_requester` is (T56): the claims worth
+    Built as a function for the reason `select_table_for_requester` is: the claims worth
     asserting — that the filters and the cursor are *in* the statement, and that the order carries
     its tie-break — are claims about the SQL, and a check made after the rows arrive would leave
     every payload test green while being no check at all.
@@ -273,7 +273,7 @@ def select_tool_run(*, tool_run_id: UUID) -> Select[Any]:
 
 
 def _to_list_item(run: ToolRun, requested_by_email: str | None) -> ToolRunListItem:
-    """One row → one list item. The only place the mapping lives (V66)."""
+    """One row → one list item. The only place the mapping lives."""
     created_at = as_utc(run.created_at)
     completed_at = as_utc(run.completed_at) if run.completed_at else None
     return ToolRunListItem(
@@ -291,7 +291,7 @@ def _to_list_item(run: ToolRun, requested_by_email: str | None) -> ToolRunListIt
 
 
 class ToolRunAuditReader(Protocol):
-    """The two reads this surface may make (T55). No write, and no `commit` to make one with."""
+    """The two reads this surface may make. No write, and no `commit` to make one with."""
 
     async def list_runs(
         self,
@@ -350,7 +350,7 @@ class SQLToolRunAuditReader:
 
 
 class ToolRunAuditService:
-    """Query the `tool_runs` audit trail (T55 — V45, V47).
+    """Query the `tool_runs` audit trail.
 
     Thin, like `ResultTableService`: it bounds the page size, decides the continuation token, and
     holds a *reader* rather than the writer next door. The bound is enforced here as well as in the

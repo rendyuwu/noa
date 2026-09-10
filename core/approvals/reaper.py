@@ -1,7 +1,7 @@
-"""Resolving runs nobody ever finished (T38 — V20, V30, V46, V47).
+"""Resolving runs nobody ever finished.
 
 `tool_runs.status` defaults to `STARTED` so that a process which dies mid-call leaves evidence
-rather than nothing (T35). That is only worth having if something eventually resolves those
+rather than nothing. That is only worth having if something eventually resolves those
 rows — otherwise `STARTED` means both "running" and "abandoned", and V31's cap, which counts
 `STARTED` CHANGE runs, spends an operator's allowance on a crash nobody noticed.
 
@@ -20,8 +20,8 @@ per approved change and "we do not know how this ended" is an outcome. It is wri
 receipt — which is exactly why T36 stated `UNIQUE (action_request_id)` rather than inheriting it.
 
 **Requests `APPROVED` with no run** are logged and left alone. T37 writes the run and the link
-inside the decision's own transaction (V29), so the decision path cannot produce this pair. It
-is still reachable: `action_requests.tool_run_id` is `SET NULL` (T34), so deleting a
+inside the decision's own transaction, so the decision path cannot produce this pair. It
+is still reachable: `action_requests.tool_run_id` is `SET NULL`, so deleting a
 `tool_runs` row nulls the link — and in *that* case the change may well have completed. Opening
 a `FAILED` run to fill the gap would put a claim in the audit trail that nothing observed, and
 `§T.38` reserves both the row's creation and the link to T37. So this half is a detector: it
@@ -29,7 +29,7 @@ says the pair exists and names the request, and a human decides what it means.
 
 **A pass is BOUNDED, and says so.** Both populations are read under
 `APPROVAL_STRANDED_RUN_REAP_BATCH_SIZE`, and a pass that hit the bound reports how many rows it
-left behind (V85, V92) — a capped pass logging like a complete one reads as "everything is
+left behind — a capped pass logging like a complete one reads as "everything is
 resolved". The bound is what keeps "a pass is one transaction" affordable: an unbounded pass
 after a long outage loads every stranded row, each carrying its request's evidence, and holds
 every row lock it takes plus its own xmin until the last of N updates and N receipt inserts
@@ -72,7 +72,7 @@ from core.tasks.periodic import PeriodicTask
 # The asyncio task's name, so a dump of running tasks says what this is.
 REAP_TASK_NAME: Final = "noa-stranded-run-reaper"
 
-# A pass that reaped runs. Ids and counts, never the rows' contents (V8).
+# A pass that reaped runs. Ids and counts, never the rows' contents.
 LOG_RUNS_REAPED: Final = "tool_runs_reaped_as_abandoned"
 
 # A pass that found an APPROVED request with no run. Error level: the pair the decision path
@@ -96,7 +96,7 @@ logger = structlog.get_logger(__name__)
 
 
 def abandoned_payload() -> dict[str, Any]:
-    """The envelope a reaped run is recorded with (V20, V47).
+    """The envelope a reaped run is recorded with.
 
     Built as the same `{"ok": ..., "error_code": ..., "message": ...}` shape a tool answers
     with, so `result_summary` bounds and redacts it exactly as it does a real result and the
@@ -128,7 +128,7 @@ RowT = TypeVar("RowT")
 
 @dataclass(frozen=True)
 class BoundedRows(Generic[RowT]):
-    """One capped page of a population, carrying the bound it was read under (V85, V92).
+    """One capped page of a population, carrying the bound it was read under.
 
     `total` is how many rows matched the pass's predicate, counted in the *same* statement as
     the page through a `count(*) OVER ()` window — Postgres evaluates a window over everything
@@ -155,7 +155,7 @@ class ReapOutcome:
     """What one pass did *and what it left*, so a caller can log it or assert on it.
 
     The two `*_remaining` counts are not diagnostics: a bounded pass that reported only what it
-    resolved would read as a pass that resolved everything (V85, V92).
+    resolved would read as a pass that resolved everything.
     """
 
     reaped_run_ids: tuple[UUID, ...]
@@ -180,7 +180,7 @@ class ReapOutcome:
 
 
 class StrandedRunRepository(Protocol):
-    """The reads and writes one reap pass may make (V30, V46, V92).
+    """The reads and writes one reap pass may make.
 
     Both reads take a `limit` and answer with the total behind it. A read that could answer
     with an unbounded tuple is the shape this Protocol exists to make unspellable.
@@ -215,10 +215,10 @@ class SQLStrandedRunRepository:
     Composes the two table writers rather than issuing their statements again
     (`core.audit.tool_runs`, `core.audit.receipts`) — one writer per table, and constructing
     both on this session is what puts a reaped run's terminal status and its receipt in one
-    transaction (V66).
+    transaction.
 
     **It can write no status but `FAILED`, and no request column at all.** The status is not a
-    parameter of the SQL below in the sense that matters: `ActionRequestExpiryRepository` (T39)
+    parameter of the SQL below in the sense that matters: `ActionRequestExpiryRepository`
     exists because a background loop with no operator behind it must not hold a writer that can
     grant an authorization, and the same applies here — this class never touches
     `action_requests`, so the pair it detects is a read and nothing more.
@@ -244,12 +244,12 @@ class SQLStrandedRunRepository:
         row be classified against a request read at a different moment.
 
         The join is from the request's `tool_run_id`, which is the direction the link is stored
-        in (T34), and it is the same edge `core.approvals.reads` joins for the card.
+        in, and it is the same edge `core.approvals.reads` joins for the card.
 
         `<=` on the deadline, matching both expiry doors (T39(a)): a row exactly on its cutoff
         is one thing, not two.
 
-        **Ordered by `(created_at, id)` before the cut** (V85, V92). Oldest first because the
+        **Ordered by `(created_at, id)` before the cut**. Oldest first because the
         oldest stranded run has spent the most of its operator's V31 allowance, and `id` behind
         it because `created_at` is not unique — without a tiebreaker two passes over an
         untouched backlog could each take a different half of a tied group and neither would
@@ -288,7 +288,7 @@ class SQLStrandedRunRepository:
         wide, but because a detector that reports a healthy in-flight approval as an anomaly
         gets ignored.
 
-        **Bounded although it writes nothing** (V92). Read-only buys less than it looks like it
+        **Bounded although it writes nothing**. Read-only buys less than it looks like it
         does: the ids it returns are logged, one line, and a detector that names every row of an
         arbitrarily large population produces a log entry no one can read and a list nothing
         bounds. Ordered `(decided_at, id)` before the cut for the same reason as the runs above.
@@ -356,7 +356,7 @@ def _evidence_of(request: ActionRequest | None) -> dict[str, Any]:
     """The gate-time preflight off a joined request row, or `{}`.
 
     Read through `core.approvals.context` rather than by key — that module owns the spelling,
-    and a misspelt key in JSONB reads as an absent one (V66).
+    and a misspelt key in JSONB reads as an absent one.
     """
     if request is None:
         return {}
@@ -385,7 +385,7 @@ class StrandedRunReaperService:
         are judged against the same moment — the rule `ActionRequestExpiryService.sweep`
         follows, and the reason `core.approvals.clock` exists.
 
-        **A pass is still one transaction, and the batch is what keeps that affordable** (V92).
+        **A pass is still one transaction, and the batch is what keeps that affordable**.
         The commit runs after both writes for every row in the batch, not per row: a failure
         halfway leaves nothing half-reaped, and the next pass sees the same rows it would have
         seen. Unbounded, that promise was the problem — one pass after a long outage held every
@@ -404,7 +404,7 @@ class StrandedRunReaperService:
         two reapers' batches disjoint, and it would also make this pass hold each run from the
         moment it read it until the batch commits — so the executor's terminal write for a
         change that *did* complete would queue behind the reaper and then find its own
-        `status = STARTED` predicate false (V91). That converts "a change finished a little
+        `status = STARTED` predicate false. That converts "a change finished a little
         late" into "reported abandoned", deterministically, in the reaper's favour. A repair
         loop must not outrank the worker, so the two writers keep racing on commit order, which
         is the race V91 already answers. Two replicas therefore both reap the same rows: the
@@ -445,9 +445,9 @@ class StrandedRunReaperService:
         return outcome
 
     async def _record_receipt(self, run: StrandedRun) -> UUID | None:
-        """The receipt for an abandoned *change*, if it belongs to a request (V46).
+        """The receipt for an abandoned *change*, if it belongs to a request.
 
-        `None` for a READ run: `action_receipts.action_request_id` is NOT NULL (T36), and a
+        `None` for a READ run: `action_receipts.action_request_id` is NOT NULL, and a
         receipt is a record of what an approved change did — a READ has no approval to be the
         receipt of.
 
@@ -476,7 +476,7 @@ def _log(outcome: ReapOutcome, *, stranded: Sequence[StrandedRun], cutoff: datet
 
     A quiet pass is the common case, and a log line per pass would bury the ones that matter.
 
-    **`truncated` and `remaining` ride on both lines** (V85, V92). `count` alone answers "how
+    **`truncated` and `remaining` ride on both lines**. `count` alone answers "how
     many did this pass resolve", which an operator reads as "how many were there" — the one
     reading a capped pass must not be allowed to make.
     """
@@ -507,7 +507,7 @@ class StrandedRunReaper:
     Same shape as `PendingExpirySweeper` and for the same reasons — one task, its own session
     per pass, started and stopped by the app lifespan that owns the engine it draws from — and
     literally the same loop (`core.tasks.periodic`), so the four properties T39 proved hold here
-    without a second copy of them (V66).
+    without a second copy of them.
     """
 
     def __init__(

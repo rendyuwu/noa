@@ -1,4 +1,4 @@
-"""`whm_search_accounts` — the discovery step in front of every account CHANGE (T21).
+"""`whm_search_accounts` — the discovery step in front of every account CHANGE.
 
 Real `WHMClient`, real `SecretCipher`, real resolver, real `sanitize_tool_errors`. Only the
 socket is doubled (`support.whm_api`), because the client's whole job is normalising answers a
@@ -392,7 +392,7 @@ async def test_a_suspension_note_never_reaches_the_model() -> None:
     the model, and a field dropped from one place and kept in another is exactly the kind of
     thing a key-set assertion alone would miss. The normaliser still carries the field, and
     `whm_list_accounts`' parked table still renders it — that page is behind the operator's own
-    cookie (V27), which is where the reason may be read.
+    cookie, which is where the reason may be read.
     """
     operator_words = "Customer confirmed the abuse ticket by phone."
     fixture, _ = search_context(

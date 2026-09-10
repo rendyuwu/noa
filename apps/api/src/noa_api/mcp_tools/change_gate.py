@@ -1,8 +1,8 @@
-"""The CHANGE gate: a `tools/call` opens a request, it never runs a change (T33, T32).
+"""The CHANGE gate: a `tools/call` opens a request, it never runs a change.
 
 V16 splits the tool surface in two. A READ executes immediately and its `tool_runs` row is
-written around it by `ToolRunAuditMiddleware` (T73). A CHANGE does not execute at all: it
-runs its preflight in-process (C9, V17), calls `open_change_request` with the evidence that
+written around it by `ToolRunAuditMiddleware`. A CHANGE does not execute at all: it
+runs its preflight in-process, calls `open_change_request` with the evidence that
 produced, and hands the result to `build_change_gate_response`. Nothing in this module can
 execute anything, and that is the point — the code path an LLM can reach ends at an INSERT
 and a URL.
@@ -24,8 +24,8 @@ and executed would have no authorization row at all, and V23 reads the row.
 
 **Three refusals, and all three refuse before the INSERT** (`core.approvals.errors`):
 
-- an argument that reads as a reason (C8, V15, V43) — see `assert_no_reason_argument`;
-- no preflight evidence (V17, V35) — a card that asks for authorisation and describes
+- an argument that reads as a reason — see `assert_no_reason_argument`;
+- no preflight evidence — a card that asks for authorisation and describes
   nothing is the state V35 exists to prevent;
 - the write itself failing, which refuses the change rather than letting it proceed
   unrecorded (T73(c)'s fail-closed argument, one table over).
@@ -33,7 +33,7 @@ and executed would have no authorization row at all, and V23 reads the row.
 **The caller is read here, not passed in.** `current_mcp_identity()` for who, and
 `read_conversation_ref()` for the grouping label — the same function `noa_api.mcp_audit`
 uses, imported rather than re-implemented, because `conversation_ref` is one audit label
-with one home (V66, V47). A tool that could pass either would be a tool that could get
+with one home. A tool that could pass either would be a tool that could get
 either wrong: `requested_by_user_id` is what V27's requester-match compares the approving
 operator against, so an argument-supplied requester is an argument-supplied authorization.
 
@@ -42,7 +42,7 @@ change is already approved. A repeated call with an APPROVED request's id in its
 opens a *new* PENDING request, because V23 answers "may this run?" from the row's own
 `status` column and from nowhere else — not from an LLM claim, not from a tool argument.
 Execution after approval is T37's endpoint and T38's executor, reached by a cookie POST from
-a NOA-origin document (V22), which is a path that does not pass through here.
+a NOA-origin document, which is a path that does not pass through here.
 """
 
 from __future__ import annotations
@@ -78,13 +78,13 @@ from noa_api.mcp_tools.ui_resource import (
     # The three fields that make an iframe render at all, and the join onto the embed base.
     # Hoisted at T56, when the table surface became the second result carrying a NOA-origin
     # document: V64 says that surface uses *this* mechanism rather than a second one, and two
-    # spellings of "what makes LibreChat render a frame" is how one of them goes stale (V66).
+    # spellings of "what makes LibreChat render a frame" is how one of them goes stale.
     UI_RESOURCE_MIME_TYPE,
     build_ui_resource,
     embed_url,
 )
 
-# Argument names that would carry an LLM-authored reason (C8, V43). An explicit set, not a
+# Argument names that would carry an LLM-authored reason. An explicit set, not a
 # substring rule: `reason` has to be refused, while a legitimate argument such as
 # `reason_code` on some future integration is not what C8 is about, and a rule that guessed
 # would eventually refuse a change for the wrong cause. Compared case-insensitively and
@@ -101,7 +101,7 @@ FORBIDDEN_REASON_KEYS: Final[frozenset[str]] = frozenset(
 
 # One structured event per opened request, so an operator asking "why is there a card
 # waiting" is answerable from the logs. Identifiers only — never the arguments, never the
-# evidence (V8).
+# evidence.
 LOG_CHANGE_REQUEST_OPENED: Final = "mcp_change_request_opened"
 
 # The write failed and the change was refused. NOA declined to run something it could not
@@ -132,9 +132,9 @@ class ChangeGateBranch(StrEnum):
 
     # The plain address in the text block, and nothing else. This is what a client that
     # renders no UI resource sees, and what remains if a LibreChat bump fails T59's
-    # re-verification (C21) — at which point it becomes the primary surface again.
+    # re-verification — at which point it becomes the primary surface again.
     LINK_OUT = "link_out"
-    # The iframe, plus the link-out text beside it. Both, never one (V24, V25).
+    # The iframe, plus the link-out text beside it. Both, never one.
     UI_RESOURCE = "ui_resource"
     # MCP elicitation. Future: it would move the decision into the client's own prompt, which
     # is a different answer to "where does the operator type" and a different threat model
@@ -142,10 +142,10 @@ class ChangeGateBranch(StrEnum):
     ELICITATION = "elicitation"
 
 
-# The branch NOA ships, and it was **selected by measurement rather than assumed** (V24): T59
+# The branch NOA ships, and it was **selected by measurement rather than assumed**: T59
 # ran against LibreChat pin `45cc53c4` on 2026-08-08 and the `text/uri-list` resource rendered
 # as an iframe `src` on NOA's origin, with an in-frame authenticated `POST` returning 200
-# (R29). Swapping this constant is the whole upgrade path — nothing behind the gate changes.
+#. Swapping this constant is the whole upgrade path — nothing behind the gate changes.
 ACTIVE_CHANGE_GATE_BRANCH: Final = ChangeGateBranch.UI_RESOURCE
 
 logger = structlog.get_logger(__name__)
@@ -160,7 +160,7 @@ class PendingChangeRequest:
     row this module can produce (`core.approvals.repository` writes no other).
 
     No `reason` field, and there is nowhere for one to be added: the reason is typed by an
-    operator on the approval card after this value has been rendered and forgotten (C8, V43).
+    operator on the approval card after this value has been rendered and forgotten.
     """
 
     action_request_id: UUID
@@ -169,7 +169,7 @@ class PendingChangeRequest:
 
 
 def assert_no_reason_argument(arguments: Mapping[str, Any]) -> None:
-    """Refuse arguments that carry a reason under any of its spellings (C8, V15, V43).
+    """Refuse arguments that carry a reason under any of its spellings.
 
     C8 puts the boundary on the *schema*: a CHANGE tool must not declare a reason parameter
     of any name, so the LLM is never asked to author one and never has one to relay. This is
@@ -187,7 +187,7 @@ def assert_no_reason_argument(arguments: Mapping[str, Any]) -> None:
     if offending:
         raise ChangeReasonForbiddenError(
             f"CHANGE arguments carried reason-shaped key(s) {offending}; the reason is "
-            "operator-typed at approve time (C8, V43)"
+            "operator-typed at approve time"
         )
 
 
@@ -207,14 +207,14 @@ def build_approval_context(
     and `updated_at` from that table. What is left is the three things the row cannot say:
 
     - `arguments` — what the model asked for, redacted through the same function the audit
-      path uses (V8, V66). CHANGE arguments should carry no credential by construction
+      path uses. CHANGE arguments should carry no credential by construction
       (C15/V49 generate passwords server-side), so this is a net rather than a fix, and the
       net is where a future tool's argument name lands.
     - `requester` — the email and the LibreChat account behind the call. The user id is the
       FK column; these two are not, and they are what V35's card shows as provenance and
-      origin. Persisted rather than joined at render time because the FK is `SET NULL` (T34)
+      origin. Persisted rather than joined at render time because the FK is `SET NULL`
       — a deleted operator would otherwise erase the identity from a decision that was made.
-    - `evidence` — the in-process preflight (C9, V17). Never from the transcript, never from
+    - `evidence` — the in-process preflight. Never from the transcript, never from
       a tool argument: it is born inside the CHANGE call, milliseconds old, same user.
 
     Plain `dict`s and JSON-native values throughout: this lands in JSONB and comes back as
@@ -224,7 +224,7 @@ def build_approval_context(
     The three keys come from `core.approvals.context`, which is also where the readers get
     them (T37's decision, T63's result tool). A misspelt key in JSONB reads as an absent one
     and answers `{}`, so the writer and its readers naming one constant is what keeps that
-    from being silent (V66).
+    from being silent.
     """
     redacted_arguments = redact_sensitive_data(dict(arguments))
     return {
@@ -244,7 +244,7 @@ async def open_change_request(
     evidence: Mapping[str, Any],
     context: McpToolContext,
 ) -> PendingChangeRequest:
-    """Open the approval question for one CHANGE call; never answer it (T33, V16, V23).
+    """Open the approval question for one CHANGE call; never answer it.
 
     Order is load-bearing: both guards run before anything is written, so a refused call
     leaves no row an operator has to wonder about and no card that cannot be described.
@@ -256,12 +256,12 @@ async def open_change_request(
 
     Raises `ChangeReasonForbiddenError`, `ChangeEvidenceRequiredError` or
     `ChangeGateUnavailableError`; all three are `NoaError`s, so `sanitize_tool_errors` hands
-    the model the code that names the cause rather than a generic failure (V19).
+    the model the code that names the cause rather than a generic failure.
     """
     assert_no_reason_argument(arguments)
     if not evidence:
         raise ChangeEvidenceRequiredError(
-            f"`{tool_name}` opened the gate with no preflight evidence (C9, V17, V35)"
+            f"`{tool_name}` opened the gate with no preflight evidence"
         )
 
     identity = current_mcp_identity()
@@ -299,11 +299,11 @@ async def open_change_request(
 
 
 def approval_card_url(action_request_id: UUID, *, embed_base_url: str) -> str:
-    """The address of one approval card (T32, V26).
+    """The address of one approval card.
 
     **The id and nothing else.** No token, no tool name, no arguments: the tool result this
     ends up in persists in LibreChat's MongoDB, so everything in this string is readable by a
-    LibreChat administrator forever (V26). Authorisation to see the card behind it is the
+    LibreChat administrator forever. Authorisation to see the card behind it is the
     `noa_session` cookie plus V27's requester-match, evaluated when the card is fetched — the
     URL is a name, not a key, and a URL that were a key would be one an operator could paste
     into a chat.
@@ -327,7 +327,7 @@ def build_change_gate_response(
     context: McpToolContext,
     branch: ChangeGateBranch = ACTIVE_CHANGE_GATE_BRANCH,
 ) -> ToolResult:
-    """Shape every CHANGE tool's result (T32 — V24, V25, V26).
+    """Shape every CHANGE tool's result.
 
     One function for all of them, so the approval surface cannot be spelled one way in
     `whm_suspend_account` and another in `pmg_whitelist`. A CHANGE tool's body is two calls:
@@ -346,7 +346,7 @@ def build_change_gate_response(
     cookie. Putting any of them here would publish them to the transcript, which is the thing
     V26 assumes a LibreChat administrator can read. And nothing about *why* — that word is
     born when an operator types it on the card, after this result has been rendered and
-    forgotten (C8, V15, V43), and V71 keeps it out of model-facing text for the same reason:
+    forgotten, and V71 keeps it out of model-facing text for the same reason:
     a model that is told the field exists is a model that can be talked into filling it.
 
     No `structured_content`. R29 measured a content-only result end to end; an envelope
@@ -364,12 +364,12 @@ def build_change_gate_response(
         return ToolResult(content=[text, _approval_ui_resource(request, url=url)])
     raise ChangeGateBranchUnavailableError(
         f"`{tool_name}` asked for the `{branch.value}` change-gate branch, which is declared "
-        "but not built (T32, V24)"
+        "but not built"
     )
 
 
 def _change_gate_text(request: PendingChangeRequest, *, tool_name: str, url: str) -> str:
-    """The text block, identical on every branch that has one (V25).
+    """The text block, identical on every branch that has one.
 
     One wording rather than one per branch, so "the text always carries the address" is a
     single claim about a single string. It reads correctly whether or not a card rendered
@@ -396,7 +396,7 @@ def _approval_ui_resource(request: PendingChangeRequest, *, url: str) -> Embedde
     LibreChat treat this as a UI resource at all, `text/uri-list` is what makes mcp-ui render
     it as an iframe `src` instead of `srcDoc`, and the body is the URL because that is what a
     uri-list *is*. Change any one and the card either does not render or renders on an opaque
-    origin where the session cookie cannot follow (C17). The shape lives in
+    origin where the session cookie cannot follow. The shape lives in
     `noa_api.mcp_tools.ui_resource`; what is local here is which `ui://` name this surface has.
     """
     return build_ui_resource(
@@ -414,7 +414,7 @@ async def _write_pending(
     approval_context: dict[str, Any],
     expires_at: datetime,
 ) -> UUID:
-    """Commit the PENDING row, or refuse the change (V23).
+    """Commit the PENDING row, or refuse the change.
 
     Fail-closed, and `Exception` rather than a driver-specific class for the same reason the
     audit path catches broadly: every way this can fail ends in "no authorization row", and

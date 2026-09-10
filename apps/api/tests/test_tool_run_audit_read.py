@@ -1,4 +1,4 @@
-"""What the audit reader actually asks the database for (T55 — V45, V47, V93).
+"""What the audit reader actually asks the database for.
 
 `test_admin_audit_routes.py` proves the query string reaches a `ToolRunAuditFilters`, and
 `test_admin_audit_live.py` proves Postgres narrows on it. Neither can see the thing in between:
@@ -59,7 +59,7 @@ def compiled(statement: object) -> str:
     """`statement` as PostgreSQL SQL.
 
     Named dialect rather than the default, for `test_requester_matched_read.py`'s reason: the joins
-    and the `ILIKE` are what is being read, and compiling against the dialect NOA ships (C12) means
+    and the `ILIKE` are what is being read, and compiling against the dialect NOA ships means
     this is the text the database would see.
     """
     return str(statement.compile(dialect=postgresql.dialect()))  # type: ignore[attr-defined]
@@ -147,7 +147,7 @@ def test_the_page_asks_for_one_row_beyond_the_limit() -> None:
 
 
 def test_the_requester_join_is_an_outer_join_on_both_reads() -> None:
-    """`SET NULL` (T35): an inner join would hide every run whose operator was deleted.
+    """`SET NULL`: an inner join would hide every run whose operator was deleted.
 
     Those rows are precisely what an audit trail is for — the reason that FK is not a cascade — so
     the join is asserted on both statements rather than on the one a test happened to exercise.

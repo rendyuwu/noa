@@ -1,4 +1,4 @@
-"""A CHANGE `tools/call` opens a request; it never runs a change (T33 — V22, V23, V33, V43).
+"""A CHANGE `tools/call` opens a request; it never runs a change.
 
 T34 built `action_requests` and wrote nothing to it. This is the test that the gate writes
 the row, that the row is the authorization rather than a note about one, and that neither an
@@ -74,11 +74,11 @@ from support.servers import PENDING_TTL_SECONDS, ToolFixture, build_tool_context
 
 SCRATCH_DB = "noa_change_gate_test"
 
-# The first CHANGE tool (T22). Named here rather than built: this file tests the gate, and a
+# The first CHANGE tool. Named here rather than built: this file tests the gate, and a
 # tool would only be a second thing that could be wrong.
 CHANGE_TOOL = "whm_suspend_account"
 
-# What LibreChat fills from `{{LIBRECHAT_BODY_CONVERSATIONID}}` (T57, R28).
+# What LibreChat fills from `{{LIBRECHAT_BODY_CONVERSATIONID}}`.
 CONVERSATION_ID = "1f0c2e5a-7b41-4d2e-9a3c-0b5d8e6f4a12"
 
 # A CHANGE call's arguments and the preflight those arguments produced. The evidence is what
@@ -134,7 +134,7 @@ async def test_the_requester_comes_from_the_token_not_the_arguments() -> None:
     """V23/V27: an argument-supplied requester would be an argument-supplied authorization.
 
     `requested_by_user_id` is what the approval endpoint compares the deciding operator
-    against (V27), so a caller who could name someone else in the arguments could hand their
+    against, so a caller who could name someone else in the arguments could hand their
     own pending change to another operator's approval card.
     """
     tools = build_tool_context()
@@ -216,7 +216,7 @@ async def test_the_gate_commits_its_own_transaction() -> None:
 async def test_the_gate_writes_no_tool_run_row() -> None:
     """V45/V46: the gate call is not an execution, so it is not a run.
 
-    V46's row belongs to the executor that runs after approval (T38). Recording one here
+    V46's row belongs to the executor that runs after approval. Recording one here
     would put a change that has not happened — and may be denied — into the audit trail.
     """
     tools = build_tool_context()
@@ -276,13 +276,13 @@ async def test_a_nested_payload_key_is_not_a_reason() -> None:
 
 
 async def test_every_registered_change_tool_declares_no_reason_parameter() -> None:
-    """C8 on the schema, swept over what the server actually exposes (V43).
+    """C8 on the schema, swept over what the server actually exposes.
 
     Written while every registered tool was still a READ, for the reason V85 was: the rule has
     to exist before the second instance, because the second is where nobody re-reads it. It
     stopped being vacuous at T22 and covers two CHANGE tools since T23 — `build_mcp_server`
     registers them, so the sweep is over the real surface. The case below is what keeps it from
-    passing as a tautology (V87).
+    passing as a tautology.
     """
     tools = build_tool_context()
     server = build_mcp_server(tool_context=tools.context)
@@ -293,7 +293,7 @@ async def test_every_registered_change_tool_declares_no_reason_parameter() -> No
 
 
 async def test_the_schema_sweep_separates_a_tool_that_carries_a_reason() -> None:
-    """The sweep above must be able to fail (V87).
+    """The sweep above must be able to fail.
 
     A probe server, because `register_mcp_tools` refuses an uncatalogued name (V83a) and
     there is no CHANGE tool to break. What is asserted is the predicate the sweep applies,
@@ -365,7 +365,7 @@ async def test_a_gate_call_without_preflight_evidence_is_refused() -> None:
 
 
 async def test_a_credential_shaped_argument_is_redacted_in_the_stored_context() -> None:
-    """V8: the same redactor the audit path uses, not a second copy of the rule (V66).
+    """V8: the same redactor the audit path uses, not a second copy of the rule.
 
     CHANGE arguments should carry no credential by construction — C15/V49 generate passwords
     server-side — so this is the net rather than the fix, and the net is where a future
@@ -413,7 +413,7 @@ async def test_the_deadline_comes_from_the_configured_ttl() -> None:
     """V32: a request without one cannot expire, and "pending forever" is what V32 removes.
 
     Asserted as a window rather than an equality: `expires_at` is computed from the clock at
-    call time, so a bare `==` would be a coin flip across a second boundary (V87, B4). The
+    call time, so a bare `==` would be a coin flip across a second boundary. The
     window is far narrower than any other TTL in the tree, so a gate that read the wrong
     setting still fails.
     """
@@ -429,7 +429,7 @@ async def test_the_deadline_comes_from_the_configured_ttl() -> None:
 
 
 async def test_a_different_ttl_moves_the_deadline() -> None:
-    """The value is read, not hardcoded — the compare above still separates (V87)."""
+    """The value is read, not hardcoded — the compare above still separates."""
     tools = build_tool_context(pending_ttl_seconds=60)
 
     opened, _ = await open_gate(tools)
@@ -477,7 +477,7 @@ async def test_a_write_failure_refuses_the_change() -> None:
     """V23 has no truthful answer without a row, so the change does not proceed.
 
     The same argument T73(c) made for the opening `tool_runs` write, one table over: running
-    anyway would leave the invariant asserted by prose and held by nothing (V69, B2).
+    anyway would leave the invariant asserted by prose and held by nothing.
     """
     requests = FakeActionRequestRepository()
     requests.fail_create = RuntimeError("connection refused")
@@ -605,7 +605,7 @@ async def test_the_repository_writes_a_row_v23_can_be_answered_from(
     assert stored.conversation_ref == CONVERSATION_ID
     assert stored.approval_context == context
     assert stored.expires_at == expires_at
-    # The three columns a decision writes are untouched (V15, V22, V28).
+    # The three columns a decision writes are untouched.
     assert (stored.reason, stored.decided_at, stored.tool_run_id) == (None, None, None)
 
 

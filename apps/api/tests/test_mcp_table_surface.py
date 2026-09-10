@@ -1,27 +1,27 @@
-"""What a large READ answers with, and what it never answers with (T56 — V26, V64, V85).
+"""What a large READ answers with, and what it never answers with.
 
 `noa_api.mcp_tools.table_surface` is the READ-side sibling of T32's CHANGE gate response, and
 this file makes the same four claims about it, one surface over:
 
 - **two content blocks, text first** — the frame is where the table is read and the address in
-  the text is what remains when the frame does not load (V25). Asserted on the count and the
+  the text is what remains when the frame does not load. Asserted on the count and the
   order, because "a resource exists" stays true when the text block is the half that got
   dropped;
 - **the resource is shaped the way the render gate measured** — `ui://` scheme, `text/uri-list`
   mime, URL as the body (R12, R29, R31c). Any one of the three wrong and the table either does
   not render or renders on an opaque origin;
-- **the URL carries the token and nothing else** (V26). Taken apart rather than prefix-matched,
+- **the URL carries the token and nothing else**. Taken apart rather than prefix-matched,
   so a query parameter added later goes red instead of hiding on the end of a `startswith`;
-- **the bound is stated in the text** (V85). A model reports what it was handed, so a capped
+- **the bound is stated in the text**. A model reports what it was handed, so a capped
   table that did not say so becomes "there are twenty-five accounts" on a box with hundreds.
 
 And two this surface owes that the CHANGE gate does not.
 
 **No rows anywhere in the result.** The whole point of V64 is that the body never enters the
 transcript, and a "sample row" would be exactly the ops data it exists to keep out of
-LibreChat's MongoDB (V26).
+LibreChat's MongoDB.
 
-**A counts envelope beside the blocks** (T20 — V20, V45). T32's gate answers with content
+**A counts envelope beside the blocks**. T32's gate answers with content
 alone, for two reasons, and only one of them survives the trip to a READ: a CHANGE call skips
 the audit middleware, so no reader is owed an envelope, while every READ is recorded and
 `status_for_payload` reads a missing envelope as FAILED. The reason that does survive — an
@@ -71,7 +71,7 @@ SUMMARY = "12 accounts on `alpha`."
 EXPIRES_AT = datetime(2026, 8, 9, 12, 30, tzinfo=UTC)
 
 # A credential-shaped value and an ordinary one, driven through the real writer so a test can
-# hunt for both in what the model was handed (V8, V26).
+# hunt for both in what the model was handed.
 SENTINEL_ROW: dict[str, Any] = {"user": "sentinel-account", "ssh_password": "sentinel-secret"}
 
 
@@ -137,11 +137,11 @@ async def park(
 
 
 def test_the_result_carries_a_summary_block_and_a_ui_resource() -> None:
-    """Two blocks, text first (V25, V64).
+    """Two blocks, text first.
 
     The count is the assertion, not "a resource is present": a result that lost its text block
     still contains a resource, and it is the text that carries the address an operator can copy
-    when the frame does not render (V94).
+    when the frame does not render.
     """
     answer = result(build_tool_context())
 
@@ -202,7 +202,7 @@ def test_the_surface_reads_the_base_off_the_context_it_was_given() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# What the text says (V25, V85, V94) and what it does not (V26, V64, V71)
+# What the text says and what it does not
 # --------------------------------------------------------------------------------------
 
 
@@ -210,7 +210,7 @@ def test_the_text_block_carries_the_plain_address_and_no_markup() -> None:
     """V25, V94: an address, not a link.
 
     A `target="_blank"` clicked inside the frame opens nothing at all under one of the two
-    render sites' sandboxes, silently (R32) — so the door that always works is text a human can
+    render sites' sandboxes, silently — so the door that always works is text a human can
     copy, and markup NOA wrote would be that door spelled the withholdable way.
     """
     body = text_block(result(build_tool_context()))
@@ -230,7 +230,7 @@ def test_a_capped_table_says_so_in_the_text() -> None:
 
 
 def test_an_uncapped_table_states_the_total_without_claiming_truncation() -> None:
-    """The negative control (V87). Without it, "a capped table says so" would pass against a
+    """The negative control. Without it, "a capped table says so" would pass against a
     sentence that always says it — and a warning that is always on is one nobody reads."""
     body = text_block(result(build_tool_context(), total_rows=12, stored_rows=12))
 
@@ -254,7 +254,7 @@ def test_the_result_carries_no_reason_shaped_word() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# The envelope beside the blocks (T20 — V20, V45), and what it must not carry (V26, V64)
+# The envelope beside the blocks, and what it must not carry
 # --------------------------------------------------------------------------------------
 
 
@@ -262,7 +262,7 @@ def test_the_result_carries_the_counts_as_a_success_envelope() -> None:
     """V20, V45: `ToolRunAuditMiddleware` reads the run's status off this and nothing else.
 
     The CHANGE gate answers with content alone because a CHANGE call skips the audit
-    middleware (V46) and no reader is owed an envelope. A READ has one, and
+    middleware and no reader is owed an envelope. A READ has one, and
     `status_for_payload` reads a missing envelope as FAILED — so a content-only table result
     would put every successful large listing into the audit trail as a failure.
     """
@@ -277,7 +277,7 @@ def test_the_result_carries_the_counts_as_a_success_envelope() -> None:
 
 
 def test_the_envelope_states_both_counts_when_nothing_was_dropped() -> None:
-    """The negative control (V87): `truncated` is a stored fact, not a shape difference.
+    """The negative control: `truncated` is a stored fact, not a shape difference.
 
     Without this, "a capped table says so" would pass against an envelope that always claims
     truncation, and a reader could not tell a complete table from a capped one by its keys.
@@ -293,7 +293,7 @@ def test_the_envelope_states_both_counts_when_nothing_was_dropped() -> None:
 
 
 def test_the_envelope_carries_no_address_and_no_token() -> None:
-    """The half of T32(b)'s reason that does hold here (V26).
+    """The half of T32(b)'s reason that does hold here.
 
     An envelope beside the blocks must not become a third place the URL lives: everything in a
     tool result persists in LibreChat's MongoDB, and the address is already stated once in the
@@ -324,7 +324,7 @@ async def test_no_row_reaches_the_tool_result() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# Parking: who it is stored for, and what happens when it cannot be (V27, V64)
+# Parking: who it is stored for, and what happens when it cannot be
 # --------------------------------------------------------------------------------------
 
 

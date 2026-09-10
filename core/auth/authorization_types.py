@@ -1,4 +1,4 @@
-"""Shapes the RBAC engine passes around (T9).
+"""Shapes the RBAC engine passes around.
 
 Ported from `noa-old` branch `MCP` (`core/auth/authorization_types.py`, C13), minus the
 direct-grant fields. `AuthorizationUser` there carried `direct_tools` alongside `tools`;
@@ -6,7 +6,7 @@ V75 turns direct per-user grants into a 410 (`direct_tool_grants_disabled`, T65)
 field for them would be a slot nothing can ever fill.
 
 `AuthorizedUser` is the answer to "who is this and what may they call". It is built from a
-freshly read row every time (V6, V11) — never cached, never reconstructed from a cookie
+freshly read row every time — never cached, never reconstructed from a cookie
 claim. That is the whole reason it is a frozen dataclass: a caller cannot flip `is_active`
 on it and have the engine believe them.
 
@@ -29,8 +29,8 @@ class AuthorizedUser:
     """A user plus the tools they may call, as of this read.
 
     `tools` is the *effective* set: role grants filtered to the catalog, or every known
-    tool for an admin, or empty when disabled (V10, V11). It is a snapshot for a response
-    body, not a permission cache — the execution gate re-resolves (V1, V14).
+    tool for an admin, or empty when disabled. It is a snapshot for a response
+    body, not a permission cache — the execution gate re-resolves.
     """
 
     user_id: UUID
@@ -105,17 +105,17 @@ class AuthorizationRepository(Protocol):
 
     async def delete_user(self, user_id: UUID) -> bool: ...
 
-    # V4's cascade revoke (T11). On the RBAC repository rather than T10's token repository
+    # V4's cascade revoke. On the RBAC repository rather than T10's token repository
     # because `set_user_active` is what triggers it, and a disable that revoked through a
     # second repository would need a second transaction to go wrong in.
     async def delete_mcp_tokens_for_user(self, user_id: UUID) -> int: ...
 
-    # --- Transaction boundary (T51) ---
+    # --- Transaction boundary ---
 
     # Every method above flushes; this is what makes the flush durable. On the repository
     # rather than in a route because the service is what knows a mutation succeeded — see
     # `AuthorizationService`'s docstring, and `AuthRepository.commit` for the same shape one
-    # taxonomy over (T8, V66).
+    # taxonomy over.
     async def commit(self) -> None: ...
 
 

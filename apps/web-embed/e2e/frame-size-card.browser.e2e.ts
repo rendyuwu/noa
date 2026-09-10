@@ -20,7 +20,7 @@ import {
  * two subjects whose measurements have nothing to say to each other. Everything the header of that
  * file states about the lane applies here — every claim is a layout claim, which is why none of them
  * is in the vitest lane; the frame is the one LibreChat serves; and there is no readiness wait of
- * this file's own (V90).
+ * this file's own.
  *
  * **What is measured here is the two controls that stop the sizing oscillating, and the one state
  * whose way out the sizing was leaving off screen.**
@@ -65,7 +65,7 @@ async function cardMetrics(framed: Frame) {
  *
  * This is the escape hatch itself and not a convenience beside the link: the sandbox at one of
  * LibreChat's two render sites omits `allow-popups`, so the "Sign in to NOA" link opens nothing at
- * all there and silently, and what an operator is left with is this string to copy (V94, R32).
+ * all there and silently, and what an operator is left with is this string to copy.
  */
 async function printedAddress(framed: Frame, address: string) {
   return await framed.evaluate((value) => {
@@ -172,7 +172,7 @@ test('a width change that shortens the card does not shorten the frame', async (
 
   // The reflow really happened, and the drop really is large enough to be worth a message under a
   // symmetric rule. Without these two, "nothing was posted" would be a claim about a page that never
-  // changed — a spec that cannot fail for the reason it was written (V87).
+  // changed — a spec that cannot fail for the reason it was written.
   expect(released!.contentWidth).toBeGreaterThan(reserved!.contentWidth)
   expect(settled.at(-1)! - released!.naturalHeight).toBeGreaterThan(CARD_FRAME_POLICY.epsilon)
 
@@ -189,13 +189,13 @@ test('a width change that shortens the card does not shorten the frame', async (
  *
  * This is the state with the strongest claim on the sizing and the last one to get it. What it hands
  * an operator is a printed address, and that address is the door the frame's sandbox cannot withhold
- * (V94) — so a frame too short to show it is a way out left off screen. Measured before the sizer
+ * — so a frame too short to show it is a way out left off screen. Measured before the sizer
  * was mounted here, at 150px: the address began 4.5px below the fold and ended 30px past it. Never
  * unreachable — `.notice` is `max-height: 100dvh; overflow-y: auto` and scrolls — and off screen all
  * the same.
  *
  * Both surfaces, because both render this state through the same component and the whole reason it
- * is one component is that the way out must not go missing from one of them (V66). The 401 fixtures
+ * is one component is that the way out must not go missing from one of them. The 401 fixtures
  * answer 401 forever, which is the state V38 renders and a retry cannot escape.
  *
  * `tables.browser.e2e.ts` already asserts that the address is *present* and that no form is; it runs
@@ -233,7 +233,7 @@ for (const surface of ['card', 'table'] as const) {
     // rather than the bottom below it, and "on screen" is a claim about the whole string.
     expect(address!.top).toBeGreaterThanOrEqual(0)
     // The frame really did grow — otherwise this would be a claim about a 150px box that happened to
-    // fit, which it does not (V87).
+    // fit, which it does not.
     expect((await frameBox(page)).applied).toBeGreaterThan(HOST_OPENING_HEIGHT)
     // And this surface reserves its gutter like the other two, for the reason `notice.module.css`
     // states: `.noticeAddress` is `word-break: break-all`, which is the content a 15px width change

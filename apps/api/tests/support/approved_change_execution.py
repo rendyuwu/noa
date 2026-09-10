@@ -1,4 +1,4 @@
-"""Doubles for the post-approval executor and the reaper (T38).
+"""Doubles for the post-approval executor and the reaper.
 
 Same split as `support.action_decisions` beside `test_action_request_decisions_live.py`, and for
 the same reason: `test_approved_change_execution_live.py` and `test_stranded_run_reaper_live.py`
@@ -9,13 +9,13 @@ failure records, and the host's one-task-one-session rule — none of which need
 
 **The journal is the point**, as everywhere else here. `["load", "run", "finish:FAILED",
 "receipt", "commit"]` pins four separate decisions at once: the authorization is read before
-anything happens (V23), the runner is dispatched after it, the terminal status and the receipt
-are both written before the single commit (V46), and there is exactly one commit — a receipt
+anything happens, the runner is dispatched after it, the terminal status and the receipt
+are both written before the single commit, and there is exactly one commit — a receipt
 that committed separately from its run could survive a rollback of the status it describes.
 
 `RecordingSessionFactory` and `FakeSession` are imported from `support.action_expiry` rather
 than re-declared: T39's sweeper needed the same "a fresh session per unit of work, and it was
-closed" instrument, and two copies of it are two things that can silently stop agreeing (V66).
+closed" instrument, and two copies of it are two things that can silently stop agreeing.
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ def authorized_change(
 
     `reason` is non-blank by default because every row this stands in for is `APPROVED`, and
     T34's `ck_action_requests_decided_reason` refuses a decided row without one. A test that
-    wants the empty string passes it (T22).
+    wants the empty string passes it.
     """
     return AuthorizedChange(
         action_request_id=action_request_id or uuid4(),
@@ -75,7 +75,7 @@ def authorized_change(
 
 @dataclass
 class RecordedFinish:
-    """One terminal `tool_runs` write as the service asked for it (V20, V47)."""
+    """One terminal `tool_runs` write as the service asked for it."""
 
     tool_run_id: UUID
     status: ToolRunStatus
@@ -84,7 +84,7 @@ class RecordedFinish:
 
 @dataclass
 class RecordedReceipt:
-    """One `action_receipts` write (V46)."""
+    """One `action_receipts` write."""
 
     action_request_id: UUID
     tool_run_id: UUID | None
@@ -179,7 +179,7 @@ class RecordingChangeRunner:
     """A `ChangeRunner` that records what it was handed and answers what it was told to.
 
     `fail` makes it raise, which is the contract-breach path: a runner is expected to carry
-    `sanitize_tool_errors` and answer `ok: False` instead (V19), and the executor's backstop is
+    `sanitize_tool_errors` and answer `ok: False` instead, and the executor's backstop is
     what stops a raise from leaving a run STARTED forever.
 
     `block` holds the change open until the event is set, which is how "the handoff returned
@@ -236,7 +236,7 @@ def stranded_run(
     """A run the reaper found still `STARTED` past its deadline.
 
     `action_request_id=None` is a READ run (or a change whose request row was deleted), which is
-    the case that owes no receipt — `action_receipts.action_request_id` is NOT NULL (T36).
+    the case that owes no receipt — `action_receipts.action_request_id` is NOT NULL.
     """
     return StrandedRun(
         tool_run_id=tool_run_id or uuid4(),
@@ -266,7 +266,7 @@ class FakeStrandedRunRepository:
     # read per pass rather than two that nearly agree.
     cutoffs: list[Any] = field(default_factory=list)
     # The bound each read was made under, so a test can assert the batch size reached the SQL
-    # rather than only that the pass stopped somewhere (V92).
+    # rather than only that the pass stopped somewhere.
     limits: list[int] = field(default_factory=list)
 
     async def stranded_runs(self, *, cutoff: Any, limit: int) -> BoundedRows[StrandedRun]:

@@ -1,4 +1,4 @@
-"""Parking a large READ's rows: the cap, the bound it reports, and the redaction (T56).
+"""Parking a large READ's rows: the cap, the bound it reports, and the redaction.
 
 `core.results.tables` is where V64's "the rows do not enter the transcript" becomes a row in
 Postgres, and where V85's "a READ that caps ships its own bound" becomes two stored numbers.
@@ -9,13 +9,13 @@ Three claims this file exists for:
 
 - **The total is the count before the cut.** A capped table that reported `len(rows)` would
   tell an operator a dense server has exactly as many accounts as the page happens to show —
-  a fabrication authored by NOA rather than by the model (V85).
+  a fabrication authored by NOA rather than by the model.
 - **The cut is a prefix.** The producer ordered the rows and only the producer knows which
   order is reproducible for its source, so re-sorting here would scramble a grouping the
   evidence is read by (V85's amended ordering clause, T24's `csf -g` deviation).
 - **Rows are redacted on the way in, at any depth.** A parked table outlives the call and
   sits behind a URL in a persisted transcript, so a per-writer exemption from the redaction
-  rule is exactly how one of them eventually stores a credential (V8, B7, B8).
+  rule is exactly how one of them eventually stores a credential.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ def rows(count: int) -> list[dict[str, object]]:
 
 
 # --------------------------------------------------------------------------------------
-# The cap and the bound it reports (V85)
+# The cap and the bound it reports
 # --------------------------------------------------------------------------------------
 
 
@@ -59,7 +59,7 @@ def test_a_capped_table_reports_the_total_and_the_flag() -> None:
 
 
 def test_an_uncapped_table_reports_truncated_false_and_the_same_number_twice() -> None:
-    """The negative control (V87).
+    """The negative control.
 
     Without it, "a capped table says so" passes just as well against a flag pinned to `True`
     — and a surface that always claims truncation teaches an operator to ignore the word.
@@ -98,7 +98,7 @@ def test_the_cut_keeps_the_order_it_was_given() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# Redaction (V8)
+# Redaction
 # --------------------------------------------------------------------------------------
 
 
@@ -128,7 +128,7 @@ def test_a_nested_credential_is_redacted_too() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# Parking: what reaches the writer, and in what order (V64)
+# Parking: what reaches the writer, and in what order
 # --------------------------------------------------------------------------------------
 
 

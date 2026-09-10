@@ -1,4 +1,4 @@
-"""Refusals from the large-READ table surface (T56 — V27, V64, V73).
+"""Refusals from the large-READ table surface.
 
 Two classes, and the split is the same one `core.approvals.errors` makes: what the caller
 can do about it.
@@ -12,10 +12,10 @@ tokens exist.
 `ResultTableUnavailableError` is the write side. Parking a table is what makes a large READ's
 answer readable at all, so a failure there is refused rather than papered over — the
 alternative is a tool result carrying a URL to a table that was never stored, which is a dead
-link in a transcript that persists (V26).
+link in a transcript that persists.
 
 `NoaError` subclasses for V73's two reasons: `sanitize_tool_errors` passes a `NoaError`'s own
-`error_code` through to the model instead of collapsing it (V19), and `noa_api.api.errors`
+`error_code` through to the model instead of collapsing it, and `noa_api.api.errors`
 maps each class to a status, so the route raises rather than building a response.
 """
 
@@ -32,7 +32,7 @@ class ResultTableError(NoaError):
 
 
 class ResultTableNotFoundError(ResultTableError):
-    """No table this caller may read under that token (V27, V64).
+    """No table this caller may read under that token.
 
     One code, one message, four causes — see the module docstring. The message says what to
     do next, because the most likely cause is the benign one: the tables expire, and the
@@ -44,9 +44,9 @@ class ResultTableNotFoundError(ResultTableError):
 
 
 class ResultTableUnavailableError(ResultTableError):
-    """The table could not be parked, so the READ has no surface to point at (V64).
+    """The table could not be parked, so the READ has no surface to point at.
 
-    Fail-closed, the same shape the CHANGE gate's write failure has (T33): a result whose
+    Fail-closed, the same shape the CHANGE gate's write failure has: a result whose
     URL leads nowhere is worse than a refusal, because the refusal is visible at the moment
     it happens and the dead link is not.
     """

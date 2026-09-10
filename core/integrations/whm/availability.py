@@ -1,4 +1,4 @@
-"""Is CSF usable here? Is Imunify? (T16, V55, V57, V69)
+"""Is CSF usable here? Is Imunify?
 
 Copied from `noa-old` branch `MCP`, where all of it — including the CSF probe and the
 `asyncio.gather` — sat inside `whm/integrations/imunify_cli.py`. Its own module here (T16
@@ -10,7 +10,7 @@ back).
 came back true, both backends in parallel. The invariant — zero backends available → error
 `no_firewall_backend`, ⊥ a success that changed nothing — is enforced one module over, in
 `firewall_gate.run_on_usable_backends`, which is the single door from this answer to acting on
-it (T68). What this module owes that door is an *honest* answer, because a false positive here
+it. What this module owes that door is an *honest* answer, because a false positive here
 becomes exactly the silent no-op V57 forbids, and no gate downstream can catch it.
 
 **Two probe strategies, chosen by the resolved SSH user.** This is the part that took an
@@ -56,7 +56,7 @@ from core.remote_exec.types import SSHConnectionConfig
 
 # The two backend names, in the order every merged result reads in. Here rather than in the
 # gate or a tool because `as_tools_dict` below is what spells them, and one home is the whole
-# point (V66); `firewall_gate` imports them, so the graph stays one-directional.
+# point; `firewall_gate` imports them, so the graph stays one-directional.
 BACKEND_CSF = "csf"
 BACKEND_IMUNIFY = "imunify"
 
@@ -71,7 +71,7 @@ class BinaryCheck:
 
 @dataclass(frozen=True, slots=True)
 class FirewallAvailability:
-    """Which firewall backends this server can actually be driven through (V57).
+    """Which firewall backends this server can actually be driven through.
 
     `csf` / `imunify` mean *usable* — present AND runnable, directly as root or via `sudo -n`
     when not. `sudo_required` is True when either binary was present but its escalation was
@@ -84,7 +84,7 @@ class FirewallAvailability:
     sudo_required: bool
 
     def as_tools_dict(self) -> dict[str, bool]:
-        """The `available["csf"]` / `available["imunify"]` shape the tools branch on (V57)."""
+        """The `available["csf"]` / `available["imunify"]` shape the tools branch on."""
         return {BACKEND_CSF: self.csf, BACKEND_IMUNIFY: self.imunify}
 
 
@@ -97,7 +97,7 @@ async def _check_binary(
     """Resolve whether one firewall binary is usable for the resolved SSH user.
 
     `build_probe` is a callable, not a prebuilt string, because `build_*_command` reads the
-    escalation decision off the config (V55) — and keeping it lazy means the two probes share
+    escalation decision off the config — and keeping it lazy means the two probes share
     one shape while composing different commands.
     """
     try:
@@ -138,7 +138,7 @@ async def check_imunify_binary(config: SSHConnectionConfig) -> BinaryCheck:
 
 
 async def check_firewall_binaries(config: SSHConnectionConfig) -> FirewallAvailability:
-    """Probe both backends in parallel and combine the verdicts (V57).
+    """Probe both backends in parallel and combine the verdicts.
 
     `asyncio.gather` rather than two awaits: each probe is a full SSH handshake against the
     same host, and a firewall preflight runs while an operator waits on a chat turn.

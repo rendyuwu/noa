@@ -1,18 +1,18 @@
-"""The shape of `action_requests.approval_context`, in one place (T33, T63 — V33, V66).
+"""The shape of `action_requests.approval_context`, in one place.
 
 V33 says the approval payload is built once, at gate time, and persisted as one object rather
 than rebuilt when the card renders. That makes this JSONB column a small contract between one
 writer and several readers, and the keys are the whole of it:
 
-- `noa_api.mcp_tools.change_gate.build_approval_context` writes it (T33);
+- `noa_api.mcp_tools.change_gate.build_approval_context` writes it;
 - `core.approvals.decisions.LockedActionRequest` reads the arguments into an approved change's
-  audit row (T37, V47), and beside them the four identity fields §V108 requires that row to
+  audit row, and beside them the four identity fields §V108 requires that row to
   name — the only reader that takes anything out of `evidence` by whitelist;
-- `core.approvals.results` reads them again for `noa_get_action_result` (T63);
+- `core.approvals.results` reads them again for `noa_get_action_result`;
 - T41's card reads all three;
 - `core.approvals.execution` reads the arguments *and* the evidence, because an approved
   change is executed from what the gate recorded and its receipt's before-state is that same
-  preflight (T38, V46).
+  preflight.
 
 Four spellings of `"arguments"` across four modules is three chances for one of them to be
 wrong in a way nothing catches — the payload is JSONB, so a misspelt key reads as an absent
@@ -25,7 +25,7 @@ default for the reason T35 gives: "took no arguments" and "arguments not recorde
 become the same row, and both of them are still an empty mapping to a reader.
 
 Nothing here reads `reason`. It is not part of this payload — it is a column of its own, NULL
-until an operator types one into the approval card (C8, V15, V43) — and a helper here would be
+until an operator types one into the approval card — and a helper here would be
 the first place someone reached for it from a path that must never see it (T63's tool is
 exactly such a path).
 """
@@ -35,15 +35,15 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Final
 
-# What the model asked for, redacted at the gate (V8). Read by the decision path and by T63.
+# What the model asked for, redacted at the gate. Read by the decision path and by T63.
 CONTEXT_ARGUMENTS_KEY: Final = "arguments"
 
 # Who called: email plus LibreChat account. Persisted rather than joined at render time — the
-# requester FK is `SET NULL` (T34), so a deleted operator would otherwise erase the identity
-# from a decision that was made (V35).
+# requester FK is `SET NULL`, so a deleted operator would otherwise erase the identity
+# from a decision that was made.
 CONTEXT_REQUESTER_KEY: Final = "requester"
 
-# The in-process preflight the CHANGE tool ran (C9, V17). For the approval card and for the
+# The in-process preflight the CHANGE tool ran. For the approval card and for the
 # receipt's before-state — never for a model: V17 says this evidence is born in-process and
 # stays out of the transcript.
 CONTEXT_EVIDENCE_KEY: Final = "evidence"
@@ -51,7 +51,7 @@ CONTEXT_EVIDENCE_KEY: Final = "evidence"
 
 # Where the identity fields land inside `tool_runs.args` for an approved change (§V108). One
 # nested key rather than four flat ones, because `args` is otherwise "whichever tool's own
-# parameters" (T35) and an auditor must not read `api_username` as something a model passed.
+# parameters" and an auditor must not read `api_username` as something a model passed.
 AUDIT_CREDENTIAL_KEY: Final = "credential"
 
 # The evidence keys that go under it — a WHITELIST, never a passthrough. `evidence` is a
@@ -92,12 +92,12 @@ def audit_identity_from_context(approval_context: Mapping[str, Any]) -> dict[str
 
 
 def _named(value: object) -> bool:
-    """Whether `value` is a name rather than an absence — non-blank `str` (V86)."""
+    """Whether `value` is a name rather than an absence — non-blank `str`."""
     return isinstance(value, str) and bool(value.strip())
 
 
 def arguments_from_context(approval_context: Mapping[str, Any]) -> dict[str, Any]:
-    """The tool arguments as the gate redacted them, or `{}` (V8, V33).
+    """The tool arguments as the gate redacted them, or `{}`.
 
     Redacted once, at the gate, and carried — never re-derived by a reader, which would be a
     second redaction rule to keep in step with the first.
@@ -107,11 +107,11 @@ def arguments_from_context(approval_context: Mapping[str, Any]) -> dict[str, Any
 
 
 def evidence_from_context(approval_context: Mapping[str, Any]) -> dict[str, Any]:
-    """The in-process preflight the CHANGE tool ran (C9, V17, V35).
+    """The in-process preflight the CHANGE tool ran.
 
     Written for T41's card and hoisted here at T38, when the executor became its second reader
     — the receipt's before-state is this payload, so the operator reads the same evidence they
-    authorised against (V46). `core.approvals.card` re-exports it.
+    authorised against. `core.approvals.card` re-exports it.
 
     `{}` when absent or not an object — the gate refuses to open a request with no evidence at
     all (`ChangeEvidenceRequiredError`), so an empty payload here means the row predates that

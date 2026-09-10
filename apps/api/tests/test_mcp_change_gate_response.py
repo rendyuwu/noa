@@ -1,4 +1,4 @@
-"""The CHANGE gate's answer: an approval surface, in the shape T59 measured (T32).
+"""The CHANGE gate's answer: an approval surface, in the shape T59 measured.
 
 T33's file next door proves the gate *writes* the row. This one proves what the tool hands
 back, and the claims are different in kind: a row is right or wrong against the database,
@@ -15,7 +15,7 @@ Four invariants, and each has its own section below:
   link-out text together rather than choosing.
 - **V25** — the plain address is in the text block on every branch that has one. T43 bounded
   what that is worth and what it is not: a click needs `allow-popups`, absent at one of the
-  two render sites, and a tab opened by a click inherits the frame's sandbox (R32, V94) — so
+  two render sites, and a tab opened by a click inherits the frame's sandbox — so
   the thing that survives is an address a human can copy, not a link.
 - **V26** — the URL carries an id and nothing else, and neither does the rest of the result.
 - **C8 / V15 / V71** — the word an operator types on the card does not appear in text a model
@@ -54,7 +54,7 @@ from noa_api.mcp_tools.change_gate import (
 from support.mcp_identity import EMAIL, LIBRECHAT_USER, authenticated_caller, http_request_context
 from support.servers import EMBED_BASE_URL, build_tool_context
 
-# The first CHANGE tool (T22), named rather than built: this file tests the response shape.
+# The first CHANGE tool, named rather than built: this file tests the response shape.
 CHANGE_TOOL = "whm_suspend_account"
 
 # The two branches that exist. `ELICITATION` is declared and refuses — see its own test.
@@ -109,7 +109,7 @@ def test_active_branch_ships_the_ui_resource_and_the_link_out_text_together() ->
 
 
 def test_the_link_out_branch_is_text_only_and_still_carries_the_address() -> None:
-    """V24/V25: the branch that becomes primary if a bump fails T59 (C21).
+    """V24/V25: the branch that becomes primary if a bump fails T59.
 
     It is one block, and that block still has the URL in it — which is the whole reason this
     branch is survivable at all.
@@ -132,7 +132,7 @@ def test_the_elicitation_branch_is_declared_and_refuses() -> None:
 
     It refuses with a `ChangeGateError` rather than returning something that looks like an
     approval surface, and rather than a bare exception: `sanitize_tool_errors` passes a
-    `NoaError`'s code through to the model, so the failure names itself (V19, V73).
+    `NoaError`'s code through to the model, so the failure names itself.
     """
     tools = build_tool_context()
 
@@ -159,8 +159,8 @@ def test_the_ui_resource_is_the_shape_the_render_gate_measured() -> None:
 
     `ui://` is LibreChat's classifier (`parsers.ts:183`, R31c) — without it the resource is
     an ordinary attachment and no card renders. `text/uri-list` is mcp-ui's selector for the
-    `src` render mode (R12); `text/html` renders `srcDoc`, whose opaque origin the T59 run
-    measured as unable to read `document.cookie` at all (C17). Asserted literally because
+    `src` render mode; `text/html` renders `srcDoc`, whose opaque origin the T59 run
+    measured as unable to read `document.cookie` at all. Asserted literally because
     both strings belong to code NOA does not own.
     """
     tools = build_tool_context()
@@ -192,7 +192,7 @@ def test_every_built_branch_carries_the_plain_address_in_the_text(
     """V25: "always" means on every branch, not only the one shipping today.
 
     And it is the *address*, not markup: no `<a>`, no `href`, nothing that needs a control
-    the frame's sandbox can withhold (V94, R32). What an operator can do with it is copy it.
+    the frame's sandbox can withhold. What an operator can do with it is copy it.
     """
     tools = build_tool_context()
     request = pending()
@@ -212,7 +212,7 @@ def test_the_text_names_the_tool_the_request_and_the_deadline() -> None:
     """What the block has to say for itself: nothing ran, here is the id, here is the TTL.
 
     The id is in the text rather than only in the URL because `noa_get_action_result` takes
-    one (T63), and V23 answers "did this run?" from a row — so the model needs the id to ask,
+    one, and V23 answers "did this run?" from a row — so the model needs the id to ask,
     and is told to ask rather than to assume.
     """
     tools = build_tool_context()
@@ -307,7 +307,7 @@ def test_the_result_text_never_mentions_a_reason(branch: ChangeGateBranch) -> No
 
 
 def test_the_url_is_built_from_the_configured_base() -> None:
-    """The fixture's base is not `Settings`' default, so a hardcoded one cannot pass (V87)."""
+    """The fixture's base is not `Settings`' default, so a hardcoded one cannot pass."""
     tools = build_tool_context(embed_base_url="https://approvals.example.test")
     request = pending()
 

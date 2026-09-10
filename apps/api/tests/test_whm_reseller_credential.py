@@ -1,4 +1,4 @@
-"""`whm_servers.is_reseller_credential` against a live database (T77 — V109, C12).
+"""`whm_servers.is_reseller_credential` against a live database.
 
 Two things a double cannot tell you, so both are here rather than in
 `test_admin_server_routes.py` (which owns the HTTP envelope over doubles):
@@ -7,7 +7,7 @@ Two things a double cannot tell you, so both are here rather than in
    column existed, so it is a raw statement naming four columns and nothing else — an ORM
    insert would carry the attribute and prove only that Python can send `false`. The column's
    `DEFAULT false` is what makes "existing rows keep working at zero configuration change"
-   (C12) true rather than intended.
+   true rather than intended.
 
 2. **The V109(b) rule holds on the row the write produces**, not on the request body. A patch
    that flips the flag on carries neither `name` nor `api_username`, and a patch renaming an
@@ -20,7 +20,7 @@ that refuses every reseller write, and `false` rows must stay unbound (sixteen r
 cannot all be named `root`, V109).
 
 Scratch database, migrated with `alembic upgrade head`, dropped after — skipped rather than
-failed when Postgres is unreachable, unless `NOA_REQUIRE_POSTGRES` says otherwise (V102).
+failed when Postgres is unreachable, unless `NOA_REQUIRE_POSTGRES` says otherwise.
 """
 
 from __future__ import annotations
@@ -121,7 +121,7 @@ async def _observed(
 ) -> Any:
     """One stored column as a **separate** connection sees it, or `None` for no such row.
 
-    Three readers over one statement rather than three copies of it (V66), and it takes the
+    Three readers over one statement rather than three copies of it, and it takes the
     mapped attribute rather than a column name so nothing interpolates a caller's string into
     SQL. The second connection is the point: a value read back through the session that wrote
     it cannot tell a commit from a flush (V100(c)).
@@ -158,7 +158,7 @@ async def test_a_row_inserted_without_the_column_reads_false(
 
     Raw SQL naming four columns, because that is the shape of the statement this migration
     must not break: `id`, the timestamps, `verify_ssl` and now `is_reseller_credential` are
-    all filled by the database (C12).
+    all filled by the database.
     """
     inserted = await session.execute(
         sa.text(
@@ -228,7 +228,7 @@ async def test_a_reseller_create_named_after_its_api_username_is_stored(
 async def test_a_root_row_may_be_named_anything(
     service: WHMServerAdminService, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """`false` rows are not bound: sixteen root credentials cannot all be named `root` (V109).
+    """`false` rows are not bound: sixteen root credentials cannot all be named `root`.
 
     This is what keeps the rule from being unconditional — delete the `is_reseller_credential`
     guard and this test still passes, which is the point: it is the other half of the compare.

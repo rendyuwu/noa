@@ -7,7 +7,7 @@ import { type ApprovalCardLoad, parseApprovalCard } from '@/lib/approvals/card'
  * **Server-side, not from the browser**, and the reason is what the page then is: the HTML that
  * reaches the frame is already the authenticated card, so there is no moment where an operator
  * looks at an empty box while a client fetch decides whether they are signed in — and the CSRF
- * token (V39) arrives as part of the render rather than through a second round trip a page could
+ * token arrives as part of the render rather than through a second round trip a page could
  * make without ever having been allowed to read the request.
  *
  * The browser still never calls FastAPI directly (AGENTS.md). This runs inside the Next server on
@@ -15,13 +15,13 @@ import { type ApprovalCardLoad, parseApprovalCard } from '@/lib/approvals/card'
  * allowlisted proxy (§T.44), which is the path V22 names.
  *
  * **The cookie is forwarded and `Authorization` is not.** Every surface this app reaches is
- * cookie-authenticated (V22, V40); a bearer token is LibreChat's to send (C5), never a browser's,
+ * cookie-authenticated; a bearer token is LibreChat's to send, never a browser's,
  * and this loader adds no header a caller could use to relay one — the same departure §T.44(d)
  * makes in the proxy.
  *
  * **Four outcomes, because four of them render differently** — `ApprovalCardLoad` says which, and it
  * lives in `lib/approvals/card.ts` because the browser-side poll (§T.42) answers the same four
- * questions and the card switches on the result once (V66). Re-exported here so this module still
+ * questions and the card switches on the result once. Re-exported here so this module still
  * reads as the loader's whole contract.
  */
 

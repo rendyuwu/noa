@@ -7,7 +7,7 @@ restates neither. Landed by §T.47 (scaffold), §T.48 (port), §T.49 (framing) a
 ## What it is
 
 Next.js 16 + BIGSU. Users, roles, tokens, WHM/Proxmox/PMG servers, audit (action requests, tool
-runs, receipts). One of three deployables (C12), with its own `package.json`, lockfile, CI job and
+runs, receipts). One of three deployables, with its own `package.json`, lockfile, CI job and
 deploy artifact. It shares no source with `apps/web-embed` — `eslint.config.mjs` holds that as a
 rule and `tests/import-firewall.test.ts` exercises the rule.
 
@@ -30,7 +30,7 @@ Four deliberate deviations from the source:
    disclosure. Those three modules moved to `lib/admin/audit/` and `components/admin/audit/`, and
    the two evidence types they need dropped their `Assistant` prefix (`receipt-evidence.ts`). The
    two coercers they used are now in `lib/admin/shared/coerce.ts` beside the ones the server
-   verticals already shared (V66).
+   verticals already shared.
 3. **Role-denied renders instead of redirecting.** The old app sent a verified non-admin to the
    chat landing. Every route here is admin-only, so that redirect would land on another admin-only
    route and loop. `useVerifiedAuth` resolves to a `forbidden` status and the route renders
@@ -92,25 +92,25 @@ function of another deployable's health, so a rolling API restart pulls both web
 rotation at once, and this app does not need the API to serve the error and 401 states an operator
 sees during exactly that window. Readiness that means something is expressed as ordering instead:
 `docs/deployment.md`. An earlier draft of this file promised the probe here; the promise was never
-in `SPEC.md` §T.50, and the row is the source (V84).
+in `SPEC.md` §T.50, and the row is the source.
 
 ## Session and the API hop (§T.50)
 
 The browser never calls FastAPI directly (AGENTS.md). Every call goes to `/api/*` on this origin,
 and `src/app/api/[...path]/route.ts` forwards it server-side to `NOA_API_URL` with the httpOnly
-`noa_session` cookie the registrable domain put here (V40). `Set-Cookie` rides back with its
+`noa_session` cookie the registrable domain put here. `Set-Cookie` rides back with its
 `Domain` attribute untouched — whatever the deployment's parent is (`.noa.internal` in development,
 `.simondayce.my.id` deployed) — because rewriting it would confine the session to whichever origin
 answered, and the embed's approval card would stop seeing the same login.
 
 `Authorization` is dropped outbound. Bearer tokens are MCP-only and LibreChat's server sends them,
-never a browser (C5), so `/api/mcp/` being reachable on this origin is reachable-and-inert rather
+never a browser, so `/api/mcp/` being reachable on this origin is reachable-and-inert rather
 than a relay. The primitives (`src/lib/proxy/http.ts`) are the `noa-old` layer copied with its
 tests, not imported from `apps/web-embed`, which carries the same file: the two apps are independent
-packages (C12) and duplication across that line is the boundary working.
+packages and duplication across that line is the boundary working.
 
 **Pass-through, not the embed's allowlist, and the difference is argued rather than inherited.** The
-embed allowlists four routes because it is the one NOA origin LibreChat may frame (V41) — a
+embed allowlists four routes because it is the one NOA origin LibreChat may frame — a
 pass-through there would put `/auth/login` and `/admin/*` inside that frame with the operator's
 cookie. This app answers `frame-ancestors 'none'`, so no foreign document can drive it, and what it
 needs is `§I.admin-api` in full: users, roles, tokens, three server verticals, audit, `/auth/*`,
@@ -121,26 +121,26 @@ entry there fails as a 404 the panel cannot explain.
 gate, and a login page behind it would 401 its way back to itself. `session.ts::clearAuth` is what
 sends an operator here, with `?reason=` and a sanitized `?returnTo=` (`return-to.ts`, reused).
 
-**The primary action is a `type="button"` click handler, not a form submit (V94, R32).** This is not
+**The primary action is a `type="button"` click handler, not a form submit.** This is not
 a style choice. `NOA_SIGN_IN_URL` points at this route, and one of the two ways an operator arrives
 is a click on the embed 401 card's link-out. R32 measured that tab: top-level, but it inherits the
-frame's sandbox, and `allow-forms` is absent at both of LibreChat's render sites (R13). A sandboxed
+frame's sandbox, and `allow-forms` is absent at both of LibreChat's render sites. A sandboxed
 document returns at the sandbox check *before* the `submit` event fires, so a submit-driven login is
 refused with nothing an operator can see — V80's failure shape, one origin over. The `<form>` stays
-and routes to the same handler (V66), because an operator who *copies* the address into a fresh tab
+and routes to the same handler, because an operator who *copies* the address into a fresh tab
 has no opener to inherit from and Enter should work there. It carries no `action`: there is no
 non-JS path that would post a credential anywhere.
 
 What that lane can claim is bounded on purpose. `src/app/login/login-form.test.tsx` proves the POST
 happens with **zero** `submit` events, and pairs it with a submit-driven fixture that records one —
-otherwise "zero" passes against a button that does nothing (V87). It does not re-measure LibreChat's
+otherwise "zero" passes against a button that does nothing. It does not re-measure LibreChat's
 sandbox: jsdom cannot enforce one, and that measurement is R32's, in
 `apps/web-embed/e2e/sign-in.browser.e2e.ts`, taken at both pinned sandbox strings.
 
 Refusal copy is `login-messages.ts`. Every refused credential answers one vague pair whatever the
 cause, so the page cannot be used to learn which half was wrong; the states that are *not* a wrong
 credential (pending approval V7, rate limited V9, LDAP unreachable V4) stay distinguishable, because
-retrying the password is not the remedy for any of them. The backend `detail` is never echoed (V8).
+retrying the password is not the remedy for any of them. The backend `detail` is never echoed.
 
 `tests/proxy-live.server.test.ts` proves the hop on the wire against a recording stub upstream —
 what arrived, not what a mocked `fetch` was handed. Mutations proven red before it landed: the
@@ -171,7 +171,7 @@ has a reason to try to frame, and the proxy is the surface that would carry a co
 succeeded. The mechanism §T.45 measured for the
 embed is the same one, but a sibling package's measurement is not evidence about this one (B2's
 lesson). Its readiness gate is a TCP connect, not a request to a route under test: a gate pointed at
-the subject turns the subject's failure into a timeout (V90). Mutations proven red before it landed:
+the subject turns the subject's failure into a timeout. Mutations proven red before it landed:
 the value changed to `'self'`, the source narrowed to `/admin/:path*` (which leaves `/healthz`, `/`
 and the 404 bare), the header key renamed to `X-Frame-Options`, `headers()` dropped from the config,
 and the server itself never started — that last one fails the lane instead of skipping quietly.
@@ -183,7 +183,7 @@ pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build
 pnpm test:server   # the lane that boots a server; own config, excluded from `pnpm test`
 ```
 
-Package-level guards live in `tests/`: `pins.test.ts` (C2), `npmrc.test.ts` (registry routing),
+Package-level guards live in `tests/`: `pins.test.ts`, `npmrc.test.ts` (registry routing),
 `hygiene.test.ts` (C14/V65 file-size caps) and `import-firewall.test.ts` (C12/C13 boundaries).
 
 ## Not here yet

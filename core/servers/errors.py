@@ -1,4 +1,4 @@
-"""Server-inventory error taxonomy (T54, V8, V73).
+"""Server-inventory error taxonomy.
 
 The refusals the admin CRUD surface raises, and nothing else. Written the way
 `core.auth.authorization_errors` is, for the same three reasons:
@@ -11,7 +11,7 @@ The refusals the admin CRUD surface raises, and nothing else. Written the way
    `whm_server_not_found`, `whm_server_name_exists`, and the Proxmox and PMG equivalents.
    The admin panel ported at T48 branches on them already
    (`apps/admin-web/src/lib/admin/*/[system]-api.ts` surfaces them to the operator), so a
-   new spelling would break a client that exists (C13).
+   new spelling would break a client that exists.
 3. One class per code rather than one class with a `system` field. `STATUS_BY_ERROR` maps
    classes, and its subclass-tree test walks this tree asserting every member is mapped
    explicitly — a dynamic `error_code` would satisfy that test while making the mapping
@@ -23,14 +23,14 @@ fine in a body and badly in a log: the three verticals are three panel pages aga
 tables, and "which inventory was this" is the first thing anybody asks. `noa-old` made the
 same call.
 
-**Why 404 and not 403 for an absent row.** These routes sit behind `require_admin` (V13),
+**Why 404 and not 403 for an absent row.** These routes sit behind `require_admin`,
 so there is no existence secret to keep from the caller in the V27 sense — an admin may
 list every server. 404 is here because it is *true*: the row is gone, and 409 or 403 would
 send an operator looking for a permission they already have.
 
 **Why 409 for a duplicate name.** `whm_servers.name`, `proxmox_servers.name` and
-`pmg_servers.name` are all `unique=True` (T4), and the name is what
-`resolve_*_server_ref` matches on (V18) — two rows with one name would make every
+`pmg_servers.name` are all `unique=True`, and the name is what
+`resolve_*_server_ref` matches on — two rows with one name would make every
 ambiguous-reference answer worse, not better. The request is well-formed and refused
 because it would break that, which is what 409 says. Not 422: the value is a valid server
 name, it is the *state of the table* that refuses it, and a caller cannot tell from the
@@ -85,11 +85,11 @@ class WHMResellerCredentialNameMismatchError(ServerInventoryError):
 
     The rule exists because a reseller row has to be addressable by the thing an account
     CHANGE names — its owner. `resolve_whm_server_ref` matches an id, a `name` or a hostname
-    and never `api_username` (V18), so a reseller row named anything else is a row the
+    and never `api_username`, so a reseller row named anything else is a row the
     owner-write path cannot reach, and the failure would land at suspend time on a card an
-    operator already typed a reason into (C8). Whether that credential may write a given
+    operator already typed a reason into. Whether that credential may write a given
     account is a different question, decided at preflight by comparing the account's `owner`
-    (V106) — this flag is visibility and naming, never authorization.
+    — this flag is visibility and naming, never authorization.
 
     409 rather than 422, `whm_server_name_exists`'s reading: on a PATCH the two operands may
     both be stored columns, so what refuses is the state of the resulting row rather than a

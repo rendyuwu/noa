@@ -28,7 +28,7 @@ import { resolveFrameAncestor } from '../../../config/framing'
  *
  * Hence the wrap. `null` means "do not size the frame", which the sizer already treats as a
  * supported state: internal scrolling stays, the link-out and the printed address beside it stay
- * (V25, V94), and the surface is what it is today.
+ *, and the surface is what it is today.
  */
 export function resolveFrameTargetOrigin(env: Record<string, string | undefined>): string | null {
   try {

@@ -1,4 +1,4 @@
-"""CSF target classification and `csf -g` parsing (T16, V54, V69).
+"""CSF target classification and `csf -g` parsing.
 
 Ported from `noa-old` branch `MCP` (`test_whm_csf_parsing.py`) with the HTML-path cases dropped
 — that render path is not ported (see `core.integrations.whm.csf`) — and the target-kind case
@@ -35,7 +35,7 @@ from core.integrations.whm.csf import parse_csf_grep_output, parse_csf_target
 def test_parse_csf_target_classifies_ipv4_cidr_ipv6_hostname_unknown(
     raw: str, kind: str, field: str, value: str
 ) -> None:
-    """Every kind the CHANGE tools branch on gets its own answer, ⊥ a guess (V54, C10)."""
+    """Every kind the CHANGE tools branch on gets its own answer, ⊥ a guess."""
     target = parse_csf_target(raw)
 
     assert target.kind == kind
@@ -157,7 +157,7 @@ def test_an_allow_entry_is_reported_even_when_a_block_outranks_it() -> None:
 
 
 def test_no_allow_entry_is_reported_when_only_a_block_matches() -> None:
-    """The negative control (V87): without it, "an allow entry is reported" passes just as well
+    """The negative control: without it, "an allow entry is reported" passes just as well
     against a parser that reports one for every line it sees."""
     output = "Found 203.0.113.10 in /etc/csf/csf.deny\n"
 
@@ -171,7 +171,7 @@ def test_an_unparseable_answer_reports_no_allow_entry() -> None:
     """`unknown` carries `allow_entry: False`, and that pairing is only safe because a caller
     has to check `answered` first.
 
-    A backend that said nothing recognisable has not said there is no allow entry (V86). The
+    A backend that said nothing recognisable has not said there is no allow entry. The
     field cannot express that on its own, so `holds_allow_entry` skips unanswered backends and
     every caller checks `unanswered_backends` before trusting an absence.
     """

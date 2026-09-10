@@ -1,4 +1,4 @@
-"""CSF target classification and `csf -g` output parsing (T16, V54, V69).
+"""CSF target classification and `csf -g` output parsing.
 
 Copied from `noa-old` branch `MCP` (`whm/integrations/csf.py`) unchanged — pure functions,
 zero NOA imports, no I/O. Everything here exists because CSF has no machine-readable output:
@@ -7,7 +7,7 @@ The parsers are the accumulated answer to what that text actually looks like on 
 
 **`parse_csf_target` is what V54 is enforced with.** It classifies a target as
 `ip` (IPv4) / `cidr` (IPv4) / `ipv6` / `ipv6_cidr` / `hostname` / `unknown` without deciding
-policy. The CHANGE tools (T25, T26) reject anything but `ip`; the preflight READ (T24) accepts
+policy. The CHANGE tools reject anything but `ip`; the preflight READ accepts
 all kinds, because "you asked about an IPv6 address and here is what CSF says" is a useful
 answer even where changing it is not permitted.
 
@@ -19,11 +19,11 @@ to SSH, so the HTTP addon path is not ported (T16 deviation (e)). Entity unescap
 because it costs nothing and csf's own output is not guaranteed clean. ANSI escapes are
 stripped because a TTY-ish csf still emits colour.
 
-Verdict precedence is deliberate and load-bearing for the release-and-allow flow (T25): a
+Verdict precedence is deliberate and load-bearing for the release-and-allow flow: a
 block match wins over an allow match. An IP can appear in both `csf.deny` and `csf.allow` at
 once, and the operationally true statement is "still blocked".
 
-**`allow_entry` is reported beside the verdict because that precedence discards it** (T26).
+**`allow_entry` is reported beside the verdict because that precedence discards it**.
 "What is this box doing to this address" and "is there still an allow entry for it" are two
 questions, and the second one is the whole of an allowlist removal's postflight. Answering it
 from the verdict would report a surviving `csf.allow` line as removed on any address a deny
@@ -36,7 +36,7 @@ clean host.
 
 Matches are bounded (`max_matches`, default 20). A busy server's grep can run to hundreds of
 log lines, and the tool result is headed for an LLM context (V64's concern, one layer down).
-**`total_matches` is reported beside them** (T24, V85): a cap that drops rows silently lets the
+**`total_matches` is reported beside them**: a cap that drops rows silently lets the
 model report "there are twenty entries" at two hundred — a fabrication the tool handed it. The
 count is this module's to give, because this is where the cut happens.
 
@@ -84,7 +84,7 @@ class CSFGrepParsed:
     """Verdict, the bounded evidence lines it was read from, and how many there were.
 
     `total_matches` counts the lines *before* `max_matches` cut them, so a caller can say the
-    list is short rather than letting it read as complete (V85).
+    list is short rather than letting it read as complete.
 
     `allow_entry` is a second fact rather than a re-reading of the first, and it exists because
     the verdict deliberately loses it: block beats allow, so an address in both `csf.deny` and
@@ -102,7 +102,7 @@ class CSFGrepParsed:
 
 
 def parse_csf_target(raw: str) -> CSFTarget:
-    """Classify `raw` as an address, network, hostname, or nothing recognisable (V54).
+    """Classify `raw` as an address, network, hostname, or nothing recognisable.
 
     Order matters: a bare address is tried before a network, so `1.2.3.4` never becomes a
     `/32` CIDR here — normalising it would erase the distinction the CHANGE tools check.

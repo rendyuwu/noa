@@ -1,25 +1,25 @@
-"""MCP identity resolution (T11 — C5, C20, V1, V2, V3, V4, V5).
+"""MCP identity resolution.
 
-New work: `noa-old` had no per-user MCP credential, so there is nothing to port (C13).
+New work: `noa-old` had no per-user MCP credential, so there is nothing to port.
 
 This is the function V5 names — *the* place a presented bearer becomes a NOA user. It is
 deliberately framework-free: no fastmcp import, no Starlette request, nothing that knows
 how the token arrived. `noa_api.mcp_auth.NoaTokenVerifier` is the fastmcp adapter over it
-(T11) and T12's `resolve_mcp_identity` is the HTTP one; both call `resolve()` and neither
-re-implements a gate. "Auth mechanism swap = one file" (V5) only holds if the mechanism
+and T12's `resolve_mcp_identity` is the HTTP one; both call `resolve()` and neither
+re-implements a gate. "Auth mechanism swap = one file" only holds if the mechanism
 lives in exactly one file, and `core/` declares no dependencies (root `pyproject.toml`),
 so a `TokenVerifier` subclass could not live here anyway.
 
 The gates run in a fixed order, and the order is the design:
 
 1. **Bearer present** — a blank token is `mcp_token_missing`, not a failed lookup.
-2. **Digest lookup** (V2) via `hash_mcp_token`, the *same* function `mint()` used
+2. **Digest lookup** via `hash_mcp_token`, the *same* function `mint()` used
    (`core.auth.mcp_token_service`). A second digest implementation here would not fail
-   loudly; it would reject every token that was ever minted (V66).
-3. **Expiry** (C5).
-4. **`users.is_active`** (V1, V11) — read from the row on every request, never cached.
-5. **TOFU read check** (C20, V3) — header absent, or bound and unequal. No write yet.
-6. **LDAP revalidation** (V4) when the check is stale.
+   loudly; it would reject every token that was ever minted.
+3. **Expiry**.
+4. **`users.is_active`** — read from the row on every request, never cached.
+5. **TOFU read check** — header absent, or bound and unequal. No write yet.
+6. **LDAP revalidation** when the check is stale.
 7. **TOFU write + usage stamps**, one commit.
 
 Steps 5 and 7 are two halves of one rule, split on purpose. The mismatch *check* is free
@@ -33,7 +33,7 @@ avoid: "the directory says this person is gone" cascade-revokes every token they
 while "the directory did not answer" denies the request and touches nothing.
 `LDAPService.user_exists_and_enabled` already separates them — `False` versus
 `LdapUnavailableError` — and that error propagates from here unchanged, because V4's
-fail-closed answer already has a class, a message and a 503 mapping (V66).
+fail-closed answer already has a class, a message and a 503 mapping.
 
 V2/V8: the plaintext is a parameter and a digest input, nothing else. It is never stored,
 never logged, never placed on `McpIdentity`, and never in an error message or `detail`.
@@ -58,11 +58,11 @@ from core.auth.mcp_auth_errors import (
 from core.auth.mcp_token_service import hash_mcp_token
 
 # The header C24 requires on every MCP request, bound and unbound alike. Lowercase because
-# that is how `fastmcp.server.dependencies.get_http_headers()` returns custom keys (R5) and
+# that is how `fastmcp.server.dependencies.get_http_headers()` returns custom keys and
 # how HTTP/2 puts them on the wire; callers passing a raw dict should lowercase too.
 LIBRECHAT_USER_HEADER = "x-noa-librechat-user"
 
-# Internal diagnostics for the `detail` slot: logs only, never a response body (V8). None of
+# Internal diagnostics for the `detail` slot: logs only, never a response body. None of
 # these interpolate a token, a digest or a prefix.
 DETAIL_NO_BEARER = "no bearer token on the request"
 # S105: a log diagnostic naming the table, not a credential — the `TOKEN` in the constant
@@ -77,10 +77,10 @@ class McpIdentity:
 
     Carries no plaintext and no digest — not redacted, absent, the same rule
     `McpTokenView` follows. A caller that wants to key a cache on the credential has to
-    hash it themselves rather than find it hanging off the identity (V2, V8).
+    hash it themselves rather than find it hanging off the identity.
 
     `librechat_user_id` is the *effective* binding after this request, so a first call
-    returns the value it just bound rather than the NULL it read (C20).
+    returns the value it just bound rather than the NULL it read.
     """
 
     user_id: UUID
@@ -96,7 +96,7 @@ class McpAuthenticationRow(Protocol):
 
     One shape rather than two lookups: `is_active` has to be read in the same statement as
     the token row, or a token could authenticate against a user row that changed between
-    the two reads (V1). No `token_hash` field — the caller supplied the digest, so handing
+    the two reads. No `token_hash` field — the caller supplied the digest, so handing
     it back would only create somewhere for it to leak from.
     """
 
@@ -134,7 +134,7 @@ class McpIdentityRepository(Protocol):
 
 
 class DirectoryPresence(Protocol):
-    """The slice of `LDAPService` the revalidation path uses (T6, V4).
+    """The slice of `LDAPService` the revalidation path uses.
 
     Password-free by construction: this runs on a background-ish path with no operator
     credential in hand, which is exactly why `user_exists_and_enabled` exists separately
@@ -205,7 +205,7 @@ class McpIdentityResolver:
     # --- Gates ---
 
     async def _load_row(self, presented_token: str | None) -> McpAuthenticationRow:
-        """Gates 1-2: a bearer is present, and its digest matches a row (V2)."""
+        """Gates 1-2: a bearer is present, and its digest matches a row."""
         token = (presented_token or "").strip()
         if not token:
             raise McpTokenMissingError(DETAIL_NO_BEARER)
@@ -217,10 +217,10 @@ class McpIdentityResolver:
 
     @staticmethod
     def _assert_not_expired(row: McpAuthenticationRow, moment: datetime) -> None:
-        """Gate 3: `expires_at` has not passed (C5).
+        """Gate 3: `expires_at` has not passed.
 
         Checked here as well as by the SDK — `BearerAuthBackend` rejects an `AccessToken`
-        whose `expires_at` is in the past (R2), but only after `verify_token` has returned,
+        whose `expires_at` is in the past, but only after `verify_token` has returned,
         by which point this path would already have stamped `last_used_at` and possibly
         bound a token on an expired credential. `<=` rather than `<` so a token is dead at
         its expiry instant rather than one second after it.
@@ -230,7 +230,7 @@ class McpIdentityResolver:
 
     @staticmethod
     def _assert_active(row: McpAuthenticationRow) -> None:
-        """Gate 4: `users.is_active` (V1, V11).
+        """Gate 4: `users.is_active`.
 
         Before the TOFU gates on purpose: a disabled operator must not be able to bind a
         token, or re-enabling them later would silently hand the binding to whoever made
@@ -243,7 +243,7 @@ class McpIdentityResolver:
     def _assert_binding_matches(
         row: McpAuthenticationRow, presented_librechat_user: str | None
     ) -> None:
-        """Gate 5: the read half of TOFU (C20, C24, V3).
+        """Gate 5: the read half of TOFU.
 
         Absent header refuses for bound *and* unbound tokens. C24 makes LibreChat the sole
         client, so "no header" is an unsupported client rather than a client that has not
@@ -255,7 +255,7 @@ class McpIdentityResolver:
 
         if row.librechat_user_id is not None and row.librechat_user_id != presented_librechat_user:
             # `detail` names the token, not the two identifiers: a log line pairing them is
-            # a map from NOA tokens to LibreChat accounts (V8).
+            # a map from NOA tokens to LibreChat accounts.
             raise LibreChatUserMismatchError(
                 f"token `{row.token_id}` is bound to another LibreChat user"
             )
@@ -263,7 +263,7 @@ class McpIdentityResolver:
     async def _revalidate_against_directory(
         self, row: McpAuthenticationRow, moment: datetime
     ) -> None:
-        """Gate 6: LDAP is the source of truth for employment (C4, V4).
+        """Gate 6: LDAP is the source of truth for employment.
 
         Three outcomes, and keeping them apart is the whole point:
 
@@ -294,7 +294,7 @@ class McpIdentityResolver:
     async def _bind_if_unbound(
         self, row: McpAuthenticationRow, presented_librechat_user: str
     ) -> str:
-        """Gate 7: the write half of TOFU (C20, V3).
+        """Gate 7: the write half of TOFU.
 
         Delegated to the repository rather than done as read-then-write here, because the
         race is real: two first calls arriving together must not both bind. The repository
@@ -314,7 +314,7 @@ class McpIdentityResolver:
     # --- Helpers ---
 
     def _is_stale(self, last_checked_at: datetime | None, moment: datetime) -> bool:
-        """Whether the directory owes us an answer about this operator (V4).
+        """Whether the directory owes us an answer about this operator.
 
         Never checked → stale, so a token minted while LDAP was down cannot skip its first
         revalidation. `>=` on the interval so a configured `0` means "every request" rather

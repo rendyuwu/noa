@@ -1,4 +1,4 @@
-"""`notifications/tools/list_changed` on a live MCP session (T66 — V1, V14, V74, C23, R30).
+"""`notifications/tools/list_changed` on a live MCP session.
 
 V74 requires NOA to emit this notification when a permission changes. The awkward part is not
 the emit — `ServerSession.send_tool_list_changed()` is one call — it is that the *trigger* and
@@ -23,7 +23,7 @@ So this ships because it is protocol-correct, costs almost nothing, and a later 
 honour it. What actually keeps a revoked grant from being callable is V1's execution-time
 re-check (`noa_api.mcp_rbac`), which is a different mechanism and the one with teeth. Nothing
 here is a security control, and no test in this repo asserts that a client refetched — that
-would be an assertion about behaviour NOA does not control, red on an upstream whim (V69).
+would be an assertion about behaviour NOA does not control, red on an upstream whim.
 
 **Why `on_message` and not `on_call_tool`.** The hook has to be the one that runs for *every*
 message, because the catalog a client holds comes from `tools/list` and a client can hold one
@@ -62,11 +62,11 @@ from noa_api.mcp_request_auth import current_mcp_identity
 # blocked writing to a standalone SSE stream whose client has stopped reading. Without this
 # timeout, an admin `PUT /admin/roles/{name}/tools` would hang on a wedged browser tab. One
 # second is generous for a same-process memory stream and short enough that the operator's write
-# is not visibly delayed even if it elapses; the notification is best-effort either way (V74).
+# is not visibly delayed even if it elapses; the notification is best-effort either way.
 NOTIFY_TIMEOUT_SECONDS: Final = 1.0
 
 # Emitted once per notification, with counts only — never a tool name and never a role, since a
-# permission change is already recorded by the audit event that preceded it (V14).
+# permission change is already recorded by the audit event that preceded it.
 LOG_TOOL_LIST_CHANGED = "mcp_tool_list_changed_emitted"
 
 # One session's emit did not complete inside `NOTIFY_TIMEOUT_SECONDS`. Distinct from a closed
@@ -89,7 +89,7 @@ class McpSessionRegistry:
 
     Deliberately not a cache of anything else. It holds no roles, no tokens and no tool sets —
     a register that also remembered permissions would be a second answer to a question
-    `AuthorizationService` re-reads per request (V1, V14), and the stale copy would win
+    `AuthorizationService` re-reads per request, and the stale copy would win
     whenever the two disagreed.
     """
 
@@ -155,7 +155,7 @@ class McpSessionRegistry:
 
 
 class McpSessionRegistryMiddleware(Middleware):
-    """Register the caller's session on every MCP message (T66, V74).
+    """Register the caller's session on every MCP message.
 
     A middleware for the reason every gate in this app is one: a tool cannot forget it, and
     neither can a future request type. `on_message` is the hook that runs for all of them —
@@ -196,14 +196,14 @@ class McpSessionRegistryMiddleware(Middleware):
         except (McpAuthError, RuntimeError):
             # `McpAuthError`: no access token on the request (see the class docstring).
             # `RuntimeError`: fastmcp raises it from `.session` when no session exists, which
-            # is the in-memory transport case and any future sessionless era (C23).
+            # is the in-memory transport case and any future sessionless era.
             return
 
         self._registry.remember(identity.user_id, session)
 
 
 class McpToolListChangedNotifier:
-    """`ToolListChangedNotifier` over the MCP session register (T66 — V74).
+    """`ToolListChangedNotifier` over the MCP session register.
 
     Emits `notifications/tools/list_changed` to every live session held by the given users. The
     engine calls this after its commit, and it must not raise: see
@@ -264,7 +264,7 @@ class McpToolListChangedNotifier:
         if scope.cancelled_caught:
             # At least one session did not take the message in time. The others may have
             # succeeded; `delivered` says which, and the emit is not retried — a notification
-            # whose whole value is timeliness is not worth a queue (V74).
+            # whose whole value is timeliness is not worth a queue.
             logger.warning(
                 LOG_NOTIFY_TIMED_OUT,
                 timeout_seconds=NOTIFY_TIMEOUT_SECONDS,

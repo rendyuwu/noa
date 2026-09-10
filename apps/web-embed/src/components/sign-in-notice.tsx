@@ -9,7 +9,7 @@ import styles from './notice.module.css'
  * The way out of a 401, and the only one this app is allowed to offer (§T.43, §T.56 — V38, V42).
  *
  * **A pointer, never a form.** Every surface here authenticates with the `noa_session` cookie (V22,
- * V40) and the MCP bearer token never reaches a browser (C5), so a 401 in here means the operator
+ * V40) and the MCP bearer token never reaches a browser, so a 401 in here means the operator
  * has a working LibreChat token and no NOA browser session. V42 puts the remedy outside this app: no
  * login page, no LDAP form, no credential handling, and — §T.43 says it explicitly — **no LDAP
  * redirect inside the iframe**. Nothing in this component navigates. The frame stays on the URL it
@@ -20,7 +20,7 @@ import styles from './notice.module.css'
  * `allow-scripts allow-same-origin`, `MCPUIResource` = that plus `allow-popups`). Where it is
  * absent, a `target="_blank"` click is blocked with no error the operator can see — V80's failure
  * shape, one mechanism over. So the address is *also* printed as text: the link is the door where
- * popups are allowed, and the printed address is the door where they are not (V94).
+ * popups are allowed, and the printed address is the door where they are not.
  *
  * No clipboard button beside it, deliberately: `navigator.clipboard` needs a permission a sandboxed
  * frame may not have, and a copy button that silently copies nothing is the failure this block
@@ -30,7 +30,7 @@ import styles from './notice.module.css'
  * poll (`lib/approvals/poll.ts`), the table surface hands its loader — so a session picked up in the
  * other tab turns this notice into the subject without the frame navigating anywhere.
  *
- * Shared by both surfaces since §T.56 (V66). The retry's type is structural for that reason: a
+ * Shared by both surfaces since §T.56. The retry's type is structural for that reason: a
  * read's outcome is a discriminated union per surface, and all this needs is which kind came back.
  */
 
@@ -52,7 +52,7 @@ export function SignInNotice({
   /**
    * Passed straight through to `Notice`, which measures this state and asks the host for a frame it
    * fits in. It matters most here: the printed address below is the door the sandbox cannot withhold
-   * (V94), and a frame too short to show it leaves that door off screen.
+   *, and a frame too short to show it leaves that door off screen.
    */
   frameOrigin: string | null
 }) {

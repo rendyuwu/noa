@@ -6,7 +6,7 @@ import { TOKEN_PLAINTEXT_PATTERN, looksLikeTokenPlaintext } from './token-plaint
 
 // A detector that has silently stopped matching passes every not-logged
 // assertion built on it. So it gets its own tests, and half of them are proofs
-// that it still SEES (V87) rather than proofs that it stays quiet.
+// that it still SEES rather than proofs that it stays quiet.
 
 const PLAINTEXT = `noa_${'k3Y'.repeat(14)}z`
 const PREFIX = 'noa_abcd1234'

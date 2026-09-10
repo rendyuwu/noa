@@ -7,7 +7,7 @@ import { loadResultTable } from './detail'
  * app sends upstream and what it makes of the answer.
  *
  * Two of these are the same claims §T.44 makes about the proxy and §T.41 makes about the card's
- * loader, re-proven against *this* loader rather than cited from either (V69): the cookie is
+ * loader, re-proven against *this* loader rather than cited from either: the cookie is
  * forwarded, and `Authorization` is not. Three separate code paths, so a guarantee held in two of
  * them says nothing about the third.
  */
@@ -74,7 +74,7 @@ describe('loadResultTable', () => {
     })
   })
 
-  it('forwards the browser’s session cookie (V22, V40)', async () => {
+  it('forwards the browser’s session cookie', async () => {
     // Without this the read authenticates as nobody and every operator sees the 401 state.
     const seen = stubFetch(Response.json(BODY))
 
@@ -110,13 +110,13 @@ describe('loadResultTable', () => {
     expect(seen[0]?.init?.cache).toBe('no-store')
   })
 
-  it('reports a 401 as its own state (V38)', async () => {
+  it('reports a 401 as its own state', async () => {
     stubFetch(new Response(null, { status: 401 }))
 
     expect(await loadResultTable(TOKEN, { cookie: null })).toEqual({ kind: 'unauthenticated' })
   })
 
-  it('reports a 404 as its own state (V27)', async () => {
+  it('reports a 404 as its own state', async () => {
     // Unknown, another operator's, a deleted requester's and an expired one all arrive here.
     stubFetch(new Response(null, { status: 404 }))
 

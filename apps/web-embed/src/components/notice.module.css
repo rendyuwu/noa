@@ -2,7 +2,7 @@
  * Styles shared by every state this app renders instead of its subject (§T.41, §T.43, §T.56).
  *
  * Lived in `app/approvals/[id]/card.module.css` until the table surface became the second
- * document that has to say "cannot authenticate here" and offer the same way out (V38, V42, V94).
+ * document that has to say "cannot authenticate here" and offer the same way out.
  * Moved rather than copied: two stylesheets for one notice is two places for the address block to
  * stop looking like a door.
  *
@@ -57,7 +57,7 @@
 }
 
 /*
- * The same address as text, for the render site whose sandbox omits `allow-popups` (R13, R29) —
+ * The same address as text, for the render site whose sandbox omits `allow-popups` —
  * there the link above opens nothing at all, and this is what an operator copies. Monospace and
  * breakable: it is a URL in a narrow frame, and one that overflows silently is not a door either.
  */

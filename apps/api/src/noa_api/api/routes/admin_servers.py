@@ -36,11 +36,11 @@ whether it answers; "no, `ssh_timeout`" is that question's answer, and the panel
 `core.servers.validation` and the `SSHExecutionError` note in `noa_api.api.errors`.
 
 **Nothing here builds an `HTTPException`.** Refusals are `ServerInventoryError` subclasses and
-the shared handler owns status, body and `request_id` (V8, V73).
+the shared handler owns status, body and `request_id`.
 
 **`admin` is checked per handler, not once on a router.** `AdminUserDep` is a parameter on all
 fifteen, so the actor whose email lands in the audit event and the gate that authorises the call
-are the same read (V13), and V6's row re-read comes with it: a demoted admin loses these routes
+are the same read, and V6's row re-read comes with it: a demoted admin loses these routes
 on their next request.
 """
 
@@ -91,7 +91,7 @@ pmg_router = APIRouter(prefix="/admin/pmg/servers", tags=["admin"])
 WHM_API_USERNAME_PATTERN: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$")
 
 
-# --- Field validators, shared by all three verticals (V21, V66) ---
+# --- Field validators, shared by all three verticals ---
 
 
 def _stripped(value: object) -> object:
@@ -191,7 +191,7 @@ Trimmed = Annotated[str | None, BeforeValidator(_stripped)]
 # whitespace-only value into `None`, which a required field refuses — so V21's rule reaches the
 # secrets too, and `min_length=1` alone (which " " satisfies) is not the guard.
 TrimmedRequired = Annotated[str, BeforeValidator(_stripped)]
-# 1-65535, refused at the schema so a bad port never reaches `asyncssh` (V21).
+# 1-65535, refused at the schema so a bad port never reaches `asyncssh`.
 SshPort = Annotated[int | None, Field(ge=1, le=65535)]
 
 
@@ -234,7 +234,7 @@ def _ssh_view(safe: dict[str, Any]) -> dict[str, Any]:
 
 
 def _ssh_credentials(payload: WHMServerCreateRequest | PMGServerCreateRequest) -> SSHCredentials:
-    """A create's SSH block. Secrets are plaintext here — the service encrypts (C7)."""
+    """A create's SSH block. Secrets are plaintext here — the service encrypts."""
     return SSHCredentials(
         ssh_username=payload.ssh_username,
         ssh_port=payload.ssh_port,
@@ -285,7 +285,7 @@ class SSHClearFlags(BaseModel):
 
 
 class WHMServerResponse(BaseModel):
-    """One `whm_servers` row as every read path returns it (V2, V8).
+    """One `whm_servers` row as every read path returns it.
 
     No `api_token` and no SSH secret — absent, not redacted. `has_api_token` and the two SSH
     booleans are what the panel needs: they say whether a stored value exists so the form can
@@ -299,7 +299,7 @@ class WHMServerResponse(BaseModel):
     has_api_token: bool
     verify_ssl: bool
     # Published because the form draws a checkbox from it, and because an operator who cannot
-    # see the flag cannot tell why a rename was refused (V109).
+    # see the flag cannot tell why a rename was refused.
     is_reseller_credential: bool
     ssh_username: str | None
     ssh_port: int | None
@@ -336,7 +336,7 @@ class WHMServerCreateRequest(BaseModel):
     api_token: TrimmedRequired = Field(min_length=1)
     verify_ssl: bool = True
     # Defaulted rather than required: a root credential is the common row and the column's
-    # default is `false` (V109). A `true` value obliges `name` == `api_username`, which
+    # default is `false`. A `true` value obliges `name` == `api_username`, which
     # `core.servers.admin_service` refuses with 409 `whm_reseller_credential_name_mismatch`.
     is_reseller_credential: bool = False
     ssh_username: Trimmed = None
@@ -350,7 +350,7 @@ class WHMServerUpdateRequest(SSHClearFlags):
     """`PATCH /admin/whm/servers/{id}`. Every value optional; `None` means "leave alone".
 
     No `ssh_host_key_fingerprint` value field, only the clear flag, because the WHM form has no
-    fingerprint input: the pin arrives from a validate capture (V82). Clearing it here is how an
+    fingerprint input: the pin arrives from a validate capture. Clearing it here is how an
     operator asks for a re-capture after a legitimate key rotation.
     """
 
@@ -395,7 +395,7 @@ async def list_whm_servers(
     admin_user: AdminUserDep,
     servers: WHMServerAdminServiceDep,
 ) -> WHMServersResponse:
-    """Every WHM server (T54 — V2, V13)."""
+    """Every WHM server."""
     rows = await servers.list_servers()
     return WHMServersResponse(servers=[_to_whm_response(row) for row in rows])
 
@@ -406,12 +406,12 @@ async def create_whm_server(
     admin_user: AdminUserDep,
     servers: WHMServerAdminServiceDep,
 ) -> WHMServerDetailResponse:
-    """Add a WHM server (T54 — V2, V14, V48).
+    """Add a WHM server.
 
     201, unlike the token mint one file over: there *is* a canonical address for the created
     row — `PATCH`/`DELETE`/`validate` all take its id — so the status that says "created" is
     the honest one. Duplicate name → 409 `whm_server_name_exists`. A reseller row whose `name`
-    is not its `api_username` → 409 `whm_reseller_credential_name_mismatch` (V109).
+    is not its `api_username` → 409 `whm_reseller_credential_name_mismatch`.
     """
     server = await servers.create(
         WHMServerCreate(
@@ -435,7 +435,7 @@ async def update_whm_server(
     admin_user: AdminUserDep,
     servers: WHMServerAdminServiceDep,
 ) -> WHMServerDetailResponse:
-    """Edit a WHM server (T54 — V2, V14, V48, V82).
+    """Edit a WHM server.
 
     Moving `base_url` or `ssh_port` drops the stored host-key pin, because a pin belongs to one
     `(host, port)` pair — `core.servers.admin_repository` does it where the old row is loaded,
@@ -444,7 +444,7 @@ async def update_whm_server(
     404 `whm_server_not_found`, 409 `whm_server_name_exists`, 409
     `whm_reseller_credential_name_mismatch` when the *resulting* row would be a reseller
     credential whose `name` is not its `api_username` — which includes a patch that carries
-    nothing but the flag (V109).
+    nothing but the flag.
     """
     server = await servers.update(
         server_id,
@@ -468,11 +468,11 @@ async def delete_whm_server(
     admin_user: AdminUserDep,
     servers: WHMServerAdminServiceDep,
 ) -> DeleteServerResponse:
-    """Remove a WHM server (T54 — V14).
+    """Remove a WHM server.
 
     Tool grants are untouched: a grant names a tool, never a host, so deleting a server narrows
     what those tools can reach rather than who may call them. A tool pointed at the deleted name
-    afterwards answers `host_not_found` (V18).
+    afterwards answers `host_not_found`.
     """
     await servers.delete(server_id, actor_email=admin_user.email)
     return DeleteServerResponse(ok=True)
@@ -484,7 +484,7 @@ async def validate_whm_server(
     admin_user: AdminUserDep,
     validation: WHMServerValidationServiceDep,
 ) -> ValidateServerResponse:
-    """Probe a WHM server: the API token, then SSH if credentials are stored (T54 — V82).
+    """Probe a WHM server: the API token, then SSH if credentials are stored.
 
     Captures and stores the host key on a first validate, and only if the probe that follows
     it passes. A stored pin that no longer matches answers `ok:false` /
@@ -497,7 +497,7 @@ async def validate_whm_server(
 
 
 class ProxmoxServerResponse(BaseModel):
-    """One `proxmox_servers` row (V2, V8). No `api_token_secret`, and no SSH block at all."""
+    """One `proxmox_servers` row. No `api_token_secret`, and no SSH block at all."""
 
     id: str
     name: str
@@ -524,7 +524,7 @@ class ProxmoxServerDetailResponse(BaseModel):
 class ProxmoxServerCreateRequest(BaseModel):
     """`POST /admin/proxmox/servers`.
 
-    `verify_ssl` defaults **off**, unlike WHM's, and the column's server default agrees (T4):
+    `verify_ssl` defaults **off**, unlike WHM's, and the column's server default agrees:
     Proxmox ships a self-signed certificate, so defaulting on would make every fresh row fail
     validation for a reason that is not a misconfiguration.
     """
@@ -565,7 +565,7 @@ async def list_proxmox_servers(
     admin_user: AdminUserDep,
     servers: ProxmoxServerAdminServiceDep,
 ) -> ProxmoxServersResponse:
-    """Every Proxmox server (T54 — V2, V13)."""
+    """Every Proxmox server."""
     rows = await servers.list_servers()
     return ProxmoxServersResponse(servers=[_to_proxmox_response(row) for row in rows])
 
@@ -578,7 +578,7 @@ async def create_proxmox_server(
     admin_user: AdminUserDep,
     servers: ProxmoxServerAdminServiceDep,
 ) -> ProxmoxServerDetailResponse:
-    """Add a Proxmox server (T54 — V2, V14, V48). Duplicate name → 409."""
+    """Add a Proxmox server. Duplicate name → 409."""
     server = await servers.create(
         ProxmoxServerCreate(
             name=payload.name,
@@ -599,7 +599,7 @@ async def update_proxmox_server(
     admin_user: AdminUserDep,
     servers: ProxmoxServerAdminServiceDep,
 ) -> ProxmoxServerDetailResponse:
-    """Edit a Proxmox server (T54 — V2, V14, V48). 404 / 409 as elsewhere."""
+    """Edit a Proxmox server. 404 / 409 as elsewhere."""
     server = await servers.update(
         server_id,
         ProxmoxServerUpdate(
@@ -620,7 +620,7 @@ async def delete_proxmox_server(
     admin_user: AdminUserDep,
     servers: ProxmoxServerAdminServiceDep,
 ) -> DeleteServerResponse:
-    """Remove a Proxmox server (T54 — V14)."""
+    """Remove a Proxmox server."""
     await servers.delete(server_id, actor_email=admin_user.email)
     return DeleteServerResponse(ok=True)
 
@@ -631,7 +631,7 @@ async def validate_proxmox_server(
     admin_user: AdminUserDep,
     validation: ProxmoxServerValidationServiceDep,
 ) -> ValidateServerResponse:
-    """Probe a Proxmox server's API token (T54).
+    """Probe a Proxmox server's API token.
 
     One transport and no write: there is no SSH path here and therefore no host key to pin
     (I.ext), which is why the service behind this route reads through a `SELECT`-only
@@ -644,7 +644,7 @@ async def validate_proxmox_server(
 
 
 class PMGServerResponse(BaseModel):
-    """One `pmg_servers` row (V2, V8).
+    """One `pmg_servers` row.
 
     No `base_url` and no `verify_ssl`: PMG is reached over SSH + `pmgsh` only (V58, I.ext), so
     the pinned host key is its whole transport-security story.
@@ -695,7 +695,7 @@ class PMGServerCreateRequest(BaseModel):
 
 
 class PMGServerUpdateRequest(SSHClearFlags):
-    """`PATCH /admin/pmg/servers/{id}`. Moving `ssh_host` or `ssh_port` drops the pin (V82)."""
+    """`PATCH /admin/pmg/servers/{id}`. Moving `ssh_host` or `ssh_port` drops the pin."""
 
     name: PMGNameOpt = None
     ssh_host: PMGSshHostOpt = None
@@ -725,7 +725,7 @@ async def list_pmg_servers(
     admin_user: AdminUserDep,
     servers: PMGServerAdminServiceDep,
 ) -> PMGServersResponse:
-    """Every PMG node (T54 — V2, V13)."""
+    """Every PMG node."""
     rows = await servers.list_servers()
     return PMGServersResponse(servers=[_to_pmg_response(row) for row in rows])
 
@@ -736,7 +736,7 @@ async def create_pmg_server(
     admin_user: AdminUserDep,
     servers: PMGServerAdminServiceDep,
 ) -> PMGServerDetailResponse:
-    """Add a PMG node (T54 — V2, V14, V48). Duplicate name → 409."""
+    """Add a PMG node. Duplicate name → 409."""
     server = await servers.create(
         PMGServerCreate(
             name=payload.name,
@@ -755,7 +755,7 @@ async def update_pmg_server(
     admin_user: AdminUserDep,
     servers: PMGServerAdminServiceDep,
 ) -> PMGServerDetailResponse:
-    """Edit a PMG node (T54 — V2, V14, V48, V82). 404 / 409 as elsewhere."""
+    """Edit a PMG node. 404 / 409 as elsewhere."""
     server = await servers.update(
         server_id,
         PMGServerUpdate(
@@ -774,7 +774,7 @@ async def delete_pmg_server(
     admin_user: AdminUserDep,
     servers: PMGServerAdminServiceDep,
 ) -> DeleteServerResponse:
-    """Remove a PMG node (T54 — V14)."""
+    """Remove a PMG node."""
     await servers.delete(server_id, actor_email=admin_user.email)
     return DeleteServerResponse(ok=True)
 
@@ -785,11 +785,11 @@ async def validate_pmg_server(
     admin_user: AdminUserDep,
     validation: PMGServerValidationServiceDep,
 ) -> ValidateServerResponse:
-    """Probe a PMG node: `pmgsh get /version`, then `/config/mynetworks` (T54 — V58, V82).
+    """Probe a PMG node: `pmgsh get /version`, then `/config/mynetworks`.
 
     Two commands, because a node that authenticates but cannot read `mynetworks` would validate
     green and fail on the first whitelist call. Same trust-on-first-use rule as WHM's, from the
-    same function (V66).
+    same function.
     """
     return _validation_response(await validation.validate(server_id, actor_email=admin_user.email))
 

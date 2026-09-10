@@ -1,4 +1,4 @@
-"""Strip login/PAM/LVE banners from SSH command output (T14, V56).
+"""Strip login/PAM/LVE banners from SSH command output.
 
 Ported from `noa-old` branch `MCP` (`core/remote_exec/banner_strip.py`, C13/V69) unchanged
 except for these cites — it was hardened against real hosts and the false-positive guard is
@@ -15,7 +15,7 @@ command output, e.g.::
 
 That prefix breaks downstream parsers (``json.loads`` on Imunify ``--json``).
 ``strip_ssh_banners`` removes only **known, signature-gated** boxed banner blocks so
-legitimate output that merely contains ``*`` lines or boxed text is never touched (V56).
+legitimate output that merely contains ``*`` lines or boxed text is never touched.
 """
 
 from __future__ import annotations

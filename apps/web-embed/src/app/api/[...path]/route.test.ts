@@ -73,7 +73,7 @@ describe('/api/[...path] — the embed’s same-origin door', () => {
 
   it('re-emits every Set-Cookie value with its Domain attribute intact', async () => {
     // The `Domain=.noa.internal` scoping is what puts the session on the same
-    // registrable domain as the admin app (V40); a proxy that dropped or rewrote
+    // registrable domain as the admin app; a proxy that dropped or rewrote
     // it would quietly confine the login to whichever origin answered.
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(null, {
@@ -223,7 +223,7 @@ describe('/api/[...path] — the embed’s same-origin door', () => {
 
   it.each([403, 404, 409, 422, 500])('passes an upstream %i through unchanged', async (status) => {
     // 403 csrf_token_invalid, 409 change_reason_required / already_decided / expired
-    // (V15, V28, V32) all have to arrive at the card as themselves.
+    // all have to arrive at the card as themselves.
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ error_code: 'x' }), { status }),
     )

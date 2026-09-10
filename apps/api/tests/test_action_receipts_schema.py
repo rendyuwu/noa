@@ -1,4 +1,4 @@
-"""`action_receipts` table (T36, V46).
+"""`action_receipts` table.
 
 Two levels, for two different claims:
 
@@ -120,7 +120,7 @@ def test_the_request_link_is_required() -> None:
 
 
 def test_the_run_link_is_described_the_same_way_at_both_ends() -> None:
-    """One edge, one spelling (T34).
+    """One edge, one spelling.
 
     `action_requests.tool_run_id` is nullable with `SET NULL`; so is this. NULL describes
     life after the run row is deleted, not a receipt written without one.
@@ -220,7 +220,7 @@ async def insert_run(session: AsyncSession) -> UUID:
 
 
 async def insert_approved_request(session: AsyncSession, *, tool_run_id: UUID | None) -> UUID:
-    """An APPROVED row, which is the only state a receipt is ever written for (V46)."""
+    """An APPROVED row, which is the only state a receipt is ever written for."""
     request = ActionRequest(
         tool_name="whm_firewall_release_and_allow",
         approval_context={"args": {"server_ref": "whm-1", "target": "203.0.113.7"}},
@@ -287,7 +287,7 @@ async def test_a_second_receipt_for_one_request_is_refused(session: AsyncSession
 
 
 async def test_two_requests_may_each_have_their_own_receipt(session: AsyncSession) -> None:
-    """The negative control for the case above (V87).
+    """The negative control for the case above.
 
     Without it, "the database refuses a second receipt" is a claim about nothing: a table
     that refuses *every* second receipt satisfies it while breaking every change after the

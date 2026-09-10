@@ -1,4 +1,4 @@
-"""WHM firewall CLI errors (T16, V73).
+"""WHM firewall CLI errors.
 
 `noa-old` declared `CSFCLIError` in `csf_cli.py` and `ImunifyCLIError` in `imunify_cli.py`,
 both bare `Exception` subclasses with hand-rolled `code`/`message` attributes. Here they
@@ -9,12 +9,12 @@ SSH — and V73 requires one handler shaping every body. A second parallel taxon
 "one handler" a lie.
 
 The keyword-only `code=` / `message=` constructor is kept verbatim from `noa-old` so the copied
-raise sites read identically to the source they were hardened in (C13, V69). `code` maps onto
+raise sites read identically to the source they were hardened in. `code` maps onto
 `NoaError`'s `error_code`, which is the field clients and tests branch on.
 
 One base with two subclasses rather than two unrelated classes: a caller that must handle "the
-firewall CLI did not answer usably" — the preflight tool (T24) and the merged release+allow
-tool (T25) both do — should catch one thing, and `STATUS_BY_ERROR` needs one entry. Which
+firewall CLI did not answer usably" — the preflight tool and the merged release+allow
+tool both do — should catch one thing, and `STATUS_BY_ERROR` needs one entry. Which
 backend failed stays in `error_code`.
 
 Codes raised by this package, all stable strings tests and tools branch on:
@@ -33,7 +33,7 @@ Codes raised by this package, all stable strings tests and tools branch on:
   letting two exception trees escape one call (`ssh_timeout`, `ssh_auth_failed`,
   `ssh_host_key_mismatch`, `ssh_host_key_not_validated`, `ssh_not_configured`, …).
 
-Messages stay credential-free (V8) and carry the command's own output, which names the host's
+Messages stay credential-free and carry the command's own output, which names the host's
 refusal — never the token, password or key that was presented.
 """
 

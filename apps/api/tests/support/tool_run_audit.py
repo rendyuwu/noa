@@ -1,4 +1,4 @@
-"""In-memory `tool_runs` reader for the audit route tests (T55).
+"""In-memory `tool_runs` reader for the audit route tests.
 
 The double holds `ToolRunListItem`s and answers the two reads the surface makes, so a route test
 can assert on status codes, on the payload shape and — the part a live database makes awkward — on
@@ -36,7 +36,7 @@ from core.audit.tool_run_reads import (
 from core.db.lifecycle import ToolRisk, ToolRunStatus
 
 # A fixed instant so timing assertions are about the code's arithmetic and not about the clock
-# (V87): every derived `durationMs` in these tests is computable by hand from here.
+#: every derived `durationMs` in these tests is computable by hand from here.
 RUN_CREATED_AT = datetime(2026, 8, 19, 10, 0, 0, tzinfo=UTC)
 
 
@@ -147,7 +147,7 @@ class FilterQuery:
 
     Used as the table `test_admin_audit_routes.py` walks: the API's accepted parameter names in one
     place, so the panel's query builder (`audit-model.ts`) has one list to be checked against
-    rather than seven assertions to drift from (V66).
+    rather than seven assertions to drift from.
     """
 
     param: str

@@ -30,14 +30,14 @@ describe('resolveFrameAncestor', () => {
 
   it('falls back to the default when the variable is set but blank', () => {
     // Fail closed. An operator who empties the variable has unset it, and "unset" must not become
-    // "no header" — that would leave the approval card frameable by anything (V41, V22).
+    // "no header" — that would leave the approval card frameable by anything.
     expect(resolveFrameAncestor(env(''))).toBe(DEFAULT_LIBRECHAT_ORIGIN)
     expect(resolveFrameAncestor(env('   '))).toBe(DEFAULT_LIBRECHAT_ORIGIN)
   })
 
   it('reads the configured origin — the separating case', () => {
     // Without this the whole suite passes against a function that ignores its input and always
-    // answers the default (V87). It is also the mechanism the C21 re-verify rig needs: the spike
+    // answers the default. It is also the mechanism the C21 re-verify rig needs: the spike
     // harness runs LibreChat on `http://chat.noa.internal:3080`.
     expect(resolveFrameAncestor(env('http://chat.noa.internal:3080'))).toBe(
       'http://chat.noa.internal:3080',

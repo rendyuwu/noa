@@ -1,10 +1,10 @@
-"""Out-of-band secret delivery via yopass (T15, C15, V50).
+"""Out-of-band secret delivery via yopass.
 
-Copied from `noa-old` branch `MCP` (C13, V69). Reference doc: `docs/integrations/yopass.md`.
+Copied from `noa-old` branch `MCP`. Reference doc: `docs/integrations/yopass.md`.
 
 `_yopass_store` is a code-level helper, ⊥ an MCP tool. It exists so a generated credential can
 reach the operator without ever crossing the LLM boundary: the tool returns a URL, the
-operator opens it, and the plaintext is never in a prompt, a transcript, or a log (V49, V50).
+operator opens it, and the plaintext is never in a prompt, a transcript, or a log.
 
 The encryption is **client-side**, and that is the point of using PGPy here rather than
 trusting the yopass server. A random passphrase is generated in this process, the
@@ -18,7 +18,7 @@ cannot read. Whoever holds the whole link can. `_encrypt_blob` before the POST, 
 passphrase never entering the payload, are therefore load-bearing, not stylistic — a test
 asserts the passphrase is absent from the serialized request body.
 
-**Deliver first, then mutate.** Callers (T27) store the secret *before* touching the VM. A
+**Deliver first, then mutate.** Callers store the secret *before* touching the VM. A
 failure here raises with nothing changed and nobody locked out; a failure after this point
 leaves the old credentials working and must not relay the now-unapplied URL.
 
@@ -26,7 +26,7 @@ Config is injected, ⊥ read from a module global: `noa-old` imported a `setting
 this repo does not have (see `core.secrets.crypto` for the same note). `transport` and
 `timeout_seconds` stay as keyword arguments so a test can drive the HTTP boundary without a
 server. Absent `yopass_base_url` raises `YopassNotConfiguredError` — a tool error the caller
-reports, never a crash at import or boot (C15).
+reports, never a crash at import or boot.
 """
 
 from __future__ import annotations
@@ -62,7 +62,7 @@ def _build_blob(username: str, password: str) -> str:
 
 
 def _encrypt_blob(plaintext: str, passphrase: str) -> str:
-    """Client-side OpenPGP symmetric encrypt (V50). Returns ASCII-armored text."""
+    """Client-side OpenPGP symmetric encrypt. Returns ASCII-armored text."""
     message = pgpy.PGPMessage.new(plaintext)
     encrypted = message.encrypt(passphrase, cipher=SymmetricKeyAlgorithm.AES256)
     return str(encrypted)
@@ -80,7 +80,7 @@ async def _yopass_store(
 
     Raises `YopassNotConfiguredError` when no base URL is configured, and `YopassStoreError`
     for every transport, status, and response-shape failure — the caller aborts before
-    changing anything either way (C15).
+    changing anything either way.
     """
     base_url = settings.yopass_base_url
     if not base_url:
@@ -115,7 +115,7 @@ async def _yopass_store(
         raise YopassStoreError("yopass response carried no secret id")
 
     # After the `#`: browsers never send it to the yopass server, so the instance stores a
-    # blob it cannot decrypt (V50).
+    # blob it cannot decrypt.
     return f"{base_url}/#/s/{secret_id}/{passphrase}"
 
 

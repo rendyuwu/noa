@@ -80,7 +80,7 @@ Set via environment (pydantic-settings, no prefix). See `.env.example`; fields l
 
 | Env var | Setting | Default | Notes |
 |---------|---------|---------|-------|
-| `YOPASS_BASE_URL` | `yopass_base_url` | _(unset)_ | Base URL of the yopass instance. Absent → tool error `yopass_not_configured`; the app still boots (C15). |
+| `YOPASS_BASE_URL` | `yopass_base_url` | _(unset)_ | Base URL of the yopass instance. Absent → tool error `yopass_not_configured`; the app still boots. |
 | `YOPASS_SECRET_EXPIRATION_SECONDS` | `yopass_secret_expiration_seconds` | `604800` (7 days) | How long the stored secret lives. |
 | `YOPASS_ONE_TIME` | `yopass_one_time` | `false` | `false` ⇒ the link is multi-fetch within the expiry window — chosen so real-customer email-open latency does not burn the secret on a preview fetch. |
 | `SECRET_PASSWORD_LENGTH` | `secret_password_length` | `24` | Generated password length. Charset = letters + digits + safe symbols; never space, quote, backtick, or backslash (they break shell / cloud-init quoting). |

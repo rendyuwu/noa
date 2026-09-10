@@ -41,7 +41,7 @@ describe('/admin/audit route gate', () => {
 
   it('renders the audit page for a verified admin', () => {
     // One view and no props: the tab argument went with the action-requests tab
-    // (T55), so this route has nothing left to choose.
+    //, so this route has nothing left to choose.
     render(<AdminAuditRoute />)
     expect(screen.getByTestId('audit-page')).toBeInTheDocument()
   })

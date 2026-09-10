@@ -1,4 +1,4 @@
-"""The one door onto the firewall backends (T68, V57).
+"""The one door onto the firewall backends.
 
 `noa-old` built its task mapping from the usable backends and handed it to `asyncio.gather`
 unconditionally. With neither backend usable the mapping was empty, `gather()` returned `[]`,
@@ -7,7 +7,7 @@ release that never happened, on a server NOA could not drive at all.
 
 T24 refused that for the exposed preflight READ, with a check written inside the tool. T68 moved
 it to the fan-out, because a per-tool check is a check the next tool can forget, and V57's harm
-lives on the CHANGE side (T25/T26) where forgetting it is silent.
+lives on the CHANGE side where forgetting it is silent.
 
 Four properties, and one that is about the *shape* of the code rather than its behaviour:
 
@@ -222,7 +222,7 @@ def test_the_firewall_fan_out_lives_in_one_place() -> None:
     """
     assert _gather_sites() == FIREWALL_FAN_OUT_SITES, (
         "route the fan-out through firewall_gate.run_on_usable_backends, so zero usable "
-        "backends cannot become an empty success (V57)"
+        "backends cannot become an empty success"
     )
 
 

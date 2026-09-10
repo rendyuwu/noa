@@ -51,7 +51,7 @@ describe('parseResultTable', () => {
     expect(parseResultTable([BODY])).toBeNull()
   })
 
-  it('carries the total and the flag a capped table sends (V85)', () => {
+  it('carries the total and the flag a capped table sends', () => {
     const table = parseResultTable({
       ...BODY,
       total_rows: 900,
@@ -78,7 +78,7 @@ describe('parseResultTable', () => {
   })
 
   it('does not invent a total from the rows it received', () => {
-    // The negative control for the rule above (V87): an honest untruncated body stays untruncated,
+    // The negative control for the rule above: an honest untruncated body stays untruncated,
     // so the inference cannot be passing by claiming every table is capped.
     const table = parseResultTable({ ...BODY, total_rows: 1, stored_rows: 1, truncated: false })
 
@@ -112,7 +112,7 @@ describe('parseResultTable', () => {
 })
 
 describe('describeBound', () => {
-  it('states both numbers when the page is capped (V85)', () => {
+  it('states both numbers when the page is capped', () => {
     const table = parseResultTable({
       ...BODY,
       total_rows: 1240,

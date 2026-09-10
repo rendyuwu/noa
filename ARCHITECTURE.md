@@ -19,7 +19,7 @@ client can ask for.
 override knob. If the server answers with a version outside the client's own supported list, the
 client throws `Server's protocol version is not supported` (§R.26).
 
-**LibreChat is that client, at an exact version.** It is the sole MCP client (C24). At the pinned
+**LibreChat is that client, at an exact version.** It is the sole MCP client. At the pinned
 commit its `package-lock.json` resolves `@modelcontextprotocol/sdk` to exactly 1.29.0 — not merely
 the `^1.29.0` range declared in `packages/api/package.json` — and `connection.ts` constructs a stock
 `Client` with no protocol arguments (§R.11, §R.26). That SDK's `LATEST_PROTOCOL_VERSION` is
@@ -44,7 +44,7 @@ bump on both sides, not a configuration flip — which is what bounds the future
 
 Its distinguishing surface is absent too: `Mcp-Method` / `Mcp-Name` headers and the `ttlMs` /
 `cacheScope` cache hints grep to zero hits in both SDKs at 1.29.0 (§R.26). That is why V74 has
-nothing to bound today; the stale-catalog risk is held by the execution-time RBAC re-check (V1)
+nothing to bound today; the stale-catalog risk is held by the execution-time RBAC re-check
 rather than by cache-hint ceilings that do not yet exist.
 
 ## A revoked grant stays visible in LibreChat until the connection is rebuilt
@@ -57,7 +57,7 @@ when the operator starts a new conversation. It disappears when the MCP connecti
 rebuilt — a LibreChat restart, or whatever that deployment does to reconnect its MCP servers.
 
 **Calling it does not work, and that is the guarantee.** The revocation is authoritative the
-moment it commits. NOA re-resolves permissions from the database on every `tools/call` (V1), so a
+moment it commits. NOA re-resolves permissions from the database on every `tools/call`, so a
 tool that is displayed but revoked answers `tool_not_permitted` and never runs. Displayed is not
 permitted; what an operator sees in a stale catalog is a label, not an authorization.
 
@@ -146,4 +146,4 @@ Prose is not the control. The tests are:
 
 The harness in `apps/api/tests/support/mcp_mount.py` asks for what LibreChat asks for, deliberately.
 An earlier version of these tests appeared to prove the era only because the harness requested it —
-a self-fulfilling assertion of the same shape as the inert host-key control in §B.2 (V69).
+a self-fulfilling assertion of the same shape as the inert host-key control in §B.2.

@@ -1,11 +1,11 @@
-"""Reading an approval request back, against a real Postgres (T63 — V27, V32, V76).
+"""Reading an approval request back, against a real Postgres.
 
 `test_noa_tools_action_result.py` drives the same read path over doubles, which proves the
 tool's shape, its one refusal and the order it does things in. Three claims here are claims
 *about the database*, and a double answering them would be agreeing with the test rather than
 with the code:
 
-- **A deleted requester's row is refused.** The FK is `SET NULL` (T34), so deleting an
+- **A deleted requester's row is refused.** The FK is `SET NULL`, so deleting an
   operator leaves their requests behind with a NULL column — a state only a real `DELETE`
   produces, and one every requester-match has to fail closed on.
 - **The reader and the three writers describe one row.** The reason a decision persists, the
@@ -76,7 +76,7 @@ SEPARABLE_CONTEXT: dict[str, object] = {
     "evidence": EVIDENCE_HALF,
 }
 
-# The receipt's after-state (T38). Its own sentinel, because "the receipt did not travel" has to
+# The receipt's after-state. Its own sentinel, because "the receipt did not travel" has to
 # separate from "the evidence did not travel" — the two halves fail for different reasons if the
 # model path ever grows the join (V17 for one, V76 for the pair).
 RECEIPT_SENTINEL = "after-state-only-the-approval-card-may-see"
@@ -106,7 +106,7 @@ async def read_result(
     requester_user_id: UUID,
     now: datetime | None = None,
 ) -> ActionResultView | None:
-    """The production read path — the reader and the expiry, over one session (T63)."""
+    """The production read path — the reader and the expiry, over one session."""
     async with factory() as session:
         service = ActionResultService(
             repository=SQLActionResultRepository(session),
@@ -142,7 +142,7 @@ async def write_receipt(
     *,
     tool_run_id: UUID,
 ) -> None:
-    """A receipt through the production writer, in the production shape (T36, T38, V46)."""
+    """A receipt through the production writer, in the production shape."""
     async with factory() as session:
         await SQLActionReceiptRepository(session).create_if_missing(
             action_request_id=action_request_id,
@@ -156,7 +156,7 @@ async def write_receipt(
 
 
 async def delete_user(factory: async_sessionmaker[AsyncSession], user_id: UUID) -> None:
-    """Delete the operator, leaving their requests behind with a NULL requester (T34)."""
+    """Delete the operator, leaving their requests behind with a NULL requester."""
     async with factory() as session:
         await session.execute(sa.delete(User).where(User.id == user_id))
         await session.commit()
@@ -206,7 +206,7 @@ async def test_another_operators_request_is_not_readable(factory) -> None:  # ty
 
 
 async def test_an_unknown_id_reads_as_nothing(factory) -> None:  # type: ignore[no-untyped-def]
-    """The other half of the pair the tool answers identically (V76)."""
+    """The other half of the pair the tool answers identically."""
     user_id = await insert_user(factory, OPERATOR_EMAIL)
 
     assert await read_result(factory, uuid4(), requester_user_id=user_id) is None
@@ -215,7 +215,7 @@ async def test_an_unknown_id_reads_as_nothing(factory) -> None:  # type: ignore[
 async def test_a_request_whose_requester_was_deleted_is_not_readable(factory) -> None:  # type: ignore[no-untyped-def]
     """V27 fails closed on the row only a real `DELETE` can produce.
 
-    `requested_by_user_id` is `SET NULL` (T34), so deleting the operator leaves the request
+    `requested_by_user_id` is `SET NULL`, so deleting the operator leaves the request
     behind with a NULL requester: `NULL = :caller` is NULL, never true, so it matches nobody —
     including the operator who is now gone. Live because the state is the FK's, not a value a
     double would think to hand back.
@@ -265,7 +265,7 @@ async def test_preflight_evidence_never_reaches_the_result(factory) -> None:  # 
     separate: the arguments *do* arrive, and the evidence and the requester block do not. The
     two sentinels appear nowhere else in the context on purpose — the shipped fixture reuses
     `acmeco` across arguments and evidence, and a substring scan against that would go red for
-    the wrong reason and green for the wrong one just as easily (V87).
+    the wrong reason and green for the wrong one just as easily.
     """
     user_id = await insert_user(factory, OPERATOR_EMAIL)
     request_id = await open_request(
@@ -292,8 +292,8 @@ async def test_a_receipt_never_reaches_the_result(factory) -> None:  # type: ign
 
     The receipt is the same before-state one table over (T38 copies `approval_context`'s
     evidence onto it), so a join added here would put V17's in-process evidence back on the
-    path that answers into a transcript LibreChat persists (V26). The row genuinely exists —
-    asserted against the table — so this is not green because nothing wrote a receipt (V87).
+    path that answers into a transcript LibreChat persists. The row genuinely exists —
+    asserted against the table — so this is not green because nothing wrote a receipt.
 
     Both sentinels, because both halves would arrive together: the before-state that must not
     travel for V17's reason, and the after-state that must not for V76's.
@@ -322,8 +322,8 @@ async def test_a_receipt_never_reaches_the_result(factory) -> None:  # type: ign
     assert RECEIPT_SENTINEL not in payload
     assert EVIDENCE_SENTINEL not in payload
     # The run still arrives: what a model may be told about an approved change is its status
-    # and its redacted summary (V47), and dropping that too would make this pass for the wrong
-    # reason (V87).
+    # and its redacted summary, and dropping that too would make this pass for the wrong
+    # reason.
     assert payload_object["run"] is not None
 
 
@@ -400,7 +400,7 @@ async def test_a_request_past_its_deadline_reads_expired_and_is_written_expired(
     assert stored.decided_at is not None
     # An expiry is the absence of an answer, so it carries no reason — T34's CHECK exempts
     # `EXPIRED` precisely so it can, which means nothing at the database level would catch one
-    # that did (V15, T39).
+    # that did.
     assert stored.reason is None
 
 

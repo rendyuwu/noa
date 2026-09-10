@@ -1,11 +1,11 @@
-"""MCP bearer token mint / list / revoke (T10, C5, V2).
+"""MCP bearer token mint / list / revoke.
 
 New work, not a port: `noa-old` had no per-user MCP credential — its `/mcp` surface was
 reached from NOA's own chat, so there was nothing to mint. The shapes here follow T8's
 `AuthService` and T9's `AuthorizationService` (Protocol repository, frozen result
 dataclasses, an audit event per mutation) so the three read the same.
 
-This is the *MCP* credential and it shares nothing with the session JWT (V6, T7): opaque
+This is the *MCP* credential and it shares nothing with the session JWT: opaque
 rather than signed, hashed at rest rather than verified by key, and revocable by deleting
 one row rather than not at all. Keeping them separate is what lets `mcp_tokens` carry a
 real revocation story while V6 records that sessions do not have one.
@@ -14,18 +14,18 @@ Three properties the implementation is shaped around:
 
 1. **The plaintext exists for exactly one call.** `mint()` returns it, nothing stores it,
    and `McpTokenView` — the shape every read path returns — has no field that could hold
-   it. A response serializer therefore cannot leak one by accident (V2). `MintedMcpToken`
+   it. A response serializer therefore cannot leak one by accident. `MintedMcpToken`
    hides it from `repr()` for the same reason: a dataclass printed into a log line or a
    traceback would otherwise publish the credential (V2 "⊥ logged", V8).
 2. **Hashing lives in one function.** T11's `verify_token` hashes the *presented* bearer
    and looks the digest up; if it computed the digest differently from `mint()`, every
    token would silently fail to authenticate. `hash_mcp_token` is that single
-   implementation (V66).
+   implementation.
 3. **Revoke is scoped by user in the query, not checked afterwards.** `/me/mcp-tokens/{id}`
-   and `/admin/users/{id}/tokens/{token_id}` (T53) both call `revoke(user_id, token_id)`,
+   and `/admin/users/{id}/tokens/{token_id}` both call `revoke(user_id, token_id)`,
    so neither can delete a row belonging to someone else by guessing an id, and a foreign
    id answers exactly as an unknown one does (existence ⊥ leak, the V27/V76 principle).
-4. **Every mutation commits, and the commit is the last thing it does** (T53, V100). Added
+4. **Every mutation commits, and the commit is the last thing it does**. Added
    with the routes rather than at T10, and the gap in between is the lesson: the repository
    flushed, `noa_api.api.deps.get_db_session` never commits, and no test could see the
    difference because a flushed row reads back identically inside its own session. B10 found
@@ -34,8 +34,8 @@ Three properties the implementation is shaped around:
 
 Deliberately NOT here, each owned by a later task: TOFU binding of `librechat_user_id` and
 LDAP staleness revalidation (T11, V3/V4 — mint leaves the column NULL, which is the
-precondition C20 requires), `resolve_mcp_identity` (T12, V5), and cascade revoke on admin
-disable (T11, V4). The HTTP routes landed at T53
+precondition C20 requires), `resolve_mcp_identity`, and cascade revoke on admin
+disable. The HTTP routes landed at T53
 (`noa_api.api.routes.mcp_tokens`) and hold no policy — every rule is here.
 """
 
@@ -67,11 +67,11 @@ TOKEN_MARKER: Final = "noa_"  # noqa: S105
 # guessing range, which is what lets the digest below go unsalted.
 TOKEN_ENTROPY_BYTES: Final = 32
 
-# Stored display fragment: the marker plus 8 random characters. Fits `String(16)` (T4) and
+# Stored display fragment: the marker plus 8 random characters. Fits `String(16)` and
 # leaves ~208 bits unrevealed, so publishing it in an admin list costs nothing.
 TOKEN_PREFIX_LENGTH: Final = len(TOKEN_MARKER) + 8
 
-# `mcp_tokens.label` is `String(255)` (T4). Checked here so an over-long label is a 400
+# `mcp_tokens.label` is `String(255)`. Checked here so an over-long label is a 400
 # rather than a database error surfacing as a 500 — same reasoning as T9's role-name cap.
 MAX_LABEL_LENGTH: Final = 255
 
@@ -79,16 +79,16 @@ DETAIL_LABEL_TOO_LONG = f"token label exceeds {MAX_LABEL_LENGTH} characters"
 
 
 def generate_mcp_token() -> str:
-    """A fresh token plaintext. Returned to the operator once, never stored (V2)."""
+    """A fresh token plaintext. Returned to the operator once, never stored."""
     return f"{TOKEN_MARKER}{secrets.token_urlsafe(TOKEN_ENTROPY_BYTES)}"
 
 
 def hash_mcp_token(plaintext: str) -> str:
-    """SHA-256 hex digest of a token — the only form that reaches the database (V2).
+    """SHA-256 hex digest of a token — the only form that reaches the database.
 
     Unsalted, and that is the right call rather than a shortcut: the input is 256 bits of
     CSPRNG output, so there is no dictionary to defend against, while a per-row salt would
-    make the verify path (T11) unable to find a row by digest without reading every token
+    make the verify path unable to find a row by digest without reading every token
     in the table.
 
     Not a password hash for the same reason. Argon2/bcrypt buy resistance to offline
@@ -106,7 +106,7 @@ class McpTokenView:
     exist cannot be serialized into a response by a future route that forgets to strip it
     (V2, V8).
 
-    `librechat_user_id` is NULL until T11 binds it on first use (C20, V3). `last_used_at`
+    `librechat_user_id` is NULL until T11 binds it on first use. `last_used_at`
     and `last_ldap_check_at` are likewise written by T11's verify path; T10 only reads
     them, so a freshly minted token shows all three as `None`.
     """
@@ -124,7 +124,7 @@ class McpTokenView:
 
 @dataclass(frozen=True)
 class MintedMcpToken:
-    """A newly minted token: the plaintext, once, plus the row it belongs to (V2).
+    """A newly minted token: the plaintext, once, plus the row it belongs to.
 
     `repr=False` on `plaintext` is load-bearing. Structlog renders unknown values with
     `repr()`, and so does every traceback frame that shows a local — either would put the
@@ -142,7 +142,7 @@ class McpTokenRepository(Protocol):
     `delete_for_user` takes both ids rather than one: the scoping is part of the query,
     not a check the caller may forget (V2, and the V27/V76 principle for the 404 shape).
 
-    `commit` is on the Protocol rather than left to the caller (T53, V100). The alternative —
+    `commit` is on the Protocol rather than left to the caller. The alternative —
     a route that commits after calling the service — puts the boundary on the *subset of
     mutations today's caller happens to reach*, which is precisely the trap V100(b) names.
     """
@@ -167,7 +167,7 @@ class McpTokenRepository(Protocol):
 
 
 class McpTokenService:
-    """Mint, list and revoke per-user MCP bearer tokens (C5, V2)."""
+    """Mint, list and revoke per-user MCP bearer tokens."""
 
     def __init__(
         self,
@@ -179,11 +179,11 @@ class McpTokenService:
         self._repository = repository
         self._audit = audit_sink
         # `MCP_TOKEN_TTL_SECONDS`, `None` by default: a token lives until someone deletes
-        # the row (V2). An expiry is an extra bound, never the primary one — V4's LDAP
+        # the row. An expiry is an extra bound, never the primary one — V4's LDAP
         # revalidation and admin revoke are what actually retire a credential.
         self._ttl_seconds = ttl_seconds
 
-    # --- Mint (V2) ---
+    # --- Mint ---
 
     async def mint(
         self,
@@ -226,7 +226,7 @@ class McpTokenService:
         await self._repository.commit()
         return MintedMcpToken(plaintext=plaintext, token=view)
 
-    # --- List (V2) ---
+    # --- List ---
 
     async def list_for_user(self, user_id: UUID) -> list[McpTokenView]:
         """This user's tokens, newest first. Prefix, label and timestamps only.
@@ -241,14 +241,14 @@ class McpTokenService:
 
         return await self._repository.list_for_user(user_id)
 
-    # --- Revoke (V2) ---
+    # --- Revoke ---
 
     async def revoke(
         self, user_id: UUID, token_id: UUID, *, actor_email: str | None = None
     ) -> None:
-        """Delete one token. Revocation is the row's absence, nothing else (V2).
+        """Delete one token. Revocation is the row's absence, nothing else.
 
-        No tombstone and no `revoked_at` column: the verify path (T11) resolves a caller by
+        No tombstone and no `revoked_at` column: the verify path resolves a caller by
         finding a row for the presented digest, so a deleted row is already a 401 and a
         status column would be a second source of truth that could disagree with it.
 
@@ -304,10 +304,10 @@ class McpTokenService:
         token_id: UUID | None = None,
         user_id: UUID | None = None,
     ) -> None:
-        """Record one token change (V14).
+        """Record one token change.
 
         Metadata carries ids, the display prefix and the label — never the plaintext and
-        never the digest (V2, V8). The prefix is there so an admin reading the trail can
+        never the digest. The prefix is there so an admin reading the trail can
         match an event to the row they see in the panel.
         """
         resolved_token_id = view.id if view is not None else token_id

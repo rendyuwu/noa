@@ -1,4 +1,4 @@
-"""Proxmox VE API client (T17, C7, C22, V69).
+"""Proxmox VE API client.
 
 Copied from `noa-old` branch `MCP` (`proxmox/integrations/client.py`), with the method surface
 scoped to what this repo's tools and admin routes actually reach for (see "What is not here").
@@ -25,7 +25,7 @@ message carries Proxmox's own text — `Permission check failed (/sdn/zones/loca
 SDN.Use)` names the exact ACL path to grant.
 
 `digest_mismatch` is split out from `proxmox_api_error` because it is the only one that means
-"retry from a fresh read". A NIC write (T28) is read-digest-then-write; Proxmox rejects the write
+"retry from a fresh read". A NIC write is read-digest-then-write; Proxmox rejects the write
 when the config changed underneath, and that CAS failure must stay legible all the way up.
 
 Dict-returning, not exception-raising: these codes are the tool layer's material for a structured
@@ -155,7 +155,7 @@ def _payload_error(payload: Mapping[str, object], *, status_code: int) -> dict[s
     Checked at the top level *and* under `data`, because Proxmox nests the same `errors` /
     `message` pair one level down depending on the endpoint.
 
-    Ported as-is (V69), with two properties worth stating rather than rediscovering:
+    Ported as-is, with two properties worth stating rather than rediscovering:
 
     - **A `message` key is read as a failure signal wherever it appears, including on a 200.** No
       endpoint this client calls answers one on success, so it holds for the current method
@@ -203,7 +203,7 @@ class ProxmoxClient:
     """One authenticated Proxmox VE endpoint. Construct via `build_proxmox_client_from_creds`.
 
     `api_token_secret` is plaintext here — decryption happens in the factory, so this class
-    stays testable without a cipher and there is exactly one decrypt site (C7).
+    stays testable without a cipher and there is exactly one decrypt site.
 
     Holds an `httpx.AsyncClient`. Use `async with`, or call `close()`.
     """
@@ -414,7 +414,7 @@ class ProxmoxClient:
         )
 
     async def get_qemu_cloudinit_dump_user(self, node: str, vmid: int) -> dict[str, object]:
-        """The rendered user-data document. Carries the crypt hash T27 verifies against (V62)."""
+        """The rendered user-data document. Carries the crypt hash T27 verifies against."""
         return await self._request_json(
             "GET",
             f"/api2/json/nodes/{node}/qemu/{vmid}/cloudinit/dump",
@@ -426,9 +426,9 @@ class ProxmoxClient:
     ) -> dict[str, object]:
         """Write `cipassword` only, leaving `ciuser` alone. Backs `proxmox_reset_vm_password`.
 
-        `new_password` is generated server-side and never an LLM argument (C15, V49). It is not
+        `new_password` is generated server-side and never an LLM argument. It is not
         echoed into the result: the return carries `{ok, message, upid, synchronous}` and
-        nothing else, so the plaintext stays inside the caller's `execute()` scope (V8).
+        nothing else, so the plaintext stays inside the caller's `execute()` scope.
         """
         return await self._request_json_task(
             "POST",
@@ -439,7 +439,7 @@ class ProxmoxClient:
     async def regenerate_qemu_cloudinit(self, node: str, vmid: int) -> dict[str, object]:
         """Rewrite the cloud-init drive so the new password reaches the guest on next boot.
 
-        Ported as-is (V69): this goes through `_request_json`, ⊥ `_request_json_task`, so a UPID
+        Ported as-is: this goes through `_request_json`, ⊥ `_request_json_task`, so a UPID
         arrives as `data` and is not polled. Deliberate on `noa-old`, kept — the reset workflow
         verifies by re-reading cloud-init rather than by waiting on this task. Whether to poll
         it is T27's call, ⊥ this layer's.
@@ -494,7 +494,7 @@ class ProxmoxClient:
         net_key: str,
         net_value: str,
     ) -> dict[str, object]:
-        """Write one `netN` line under a digest. Backs `proxmox_vm_nic` (T28).
+        """Write one `netN` line under a digest. Backs `proxmox_vm_nic`.
 
         `digest` is required, ⊥ optional: it must be the value from the `get_qemu_config` read
         this write is based on. Proxmox answers `digest_mismatch` when the config changed
@@ -551,13 +551,13 @@ def build_proxmox_client_from_creds(
     """Single construction point for an authenticated Proxmox client.
 
     `encrypted_token_secret` is the at-rest `proxmox_servers.api_token_secret` column value;
-    `maybe_decrypt_text` unwraps it, tolerating a row that predates encryption (C7, V48). One
+    `maybe_decrypt_text` unwraps it, tolerating a row that predates encryption. One
     decrypt site means one place to audit and one place to change when a `v2` scheme lands.
 
     T17 deviation (b): `noa-old` decrypted in three places — the admin validate service, the
     tool-layer `client_for_server`, and the postflight helper — each reaching for a module-level
     `maybe_decrypt_text` that T15 deleted along with the settings singleton behind it.
-    `noa_api.main.build_runtime` builds the one `SecretCipher` on `AppRuntime` (T21) and it
+    `noa_api.main.build_runtime` builds the one `SecretCipher` on `AppRuntime` and it
     arrives here as an argument.
 
     `transport` is a test seam — `httpx.MockTransport` in `test_proxmox_client.py`.
@@ -595,11 +595,11 @@ def build_proxmox_client(
     cipher: SecretCipher,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> ProxmoxClient:
-    """Row → authenticated Proxmox client (T27).
+    """Row → authenticated Proxmox client.
 
-    The twin of `build_whm_client` (T21) and here for its reason: a tool holds the row it
+    The twin of `build_whm_client` and here for its reason: a tool holds the row it
     resolved and needs a client from *that* row, while the one decrypt site stays
-    `build_proxmox_client_from_creds` below it (C7).
+    `build_proxmox_client_from_creds` below it.
 
     `transport` is forwarded because it is the test seam, and it is a parameter rather than an
     attribute a test reaches into afterwards. A tool test that swaps the transport keeps the real
@@ -616,7 +616,7 @@ def build_proxmox_client(
 
 
 class ProxmoxClientFactory(Protocol):
-    """How the tool path asks for a Proxmox client (T27).
+    """How the tool path asks for a Proxmox client.
 
     `build_proxmox_client` is the production implementation and the default everywhere. The
     Protocol exists so `McpToolContext` can name the seam in a type instead of a

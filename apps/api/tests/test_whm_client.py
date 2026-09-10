@@ -1,4 +1,4 @@
-"""WHM JSON API client (T16, C7, C22, V48, V69).
+"""WHM JSON API client.
 
 Ported from `noa-old` branch `MCP` (`test_whm_client_normalization.py`) and extended.
 
@@ -157,7 +157,7 @@ async def test_list_accounts_returns_the_error_untouched_on_failure() -> None:
 
 
 async def test_suspend_sends_the_operator_typed_reason_as_whms_suspension_note() -> None:
-    """The `reason` argument is the approval-time operator text (C8, V15, V43) — it is ⊥ a
+    """The `reason` argument is the approval-time operator text — it is ⊥ a
     tool-schema parameter and the LLM never authors it. Here it only has to reach WHM."""
     seen: dict[str, object] = {}
 

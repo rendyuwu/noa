@@ -1,4 +1,4 @@
-"""SQL behind the CHANGE approval gate (T33 — V22, V23, V32, V33).
+"""SQL behind the CHANGE approval gate.
 
 T34 built `action_requests` and wrote nothing to it. This is the writer, and
 `noa_api.mcp_tools.change_gate` is its only caller: one INSERT, one status, one moment.
@@ -6,8 +6,8 @@ T34 built `action_requests` and wrote nothing to it. This is the writer, and
 **Only PENDING is writable from here.** `status` is not a parameter and there is no update
 method. V23 answers "may this run?" from this column every time, and V28 permits exactly one
 `pending → decided` transition, under a row lock. That transition lives in a different class
-in a different module — `core.approvals.decisions.SQLActionDecisionRepository` (T37), reached
-only by a cookie POST from a NOA-origin document (V22). A repository that could write
+in a different module — `core.approvals.decisions.SQLActionDecisionRepository`, reached
+only by a cookie POST from a NOA-origin document. A repository that could write
 `APPROVED` would put a second door on the authorization next to the one V22 names, and the
 MCP path — the one an LLM can reach — would be holding the key to it. The split is asserted,
 not just described: `test_action_request_decisions_live.py` pins this class's public surface
@@ -15,7 +15,7 @@ to `create_pending` and `commit`.
 
 **This repository owns its session and commits**, unlike `SQLWHMServerRepository` and
 `SQLAuthorizationRepository`, which flush into a caller's transaction. Same split and the
-same reason as `SQLToolRunRepository` (T73): the MCP tool path runs outside FastAPI's
+same reason as `SQLToolRunRepository`: the MCP tool path runs outside FastAPI's
 dependency graph, so there is no request transaction to join, and a pending request that
 rolls back with the call that opened it is a request an operator will never see. `commit()`
 is on the Protocol for that reason, so a double has to acknowledge the boundary rather than
@@ -45,7 +45,7 @@ from core.db.models import ActionRequest
 
 
 class ActionRequestRepository(Protocol):
-    """What the CHANGE gate needs to open a request (V23, V33)."""
+    """What the CHANGE gate needs to open a request."""
 
     async def create_pending(
         self,
@@ -75,16 +75,16 @@ class SQLActionRequestRepository:
         approval_context: dict[str, Any],
         expires_at: datetime,
     ) -> UUID:
-        """Insert the PENDING row and return its id (V23, V33).
+        """Insert the PENDING row and return its id.
 
-        `status` is passed explicitly even though the column defaults to PENDING (T34). The
+        `status` is passed explicitly even though the column defaults to PENDING. The
         default is the schema's guarantee; this is the call site's, and a test that mutates
         one still fails against the other.
 
         `reason`, `decided_at` and `tool_run_id` are not set, here or anywhere in this class.
-        They are what a *decision* writes (V15, V28, T37), and the gate has not got one:
+        They are what a *decision* writes, and the gate has not got one:
         the reason is typed by an operator on the approval card and is born at approve time,
-        never at call time (C8, V43).
+        never at call time.
 
         Flushed rather than committed, so `commit()` stays the caller's decision — the gate
         makes that decision the point at which it is allowed to answer the model at all.

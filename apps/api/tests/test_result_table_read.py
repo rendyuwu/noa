@@ -1,4 +1,4 @@
-"""What the table surface's reader actually asks the database for (T56 — V27, V93).
+"""What the table surface's reader actually asks the database for.
 
 V93 is the rule this file exists for: a separation held by a check the caller makes *after*
 the read is a separation held by nothing much. The row would be loaded — in front of the
@@ -10,7 +10,7 @@ and what is claimed here is about the statement NOA builds, not about what Postg
 it — `test_result_tables_live.py` owns the second question.
 
 Three predicates, one `WHERE`: the token names the row, the requester decides whether it may
-be seen (V27), and the deadline decides whether it still exists. All three checked here,
+be seen, and the deadline decides whether it still exists. All three checked here,
 because a reader that fetched first and filtered afterwards is exactly what would pass every
 other test in the suite.
 """
@@ -50,7 +50,7 @@ class RecordingSession:
 async def read_sql() -> str:
     """The one statement the reader issues, as PostgreSQL SQL.
 
-    Named dialect rather than the default: this is the text the database NOA ships (C12)
+    Named dialect rather than the default: this is the text the database NOA ships
     would see.
     """
     session = RecordingSession()
@@ -91,7 +91,7 @@ async def test_the_read_judges_the_deadline_in_the_same_statement() -> None:
 
 
 async def test_the_read_names_the_token() -> None:
-    """The control that proves the two above are not passing on an empty clause (V87).
+    """The control that proves the two above are not passing on an empty clause.
 
     Without it, a `WHERE` containing the word `requested_by_user_id` in some other position
     would satisfy this file just as well as the real predicate does.

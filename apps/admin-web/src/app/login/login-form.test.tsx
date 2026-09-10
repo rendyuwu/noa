@@ -10,7 +10,7 @@ import { LoginForm } from './login-form'
  * **Why this is a test and not a comment.** `NOA_SIGN_IN_URL` points at this route, and one of the
  * two ways an operator arrives is a click on the embed 401 card's link-out. R32 measured that tab:
  * top-level, but it inherits the frame's sandbox, and `allow-forms` is absent at both of
- * LibreChat's render sites (R13). A sandboxed document returns at the sandbox check *before* the
+ * LibreChat's render sites. A sandboxed document returns at the sandbox check *before* the
  * `submit` event is fired, so a submit-driven login is refused with nothing an operator can see —
  * V80's failure shape, one origin over. The property that survives that is: no form submission
  * participates in the POST at all.
@@ -20,7 +20,7 @@ import { LoginForm } from './login-form'
  * at both pinned sandbox strings. What is bound here is the half that is NOA's: the fetch is
  * reachable with the `submit` event never firing, and the control that reaches it is not a submit
  * button. A negative control pairs with it, because "zero submit events" passes just as well
- * against a button that does nothing (V87).
+ * against a button that does nothing.
  */
 
 const nav = vi.hoisted(() => {
@@ -77,7 +77,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('§T.50 — the sign-in control (V94, R32)', () => {
+describe('§T.50 — the sign-in control', () => {
   it('signs in with no form submission event at all', async () => {
     const submits = countSubmits()
     render(<LoginForm />)
@@ -99,7 +99,7 @@ describe('§T.50 — the sign-in control (V94, R32)', () => {
 
   it('separates — a submit-driven login records the event this one does not', async () => {
     // The negative control. Without it, "zero submit events" is satisfied by a button that never
-    // did anything, and this whole lane would pass against a broken page (V87). The fixture is the
+    // did anything, and this whole lane would pass against a broken page. The fixture is the
     // shape §T.50 rejects: one `<form onSubmit>` and a `type="submit"` button.
     const submits = countSubmits()
 
@@ -133,7 +133,7 @@ describe('§T.50 — the sign-in control (V94, R32)', () => {
     expect(form).not.toHaveAttribute('action')
   })
 
-  it('the form path routes to the same handler, once (V66)', async () => {
+  it('the form path routes to the same handler, once', async () => {
     // The copied-address case §T.50 names: a fresh tab has no opener to inherit a sandbox from, so
     // Enter in a field and a password manager's submit both work there. One handler serves both
     // triggers — two definitions would be two places for the endpoint to drift.
@@ -163,7 +163,7 @@ describe('§T.50 — after the verdict', () => {
 
   it('refuses a returnTo that would leave this origin, using the shared guard', async () => {
     // `return-to.ts` owns the rule and has its own specs; what is asserted here is that this page
-    // goes through it rather than trusting the query (V66).
+    // goes through it rather than trusting the query.
     search.params = new URLSearchParams({ returnTo: '//evil.example/x' })
     render(<LoginForm />)
     fillCredentials()
@@ -175,7 +175,7 @@ describe('§T.50 — after the verdict', () => {
     await waitFor(() => expect(nav.push).toHaveBeenCalledWith('/home'))
   })
 
-  it('shows the vague refusal on bad credentials and never navigates (V8)', async () => {
+  it('shows the vague refusal on bad credentials and never navigates', async () => {
     fetchMock.mockResolvedValue(
       jsonResponse(401, {
         error_code: 'invalid_credentials',

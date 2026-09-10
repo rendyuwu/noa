@@ -1,4 +1,4 @@
-"""Reading the audit trail against a real Postgres (T55 — V8, V20, V45, V47).
+"""Reading the audit trail against a real Postgres.
 
 `test_admin_audit_routes.py` drives the surface over a double and `test_tool_run_audit_read.py`
 reads the compiled statement. **The claim this file exists for is V45's last clause** — "every MCP
@@ -15,7 +15,7 @@ Four more questions are the database's rather than the code's:
 - **The page tiles the trail when every timestamp is identical.** Five runs at one `created_at` is
   the case a `created_at`-only cursor gets wrong, and it gets it wrong *silently* (V92(c)).
 - **Each filter narrows in SQL** — including the `ILIKE` escape, which only Postgres can settle.
-- **The redacted arguments come back as stored.** Redaction happens at the write (V8); this is the
+- **The redacted arguments come back as stored.** Redaction happens at the write; this is the
   proof the read adds nothing and removes nothing.
 
 Skipped, never failed, when Postgres is unreachable — like every other DB-backed test here.
@@ -95,7 +95,7 @@ async def record_run(
 
     `status=None` leaves the row `STARTED`, which is what a call still in flight looks like and what
     T38's reaper sweeps. `args` goes through `noa_api.mcp_audit.redacted_args` rather than straight
-    in, so what lands is what the tool path would have written (V8).
+    in, so what lands is what the tool path would have written.
     """
     repository = SQLToolRunRepository(session)
     tool_run_id = await repository.start_run(
@@ -129,7 +129,7 @@ async def test_a_read_run_written_by_the_tool_path_is_queryable(session: AsyncSe
     """V45, end to end: T73's writer, T55's reader, one database, every field V47 names.
 
     The clause this whole task exists for. Until now the row landed and nothing could ask about it,
-    so "queryable in admin audit" was prose (V69) — and prose is what B2 shipped.
+    so "queryable in admin audit" was prose — and prose is what B2 shipped.
     """
     operator = await insert_user(session, OPERATOR_EMAIL)
     tool_run_id = await record_run(
@@ -200,7 +200,7 @@ async def test_a_change_run_is_in_the_same_trail(session: AsyncSession) -> None:
 
 
 async def test_a_deleted_requester_leaves_the_run_with_a_null_email(session: AsyncSession) -> None:
-    """`SET NULL` (T35): the row outlives its operator, and the outer join keeps it visible.
+    """`SET NULL`: the row outlives its operator, and the outer join keeps it visible.
 
     A state only a real `DELETE` produces. An inner join would drop it — and dropping it is worse
     than showing it, because a deleted account is exactly whose actions get asked about.
@@ -227,7 +227,7 @@ async def test_a_deleted_requester_leaves_the_run_with_a_null_email(session: Asy
 async def test_the_surface_serves_the_stored_redacted_args(session: AsyncSession) -> None:
     """The credential is `[REDACTED]` in the column, so it is `[REDACTED]` on the detail.
 
-    Two halves, and both matter: the secret is gone (V8), and the *other* arguments survive intact —
+    Two halves, and both matter: the secret is gone, and the *other* arguments survive intact —
     a read that redacted again could blank the whole payload and still pass a "no secret here" test
     (V87's shape). The column is read directly as well, so this cannot pass because the reader
     dropped `args` altogether.
@@ -253,7 +253,7 @@ async def test_the_surface_serves_the_stored_redacted_args(session: AsyncSession
 async def test_a_call_with_no_arguments_reads_back_as_an_empty_object(
     session: AsyncSession,
 ) -> None:
-    """`{}`, not `None` — the column's server default and the view agree (T35)."""
+    """`{}`, not `None` — the column's server default and the view agree."""
     operator = await insert_user(session, OPERATOR_EMAIL)
     tool_run_id = await record_run(session, requester=operator, args={})
 

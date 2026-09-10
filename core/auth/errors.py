@@ -1,4 +1,4 @@
-"""Auth error taxonomy (T6, T8).
+"""Auth error taxonomy.
 
 Ported from `noa-old` branch `MCP` (`core/auth/errors.py`, C13), plus
 `LdapUnavailableError` and `AuthAccountDisabledError` — new work for V4's
@@ -6,11 +6,11 @@ fail-closed rule and C4's employment check.
 
 Every class carries three things, and the split matters:
 
-- `error_code` — stable machine string for the error envelope (V73). Clients and
+- `error_code` — stable machine string for the error envelope. Clients and
   tests branch on this, never on prose.
 - `message` — what the operator reads. Says what happened and who can fix it, so
   nobody files a ticket for a problem they could clear themselves. Safe to render:
-  no credential, no directory internals, no config state (V8).
+  no credential, no directory internals, no config state.
 - `detail` — optional internal cause for logs only. Defaults to `message`.
   `str(exc)` yields it, so tracebacks stay useful while responses stay clean.
 
@@ -25,28 +25,28 @@ Login denials that operators actually hit, and why each is its own class:
   (C4). Terminal, and NOA cannot override it. Raised post-bind only, so it never
   reveals account state to an unauthenticated caller.
 - `AuthPendingApprovalError` — directory is happy, but this NOA row is
-  `is_active=False`. Every new LDAP user lands here on first login (V7) and an
+  `is_active=False`. Every new LDAP user lands here on first login and an
   admin activates them. Recoverable, NOA-side only: T8 raises it, T6 never does.
 - `AuthConfigurationError` — NOA is misconfigured. The operator's credentials are
   fine and retrying will not help, so the message says so and points at an
   administrator rather than sending them hunting their own password.
 - `LdapUnavailableError` — directory unreachable. Message invites a retry, because
   unlike the others this one usually clears on its own. Callers fail closed but
-  must NOT read it as "user gone" and cascade-revoke tokens (V4).
-- `AuthRateLimitedError` — too many failed attempts (V9). Carries
+  must NOT read it as "user gone" and cascade-revoke tokens.
+- `AuthRateLimitedError` — too many failed attempts. Carries
   `retry_after_seconds` because the handler owes the client a `Retry-After` header,
   and a "try again later" with no number is a client-side guessing game.
 
-Session-cookie denials (T7), distinct from login denials above:
+Session-cookie denials, distinct from login denials above:
 
-- `AuthSessionExpiredError` — routine: the token aged out (V6). Recoverable by
+- `AuthSessionExpiredError` — routine: the token aged out. Recoverable by
   signing in again.
 - `AuthSessionInvalidError` — cookie absent, malformed, or badly signed.
 
 Both exist because `noa-old` reused `AuthInvalidCredentialsError` for a stale
 cookie, which told operators their password was wrong when it was not.
 
-`AuthError` derives from `core.errors.NoaError` (T9), which owns the three-field
+`AuthError` derives from `core.errors.NoaError`, which owns the three-field
 shape. Authentication keeps its own base so the handler can treat an unclassified
 *authentication* failure as an infrastructure answer (503) while an unclassified
 authorization failure is a different question entirely.
@@ -80,7 +80,7 @@ class AuthInvalidCredentialsError(AuthError):
 
 
 class AuthAccountDisabledError(AuthError):
-    """Directory disabled the account: employment ended (C4). Terminal.
+    """Directory disabled the account: employment ended. Terminal.
 
     Distinct from `AuthPendingApprovalError`: enabling the NOA row would not help,
     and must not.
@@ -94,7 +94,7 @@ class AuthAccountDisabledError(AuthError):
 
 
 class AuthPendingApprovalError(AuthError):
-    """NOA row is `is_active=False`. First login lands here until an admin enables (V7).
+    """NOA row is `is_active=False`. First login lands here until an admin enables.
 
     NOA-side state, so `LDAPService` never raises this — T8 does, after the
     directory has already vouched for the operator.
@@ -108,7 +108,7 @@ class AuthPendingApprovalError(AuthError):
 
 
 class AuthSessionExpiredError(AuthError):
-    """Session token past its `exp`. Expected, not a fault — sessions are short (V6).
+    """Session token past its `exp`. Expected, not a fault — sessions are short.
 
     Split from `AuthSessionInvalidError` so the UI can say "session ended" without
     implying tampering, and so logs distinguish routine expiry from a forged cookie.
@@ -145,21 +145,21 @@ class AuthConfigurationError(AuthError):
 
 
 class LdapUnavailableError(AuthError):
-    """Directory unreachable. Deny the request; ⊥ conclude the user is gone (V4)."""
+    """Directory unreachable. Deny the request; ⊥ conclude the user is gone."""
 
     error_code: str = "ldap_unavailable"
     message: str = "Cannot reach the company directory right now. Try again in a few moments."
 
 
 class AuthRateLimitedError(RetryAfterMixin, AuthError):
-    """Login blocked: too many failed attempts in the window (V9).
+    """Login blocked: too many failed attempts in the window.
 
     Says nothing about whether the address exists or the password was close — the
     limiter counts attempts, not outcomes, so this text stays as uninformative as
     `AuthInvalidCredentialsError`.
 
     `RetryAfterMixin` is what makes the shared handler emit `Retry-After`; the MCP path's
-    `McpAuthRateLimitedError` carries the same marker (T12).
+    `McpAuthRateLimitedError` carries the same marker.
     """
 
     error_code: str = "login_rate_limited"

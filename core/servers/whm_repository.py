@@ -1,4 +1,4 @@
-"""SQL behind WHM server inventory (T19, C13).
+"""SQL behind WHM server inventory.
 
 Ported from `noa-old` branch `MCP` (`storage/postgres/whm_servers.py`). One departure, and
 it is the same call T16 (e) and T17 (a) made: **only the reads are here.**
@@ -42,9 +42,9 @@ class WHMServerRowLike(Protocol):
 
     `to_safe_dict()` is declared here for the admin view's sake, not this module's: the one
     MCP tool that used to render a row through this Protocol via `to_safe_dict`,
-    `whm_list_servers` (T19), answers `core.servers.whm_ref.describe()` now — id, name,
-    `base_url`, none of `to_safe_dict`'s admin extras (V110). `WHMServer.to_safe_dict` still
-    drops `api_token` and every SSH secret in favour of presence booleans (V2, V8); it is
+    `whm_list_servers`, answers `core.servers.whm_ref.describe()` now — id, name,
+    `base_url`, none of `to_safe_dict`'s admin extras. `WHMServer.to_safe_dict` still
+    drops `api_token` and every SSH secret in favour of presence booleans; it is
     just reached directly on the concrete row by the admin routes now
     (`api/routes/admin_servers.py`), not through this Protocol.
     """
@@ -64,7 +64,7 @@ RowT_co = TypeVar("RowT_co", bound=WHMServerRowLike, covariant=True)
 class WHMServerReadRepository(Protocol[RowT_co]):
     """What T19's callers need from WHM inventory, parametrised by the row it yields.
 
-    **Generic, and that is what keeps `WHMServerRowLike` narrow** (T21). Reference resolution
+    **Generic, and that is what keeps `WHMServerRowLike` narrow**. Reference resolution
     matches on identity and never touches a credential, so it is written against the narrow
     view. But a tool that resolves a server then *calls* it needs the credentials off the row
     it resolved — the row, specifically, and not a second read by id, which could disagree
@@ -102,7 +102,7 @@ class SQLWHMServerRepository:
         """One server by primary key, or `None`.
 
         `None` rather than a raise: the caller is `resolve_whm_server_ref`, and "no server
-        with that id" is a `host_not_found` *result* the model can act on (V18), not an
+        with that id" is a `host_not_found` *result* the model can act on, not an
         exception.
         """
         result = await self._session.execute(select(WHMServer).where(WHMServer.id == server_id))

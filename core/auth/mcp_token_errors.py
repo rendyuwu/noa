@@ -1,4 +1,4 @@
-"""MCP token error taxonomy (T10, C5, V2).
+"""MCP token error taxonomy.
 
 A third taxonomy alongside `core.auth.errors` (authentication) and
 `core.auth.authorization_errors` (RBAC), and separate from both on purpose. Those two
@@ -44,7 +44,7 @@ class McpTokenError(NoaError):
 
 
 class McpTokenNotFoundError(McpTokenError):
-    """No `mcp_tokens` row with that id for that user (V2).
+    """No `mcp_tokens` row with that id for that user.
 
     Raised by revoke. One shape for "never existed" and "belongs to someone else", so the
     response is not an enumeration oracle.

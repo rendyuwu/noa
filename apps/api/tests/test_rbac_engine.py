@@ -1,4 +1,4 @@
-"""`AuthorizationService` policy (T9 — V6, V10, V11, V12, V13, V14).
+"""`AuthorizationService` policy.
 
 Postgres is not required: the service runs against `support.rbac`'s in-memory repository,
 so every assertion here is about policy rather than SQL. `SQLAuthorizationRepository` has
@@ -101,14 +101,14 @@ def test_catalog_excludes_never_implement_tools() -> None:
 
 
 def test_catalog_membership_is_exact_not_normalized() -> None:
-    """A grant is stored as written; case-folding it would break dispatch (V10)."""
+    """A grant is stored as written; case-folding it would break dispatch."""
     assert is_known_tool(TOOL_READ)
     assert not is_known_tool(TOOL_READ.upper())
     assert not is_known_tool(f" {TOOL_READ} ")
 
 
 async def test_list_tools_answers_the_services_own_catalog(rbac: RbacFixture) -> None:
-    """T52: the vocabulary a grant may name, off the same set that validates a write (V10).
+    """T52: the vocabulary a grant may name, off the same set that validates a write.
 
     Read against a *narrowed* `known_tools`, not the default: an implementation that returned
     `TOOL_CATALOG` directly would pass an equality with the default and hand a caller names
@@ -121,14 +121,14 @@ async def test_list_tools_answers_the_services_own_catalog(rbac: RbacFixture) ->
 
 
 async def test_list_tools_commits_nothing(rbac: RbacFixture) -> None:
-    """A read ends no transaction, for the same reason it logs no event (V14, V100)."""
+    """A read ends no transaction, for the same reason it logs no event."""
     await rbac.service.list_tools()
 
     assert rbac.repository.commits == 0
     assert rbac.audit.events == []
 
 
-# --- Permission resolution (V10, V11) ---
+# --- Permission resolution ---
 
 
 async def test_role_grant_resolves_to_permitted_tools(rbac: RbacFixture) -> None:
@@ -155,9 +155,9 @@ async def test_admin_authorize_rejects_unregistered_tool(rbac: RbacFixture) -> N
 
 
 async def test_grant_for_unknown_tool_is_not_permitted(rbac: RbacFixture) -> None:
-    """A stale grant — a tool renamed or dropped — resolves to no permission (V10).
+    """A stale grant — a tool renamed or dropped — resolves to no permission.
 
-    `role_tool_permissions.tool_name` is a plain string (T4), so nothing at the database
+    `role_tool_permissions.tool_name` is a plain string, so nothing at the database
     level stops the row from outliving the tool.
     """
     rbac.repository.grant(ROLE_SUPPORT, TOOL_UNKNOWN, TOOL_READ)
@@ -209,7 +209,7 @@ async def test_disabled_admin_has_zero_permitted_tools(rbac: RbacFixture) -> Non
 async def test_permitted_tools_raise_for_a_deleted_user(rbac: RbacFixture) -> None:
     """A missing row is `UserNotFoundError`, not an empty tool set.
 
-    Fail-closed either way, but the caller owes a deleted operator a 401 (T12) rather than
+    Fail-closed either way, but the caller owes a deleted operator a 401 rather than
     an empty list that reads like a role misconfiguration.
     """
     with pytest.raises(UserNotFoundError):
@@ -236,7 +236,7 @@ async def test_permitted_tools_reread_row_after_disable(rbac: RbacFixture) -> No
 
 
 async def test_each_permission_check_reads_the_user_row(rbac: RbacFixture) -> None:
-    """No memoization: two checks, two reads (V6, V14)."""
+    """No memoization: two checks, two reads."""
     rbac.repository.grant(ROLE_SUPPORT, TOOL_READ)
     user = rbac.repository.add_user(OPERATOR_EMAIL, roles=(ROLE_SUPPORT,))
 
@@ -290,7 +290,7 @@ async def test_list_users_is_ordered_and_carries_effective_tools(rbac: RbacFixtu
     assert users[1].tools == [TOOL_READ]
 
 
-# --- Role CRUD (V13) ---
+# --- Role CRUD ---
 
 
 async def test_create_role_then_list_includes_it(rbac: RbacFixture) -> None:
@@ -300,7 +300,7 @@ async def test_create_role_then_list_includes_it(rbac: RbacFixture) -> None:
 
 
 async def test_create_role_is_idempotent_and_records_one_event(rbac: RbacFixture) -> None:
-    """Re-creating an existing role changes nothing, so it logs nothing (V14)."""
+    """Re-creating an existing role changes nothing, so it logs nothing."""
     await rbac.service.create_role(ROLE_SUPPORT, actor_email=ADMIN_EMAIL)
     await rbac.service.create_role(ROLE_SUPPORT, actor_email=ADMIN_EMAIL)
 
@@ -340,7 +340,7 @@ async def test_admin_role_tools_cannot_be_set(rbac: RbacFixture) -> None:
 
 
 async def test_admin_role_tools_read_as_the_whole_catalog(rbac: RbacFixture) -> None:
-    """Displayed state equals enforced state: `admin` permits everything (V10)."""
+    """Displayed state equals enforced state: `admin` permits everything."""
     assert await rbac.service.get_role_tools(ADMIN_ROLE_NAME) == sorted(TOOL_CATALOG)
 
 
@@ -391,7 +391,7 @@ async def test_set_role_tools_for_missing_role_raises_not_found(rbac: RbacFixtur
         await rbac.service.set_role_tools(ROLE_SUPPORT, [TOOL_READ], actor_email=ADMIN_EMAIL)
 
 
-# --- Role assignment (V13) ---
+# --- Role assignment ---
 
 
 async def test_set_user_roles_replaces_assignable_roles(rbac: RbacFixture) -> None:
@@ -494,7 +494,7 @@ async def test_non_admin_can_be_disabled_by_themselves_guard_free(rbac: RbacFixt
 
 
 async def test_enabling_a_user_is_never_guarded(rbac: RbacFixture) -> None:
-    """Guards protect the admin set from shrinking; enabling only grows it (V7)."""
+    """Guards protect the admin set from shrinking; enabling only grows it."""
     user = rbac.repository.add_user(OPERATOR_EMAIL, is_active=False, roles=(ADMIN_ROLE_NAME,))
 
     updated = await rbac.service.set_user_active(
@@ -504,7 +504,7 @@ async def test_enabling_a_user_is_never_guarded(rbac: RbacFixture) -> None:
     assert updated.is_active is True
 
 
-# --- V4 cascade revoke on disable (T11) ---
+# --- V4 cascade revoke on disable ---
 
 
 async def test_disabling_a_user_revokes_their_mcp_tokens(rbac: RbacFixture) -> None:
@@ -583,7 +583,7 @@ async def test_admin_self_delete_conflicts(rbac: RbacFixture) -> None:
 
 
 async def test_self_delete_conflicts_for_non_admin(rbac: RbacFixture) -> None:
-    """Also refused: it would leave a live cookie for a row that no longer exists (V6)."""
+    """Also refused: it would leave a live cookie for a row that no longer exists."""
     user = rbac.repository.add_user(OPERATOR_EMAIL, roles=(ROLE_SUPPORT,))
 
     with pytest.raises(SelfDeleteError):
@@ -630,7 +630,7 @@ async def test_cannot_remove_own_admin_role(rbac: RbacFixture) -> None:
 
 
 async def test_cannot_remove_admin_from_last_active_admin(rbac: RbacFixture) -> None:
-    """Third path to an empty admin set, same backstop (V12)."""
+    """Third path to an empty admin set, same backstop."""
     admin = rbac.repository.add_user(ADMIN_EMAIL, roles=(ADMIN_ROLE_NAME,))
 
     with pytest.raises(LastActiveAdminError):
@@ -700,7 +700,7 @@ async def test_audit_event_names_the_actor_and_target(rbac: RbacFixture) -> None
     event = rbac.audit.events[-1]
     assert event.actor_email == ADMIN_EMAIL
     assert event.target == str(target.id)
-    # `revoked_mcp_tokens` joined the payload with T11's cascade revoke (V4); an enable
+    # `revoked_mcp_tokens` joined the payload with T11's cascade revoke; an enable
     # never revokes, so it reports zero. Asserted as an exact dict on purpose — a field
     # appearing here without a decision is what this equality is for.
     assert event.metadata == {
@@ -711,7 +711,7 @@ async def test_audit_event_names_the_actor_and_target(rbac: RbacFixture) -> None
 
 
 async def test_refused_mutations_record_no_audit_event(rbac: RbacFixture) -> None:
-    """A refusal is not a change, so it must not appear in the trail (V14)."""
+    """A refusal is not a change, so it must not appear in the trail."""
     admin = rbac.repository.add_user(ADMIN_EMAIL, roles=(ADMIN_ROLE_NAME,))
 
     with pytest.raises(SelfDeactivateAdminError):
@@ -739,7 +739,7 @@ async def test_audit_event_carries_no_credentials(rbac: RbacFixture) -> None:
 
 
 async def test_every_mutation_commits_exactly_once(rbac: RbacFixture) -> None:
-    """T51: a write that never ends its transaction takes effect never (V14).
+    """T51: a write that never ends its transaction takes effect never.
 
     The same six mutations the audit test walks, counted instead of listed: the repository
     flushes and nothing else commits on the request path, so a mutation added without a

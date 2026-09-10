@@ -1,4 +1,4 @@
-"""The before→after delta's own rules, and the seam it arrives on (T38 — V85, V86).
+"""The before→after delta's own rules, and the seam it arrives on.
 
 Three lanes, and the order they are in is the order the claims depend on each other:
 
@@ -14,13 +14,13 @@ Three lanes, and the order they are in is the order the claims depend on each ot
 What each of the seven runners publishes is `test_change_delta_runners.py`. The two WHM account
 runners are asserted in `test_whm_tools_suspend_account.py` and
 `test_whm_tools_unsuspend_account.py`, where their WHM endpoint fixtures live: moving them
-would mean a second copy of that wiring (V66).
+would mean a second copy of that wiring.
 
 **The absence assertions are the point.** A delta that helpfully fills a gap is the failure mode
 the shape exists to prevent, and it is not the kind of bug a green suite finds by accident — a
 fabricated `false` reads exactly like a measured one. So a branch that measured nothing is
 asserted on the *key being absent*, and one that measured "nothing moved" on the key being
-*present and empty*, which are two different claims about the same change (V86).
+*present and empty*, which are two different claims about the same change.
 """
 
 from __future__ import annotations
@@ -77,7 +77,7 @@ def test_a_delta_that_measured_nothing_carries_nothing() -> None:
 
     Asserted on the key set rather than on values, because a facet holding `null` is a
     measurement slot a renderer has to know to distrust — and one that a later edit fills in with
-    a default without anybody noticing (V86).
+    a default without anybody noticing.
     """
     assert MINIMAL.as_payload() == {
         "identity": {"server": SERVER_NAME},
@@ -115,7 +115,7 @@ def test_an_unknown_verification_state_is_refused() -> None:
 
 
 def test_the_four_verification_states_are_all_constructible() -> None:
-    """The negative control for the case above (V87): the guard rejects a fifth, not a fourth.
+    """The negative control for the case above: the guard rejects a fifth, not a fourth.
 
     Without this, a typo in `VERIFICATION_STATES` that dropped `not_in_force` would leave the
     refusal above passing while making PMG's write-landed-and-sync-failed answer unbuildable.
@@ -195,7 +195,7 @@ def test_no_reason_bearing_key_reaches_a_delta(key: str) -> None:
 
 def test_a_reason_nested_inside_a_facet_is_refused_too() -> None:
     """A flat scan would pass `{"account": {"suspendreason": ...}}`, which is the shape a WHM
-    preflight summary actually has — so the walk recurses, the way the redactor's does (V66)."""
+    preflight summary actually has — so the walk recurses, the way the redactor's does."""
     with pytest.raises(ValueError, match="reason-bearing"):
         ChangeDelta(
             identity={"server": SERVER_NAME, "account": {"user": "acmeco", "suspendreason": "x"}},
@@ -204,7 +204,7 @@ def test_a_reason_nested_inside_a_facet_is_refused_too() -> None:
 
 
 def test_an_ordinary_identity_is_not_refused() -> None:
-    """The negative control (V87): the fence rejects reason-bearing names, not every name.
+    """The negative control: the fence rejects reason-bearing names, not every name.
 
     Without it, a predicate that matched too much would pass the refusals above while making the
     seven runners' own identities unbuildable — and every per-runner test below would fail for a
@@ -231,7 +231,7 @@ def delta_with_extra_facet(facet: dict[str, Any]) -> type[ChangeDelta]:
 
 
 def test_a_facet_added_to_the_serialiser_is_inside_the_reason_fence() -> None:
-    """The fence reads the bytes that will be stored, so a new facet cannot land outside it (C8).
+    """The fence reads the bytes that will be stored, so a new facet cannot land outside it.
 
     `__post_init__` scans `as_payload()`. If it scanned a second view of the same record instead
     — a hand-maintained list of the facets that came from a target system — then a facet added to
@@ -246,7 +246,7 @@ def test_a_facet_added_to_the_serialiser_is_inside_the_reason_fence() -> None:
 
 
 def test_an_added_facet_carrying_no_reason_is_left_alone() -> None:
-    """The negative control (V87): the refusal above is about the key, not about the extra facet.
+    """The negative control: the refusal above is about the key, not about the extra facet.
 
     Without it, a fence that refused any unknown facet outright would pass the case above while
     making the eighth CHANGE tool's delta unbuildable.
@@ -257,7 +257,7 @@ def test_an_added_facet_carrying_no_reason_is_left_alone() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# The receipt (V46)
+# The receipt
 # --------------------------------------------------------------------------------------
 
 
@@ -340,7 +340,7 @@ def test_a_credential_in_a_delta_is_redacted_on_its_own_line() -> None:
 
 
 def test_a_delivery_url_in_a_delta_is_treated_exactly_as_the_payloads_is() -> None:
-    """`delivered_credential` is not a redacted key, and neither is `yopass_url` (V49, V50).
+    """`delivered_credential` is not a redacted key, and neither is `yopass_url`.
 
     Stated as a test rather than left implicit, because the two fields hold the same string on
     the same change and a reader comparing them has to be able to. Whoever holds the whole link
@@ -362,7 +362,7 @@ def test_a_delivery_url_in_a_delta_is_treated_exactly_as_the_payloads_is() -> No
 
 
 # --------------------------------------------------------------------------------------
-# The executor's seam (V23, V86)
+# The executor's seam
 # --------------------------------------------------------------------------------------
 
 
@@ -378,7 +378,7 @@ def build_service(
 
 
 async def test_an_executor_refusal_states_no_delta() -> None:
-    """Nothing ran, so nothing is claimed — and the receipt says so by omission (V86).
+    """Nothing ran, so nothing is claimed — and the receipt says so by omission.
 
     Driven through the real service rather than against `build_receipt`, because the claim is
     about a path: the three refusals above a runner all return the envelope and no delta, and a
@@ -423,7 +423,7 @@ async def test_a_runner_answering_a_bare_envelope_is_still_a_complete_answer() -
 
     Not a compatibility shim. A runner with nothing to state should not have to wrap an empty
     object, and the executor normalising it in one place is what keeps that from being seven
-    authors' decision (V66).
+    authors' decision.
     """
     authorized = authorized_change()
     repository = FakeApprovedChangeExecutionRepository(authorized=authorized)
@@ -483,7 +483,7 @@ def test_every_facet_the_record_holds_reaches_the_payload() -> None:
 
 
 def test_a_change_outcome_defaults_to_stating_nothing() -> None:
-    """The seam's own default, which is the fail-closed direction (V86)."""
+    """The seam's own default, which is the fail-closed direction."""
     assert ChangeOutcome(payload={"ok": True}).delta is None
     assert ChangeOutcome(payload={"ok": True}, delta=MINIMAL).delta is MINIMAL
 

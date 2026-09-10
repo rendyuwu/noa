@@ -1,4 +1,4 @@
-"""`proxmox_vm_nic`'s runner — the half that flips the link (T28).
+"""`proxmox_vm_nic`'s runner — the half that flips the link.
 
 Reachable only after an operator approved (§V.22's far side), so nothing here goes through the
 tool. `core.approvals.execution` hands a runner a `ChangeExecutionRequest`, and that is what these
@@ -518,7 +518,7 @@ async def test_the_executor_can_classify_every_outcome_this_runner_produces(
 
 
 async def test_the_runner_map_covers_this_tool_and_nothing_else() -> None:
-    """What `registry.assert_change_runners_cover` and `noa_api.main` both read (T38)."""
+    """What `registry.assert_change_runners_cover` and `noa_api.main` both read."""
     context = nic_context()[0].context
 
     assert set(build_proxmox_nic_runners(context=context)) == {TOOL_PROXMOX_VM_NIC}
@@ -528,7 +528,7 @@ async def test_the_reason_is_on_the_request_and_the_runner_simply_does_not_read_
     """§V.43's permission is unused here, which is a fact about this runner rather than the gate.
 
     Stated as a test because the alternative is a comment: the executor puts the operator's words
-    on every `ChangeExecutionRequest` (T22), and a future edit that started reading them would
+    on every `ChangeExecutionRequest`, and a future edit that started reading them would
     open §V.96's return paths on a tool that has none today.
     """
     fixture, _ = nic_context()

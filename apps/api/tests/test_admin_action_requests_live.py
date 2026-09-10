@@ -9,11 +9,11 @@ warning about.
 
 The writers are three, and they are the ones that write these rows in production:
 
-- `core.approvals.repository.SQLActionRequestRepository.create_pending` — the gate (T33), which
+- `core.approvals.repository.SQLActionRequestRepository.create_pending` — the gate, which
   writes PENDING and never writes a reason;
 - `core.approvals.decisions.SQLActionDecisionRepository.write_decision` — the one writer of a
-  terminal status and of `reason` (V22, V28, T37);
-- `core.audit.receipts.SQLActionReceiptRepository.create_if_missing` — the receipt (T36, T38).
+  terminal status and of `reason`;
+- `core.audit.receipts.SQLActionReceiptRepository.create_if_missing` — the receipt.
 
 Four more questions are the database's rather than the code's:
 
@@ -111,7 +111,7 @@ def database_url() -> Iterator[str]:
 async def session(database_url: str) -> AsyncIterator[AsyncSession]:
     """One session over a freshly emptied database.
 
-    The truncate and the engine lifecycle live in `support.database.session_factory` (V66) —
+    The truncate and the engine lifecycle live in `support.database.session_factory` —
     a second copy is a second place for `MUTATED_TABLES` to go stale, and a file that quietly
     stopped emptying a table would fail somewhere else entirely. This surface needs one
     connection rather than two, so it opens a single session off that factory rather than
@@ -143,7 +143,7 @@ async def open_request(
     approval_context: dict[str, Any] | None = None,
     created_at: datetime | None = None,
 ) -> UUID:
-    """A PENDING row, written by the gate's own repository (T33).
+    """A PENDING row, written by the gate's own repository.
 
     `created_at` is a server default, so a test that needs a particular instant sets it afterwards
     — the writer has no parameter for it and giving one would be a column this surface could
@@ -394,7 +394,7 @@ async def test_a_stored_receipt_without_a_delta_reads_back_as_none(
 async def test_a_decision_that_outlived_its_operator_stays_visible(
     session: AsyncSession, reader: ActionRequestAdminService
 ) -> None:
-    """`SET NULL` (T34) is a state only a real `DELETE` produces.
+    """`SET NULL` is a state only a real `DELETE` produces.
 
     An inner join to `users` would hide exactly the decisions an audit trail is kept for — the
     ones whose operator has left. The email reads as `None`, which says "the account is gone", not
@@ -536,7 +536,7 @@ async def test_a_percent_in_an_address_is_matched_as_a_literal(
 
     `escape_like` inserts the escape character and the `ILIKE` declares what it means, and the
     two live in different call sites — `core.audit.tool_run_reads` owns both halves and
-    `core.approvals.admin_reads` imports them, so one constant serves both (V66). Declaring one
+    `core.approvals.admin_reads` imports them, so one constant serves both. Declaring one
     character while inserting another is silent: the inserted one becomes a literal and the `%`
     beside it goes live.
 

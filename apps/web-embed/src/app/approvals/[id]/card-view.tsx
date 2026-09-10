@@ -27,9 +27,9 @@ import styles from './card.module.css'
  * fetch decides who they are, and the CSRF token is part of the render rather than something a page
  * could ask for without having been allowed to read the request first (§T.41(c), V39).
  *
- * **Then it asks again, because the state lives in the database** (V29). Approve returns 202 and the
+ * **Then it asks again, because the state lives in the database**. Approve returns 202 and the
  * change runs elsewhere; the only way for this frame to learn the outcome is to re-read the row.
- * `/approvals/[id]` owns the whole lifecycle of one request (V34), and a card that showed the
+ * `/approvals/[id]` owns the whole lifecycle of one request, and a card that showed the
  * question but never the answer would own half of it. The answer arrives in two parts — the run's
  * terminal status, and the receipt saying what it did (§T.42(b), V46) — and the second is what a
  * poll is actually waiting for.
@@ -38,7 +38,7 @@ import styles from './card.module.css'
  * frame answers 401, and that renders V38's explicit "cannot authenticate here" rather than leaving
  * a live Approve button standing on a card nobody may decide any more — with §T.43's way out of it
  * beside it (`sign-in-notice.tsx`), which is a link-out and a retry and never a form in the frame
- * (V42). A transient failure is the one answer that changes nothing: the card stays, the loop stays,
+ *. A transient failure is the one answer that changes nothing: the card stays, the loop stays,
  * because "NOA could not be reached just now" is not "there is nothing more to wait for".
  *
  * **It asks the host for a frame it fits in** (`components/frame-sizer.tsx`). The box LibreChat
@@ -51,7 +51,7 @@ import styles from './card.module.css'
  *
  * This is a client component and everything it renders is inside it, so the card has exactly one
  * renderer. A live region updated separately from a server-rendered one would be two descriptions
- * of one row, free to disagree the moment either is edited (V66).
+ * of one row, free to disagree the moment either is edited.
  */
 
 /** What the loop carries between ticks: the last answer, and how long a run has been watched. */
@@ -99,10 +99,10 @@ function KeyValues({ title, values }: { title: string; values: Record<string, un
 }
 
 /**
- * Provenance (V35): when it was asked for, by whom, from which conversation, and until when.
+ * Provenance: when it was asked for, by whom, from which conversation, and until when.
  *
  * The requester and the LibreChat account are the identity the gate persisted at request time
- * (T33), not a join done now — the requester FK is `SET NULL` (T34), so a deleted operator would
+ *, not a join done now — the requester FK is `SET NULL`, so a deleted operator would
  * otherwise erase the identity from a decision that was made.
  */
 function Provenance({ card }: { card: ApprovalCard }) {
@@ -122,7 +122,7 @@ function Provenance({ card }: { card: ApprovalCard }) {
 }
 
 /**
- * What the approval started, once something has (V29, V34, V47).
+ * What the approval started, once something has.
  *
  * `stalled` is the one thing here the row does not say: the card gave up asking. It is not an
  * error — the run may still be going — so it says what is true and what to do about it, rather
@@ -199,7 +199,7 @@ function Card({
 
         <Provenance card={card} />
         <KeyValues title="Arguments" values={card.arguments} />
-        {/* The in-process preflight (C9, V17): the before-state this card exists to show, and the
+        {/* The in-process preflight: the before-state this card exists to show, and the
             one thing on the row the model is never told (`core.approvals.results`). Off the receipt
             once there is one — see `Outcome` for why that is one heading and not two. */}
         <KeyValues title="Before state" values={card.receipt?.before ?? card.evidence} />
@@ -271,7 +271,7 @@ export function CardView({
 
         setLive((previous) => ({
           // A transient failure leaves the card exactly as it was and keeps the loop alive; a 401
-          // or a 404 replaces it, because those are states an operator has to be shown (V38, V27).
+          // or a 404 replaces it, because those are states an operator has to be shown.
           load: next.kind === 'unavailable' ? previous.load : next,
           runPolls: next.kind === 'card' && isRunning(next.card) ? previous.runPolls + 1 : 0,
         }))
@@ -289,7 +289,7 @@ export function CardView({
   /**
    * One read, on demand, from the state that has nothing to poll (§T.43).
    *
-   * The poll's reader, not a second one (V66) — and the poll's rule for what to do with the answer:
+   * The poll's reader, not a second one — and the poll's rule for what to do with the answer:
    * "NOA could not be reached just now" leaves the operator looking at the notice they were already
    * looking at, and anything else replaces it. A `card` answer re-arms the loop by itself, because
    * the effect above watches `live`.

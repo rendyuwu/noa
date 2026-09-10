@@ -1,6 +1,6 @@
 """NOA API — FastAPI admin routes + FastMCP server.
 
-Two router sets in one app (C12): `/admin` for the panel, `/mcp` for LibreChat.
+Two router sets in one app: `/admin` for the panel, `/mcp` for LibreChat.
 """
 
 __all__ = ["__version__"]

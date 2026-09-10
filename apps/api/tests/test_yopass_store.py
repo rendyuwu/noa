@@ -1,6 +1,6 @@
-"""Out-of-band secret delivery via yopass (T15, C15, V50).
+"""Out-of-band secret delivery via yopass.
 
-Ported from `noa-old` branch `MCP` alongside the helper (C13, V69), rewired to this repo's
+Ported from `noa-old` branch `MCP` alongside the helper, rewired to this repo's
 injected `Settings`.
 
 V50 is a chain, and each link is asserted separately because any one of them silently

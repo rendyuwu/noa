@@ -1,4 +1,4 @@
-"""End-to-end `/auth` flow against a real database (T8, V6, V7, V9).
+"""End-to-end `/auth` flow against a real database.
 
 `test_auth_routes.py` proves the policy with in-memory doubles. This file proves the
 *wiring*: the real `create_app`, the real lifespan, the real engine, the real
@@ -8,7 +8,7 @@ accept every password and erase the failure cases V9 needs.
 
 Two properties can only be shown here, because both are about transactions:
 
-- a first login's provisioned row survives the pending-approval 403 (V7), even though the
+- a first login's provisioned row survives the pending-approval 403, even though the
   request ends in an error and `get_db_session` rolls back;
 - a recorded login failure survives the same rollback, without which V9 counts nothing
   and every unit test still passes.

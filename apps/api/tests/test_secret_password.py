@@ -1,4 +1,4 @@
-"""Server-side password generation (T15, C15, V49).
+"""Server-side password generation.
 
 V49's first half — the password is generated here, never supplied as a tool argument — is
 structural: `_generate_password` takes a length and nothing else, so there is no argument a

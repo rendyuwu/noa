@@ -1,4 +1,4 @@
-"""`/admin/users` over HTTP (T51, T65 — V4, V6, V8, V10, V11, V12, V13, V14, V73, V75).
+"""`/admin/users` over HTTP.
 
 `test_rbac_engine.py` owns the policy: what the last-active-admin guard decides, what an
 internal role does to a replacement, how many tokens a disable revokes. This file owns what
@@ -8,7 +8,7 @@ shape the ported panel already parses, and that a successful write ends its tran
 refused one does not.
 
 **T65's fifth route lives here too**, because it is a property of this surface and nothing else:
-`PUT /admin/users/{id}/tools` answers 410 `direct_tool_grants_disabled` (V75). It has no engine
+`PUT /admin/users/{id}/tools` answers 410 `direct_tool_grants_disabled`. It has no engine
 half to test — there is no user-level grant table and no service method — so the route *is* the
 whole implementation.
 
@@ -46,7 +46,7 @@ from support.admin import ADMIN_EMAIL, OPERATOR_EMAIL, USERS_PATH, AdminHarness,
 from support.rbac import INTERNAL_ROLE, ROLE_NOC, ROLE_SUPPORT, TOOL_CHANGE, TOOL_READ
 
 # The four routes T51 ships, as (method, path suffix, body). Parametrized rather than repeated
-# so a route added without its own gate test fails the ones below (V13).
+# so a route added without its own gate test fails the ones below.
 ROUTES: tuple[tuple[str, str, dict[str, Any] | None], ...] = (
     ("GET", "", None),
     ("PATCH", "/{user_id}", {"is_active": False}),
@@ -55,7 +55,7 @@ ROUTES: tuple[tuple[str, str, dict[str, Any] | None], ...] = (
 )
 
 # T65's route, kept separate from `ROUTES` because it never answers 200: direct per-user grants
-# are withdrawn, so an admin gets 410 (V75). It shares the *gate* assertions below — being
+# are withdrawn, so an admin gets 410. It shares the *gate* assertions below — being
 # refused is not being ungated, and a 410 served to a non-admin would say this path exists.
 REFUSING_ROUTES: tuple[tuple[str, str, dict[str, Any] | None], ...] = (
     ("PUT", "/{user_id}/tools", {"tools": []}),
@@ -160,12 +160,12 @@ def test_the_admin_role_is_read_from_the_row_not_the_cookie() -> None:
     assert response.json()["error_code"] == "admin_access_required"
 
 
-# --- GET /admin/users (V10, V11, V13, V75) ---
+# --- GET /admin/users ---
 
 
 def test_the_list_carries_the_shape_the_panel_parses() -> None:
-    """Exact keys: the ported panel (T48) reads these names, and a stray one is a contract
-    change nobody asked for. `direct_tools` is absent by decision (V75, T65)."""
+    """Exact keys: the ported panel reads these names, and a stray one is a contract
+    change nobody asked for. `direct_tools` is absent by decision."""
     with admin_harness() as harness:
         harness.sign_in()
         harness.add_target(roles=(ROLE_SUPPORT,))
@@ -237,7 +237,7 @@ def test_the_list_is_ordered_by_email() -> None:
     assert emails == sorted(emails)
 
 
-# --- PATCH /admin/users/{id} (V4, V7, V12, V14) ---
+# --- PATCH /admin/users/{id} ---
 
 
 def test_disabling_a_user_flips_the_row_and_returns_it() -> None:
@@ -310,7 +310,7 @@ def test_patching_an_unknown_user_is_404() -> None:
 
 
 def test_patching_without_is_active_is_a_422_in_the_shared_envelope() -> None:
-    """A malformed body answers through the one seam, so it still carries `request_id` (V73)."""
+    """A malformed body answers through the one seam, so it still carries `request_id`."""
     with admin_harness() as harness:
         harness.sign_in()
         target = harness.add_target()
@@ -321,7 +321,7 @@ def test_patching_without_is_active_is_a_422_in_the_shared_envelope() -> None:
     assert response.json()["error_code"] == "request_validation_error"
 
 
-# --- DELETE /admin/users/{id} (V12) ---
+# --- DELETE /admin/users/{id} ---
 
 
 def test_deleting_a_user_answers_ok_and_removes_the_row() -> None:
@@ -362,7 +362,7 @@ def test_deleting_an_unknown_user_is_404() -> None:
     assert response.json()["error_code"] == "admin_user_not_found"
 
 
-# --- PUT /admin/users/{id}/roles (V13, V14, V75) ---
+# --- PUT /admin/users/{id}/roles ---
 
 
 def test_putting_roles_replaces_the_set_and_returns_the_effective_tools() -> None:
@@ -466,7 +466,7 @@ def test_a_role_change_is_visible_on_the_very_next_list() -> None:
         assert harness.user_in_list(OPERATOR_EMAIL)["tools"] == [TOOL_READ]
 
 
-# --- PUT /admin/users/{id}/tools: withdrawn (T65 — V75) ---
+# --- PUT /admin/users/{id}/tools: withdrawn ---
 
 
 def _put_tools(harness: AdminHarness, user_id: UUID, **kwargs: Any):

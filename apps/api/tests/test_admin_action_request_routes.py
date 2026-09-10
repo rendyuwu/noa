@@ -48,7 +48,7 @@ from support.admin import (
 
 # Every query parameter the list route accepts, with the `ActionRequestAdminFilters` field it must
 # reach. One table rather than five assertions: the panel builds this exact key set, so the
-# accepted names live in one place here and one place there (V66) instead of drifting apart. The
+# accepted names live in one place here and one place there instead of drifting apart. The
 # walk below asserts the table against `ActionRequestAdminFilters`' own fields, so a sixth filter
 # added there with no query parameter carrying it is caught here rather than being unreachable.
 FILTER_QUERIES: tuple[tuple[str, str, str, Any], ...] = (
@@ -63,7 +63,7 @@ FILTER_QUERIES: tuple[tuple[str, str, str, Any], ...] = (
 # formatted. Compared against `router.routes` below rather than trusted: a table pinned only
 # against its own `len()` says nothing about what is mounted, and the claim the admin walk makes
 # is about every route that exists, not about every route someone remembered to list. The
-# comparison itself is `support.admin.registered_routes`, shared with the audit route test (V66).
+# comparison itself is `support.admin.registered_routes`, shared with the audit route test.
 ID_PARAM: str = "action_request_id"
 
 ROUTE_TABLE: tuple[tuple[str, str], ...] = (
@@ -74,7 +74,7 @@ ROUTE_TABLE: tuple[tuple[str, str], ...] = (
 
 # The methods a write would arrive as. Hand-kept and bound to nothing, deliberately: this is the
 # set of verbs an attacker or a mistaken client would try, not a set the code declares anywhere,
-# so there is no source to read it off. Stated rather than left to read as derived (V119).
+# so there is no source to read it off. Stated rather than left to read as derived.
 WRITE_METHODS: tuple[str, ...] = ("POST", "PUT", "PATCH", "DELETE")
 
 
@@ -160,7 +160,7 @@ def test_the_surface_offers_no_write_at_any_address(harness: AdminHarness) -> No
 
     405 rather than 403: the address exists and the method does not, which is a stronger statement
     than "you may not". `action_requests.status` has exactly one writer for a terminal value
-    (V22, V28) and this router must never become a second.
+    and this router must never become a second.
     """
     assert mounted() == set(ROUTE_TABLE)
     assert len(ROUTE_TABLE) * len(WRITE_METHODS) == 12
@@ -312,7 +312,7 @@ def test_the_status_enum_is_the_four_the_panel_offers(harness: AdminHarness) -> 
     offering four, so those rows become unfilterable while every other lane stays green: the
     table still renders the unknown status, because `resolveActionRequestStatus` falls through
     honestly, and no request errors. A length assertion goes red for the right thing spelled
-    wrongly and green for the wrong thing spelled right (V38).
+    wrongly and green for the wrong thing spelled right.
 
     Each value is also driven at the route, so an option the panel offers cannot be one the API
     refuses — a dropdown entry that 422s is a dead control, and the name check alone would not
@@ -579,7 +579,7 @@ def test_every_field_the_card_stops_rendering_is_reachable_here(harness: AdminHa
 def test_the_gate_context_is_served_as_stored_and_not_reprojected(harness: AdminHarness) -> None:
     """The same object T33 persisted, whole.
 
-    Not re-redacted and not flattened into named fields: it was redacted at gate time (V8), and a
+    Not re-redacted and not flattened into named fields: it was redacted at gate time, and a
     second policy means the day the two disagree is the day one of them is wrong. Asserted as
     equality against the stored object rather than key-by-key, because a route that dropped an
     unrecognised key would pass every named check above while quietly narrowing what an auditor

@@ -1,4 +1,4 @@
-"""`SQLWHMServerRepository` against a live database (T19).
+"""`SQLWHMServerRepository` against a live database.
 
 `test_whm_server_ref.py` and `test_whm_tools_read.py` cover policy over in-memory doubles;
 this covers the SQL. Everything asserted here is something a fake cannot tell you:
@@ -60,7 +60,7 @@ def repository(session: AsyncSession) -> SQLWHMServerRepository:
 
 
 async def insert(session: AsyncSession, name: str, *, base_url: str | None = None) -> WHMServer:
-    """One `whm_servers` row, written the way the admin routes will (T54)."""
+    """One `whm_servers` row, written the way the admin routes will."""
     server = WHMServer(
         name=name,
         base_url=base_url or f"https://{name}.example.net:2087",
@@ -114,14 +114,14 @@ async def test_get_by_id_finds_the_row(
 async def test_get_by_id_answers_none_for_a_missing_row(
     repository: SQLWHMServerRepository,
 ) -> None:
-    """`None`, not a raise: `resolve_whm_server_ref` turns it into `host_not_found` (V18)."""
+    """`None`, not a raise: `resolve_whm_server_ref` turns it into `host_not_found`."""
     assert await repository.get_by_id(uuid4()) is None
 
 
 async def test_a_stored_row_renders_safely(
     session: AsyncSession, repository: SQLWHMServerRepository
 ) -> None:
-    """`to_safe_dict` on a real row: identifiers present, credentials absent (V2, V8).
+    """`to_safe_dict` on a real row: identifiers present, credentials absent.
 
     Run against a row Postgres generated, because `id`, `created_at` and `updated_at` are
     server defaults — an in-memory double fills them by hand, and this is the only place

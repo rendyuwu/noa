@@ -1,4 +1,4 @@
-"""Lifecycle enums for the tool-call path (V20, T35, T34).
+"""Lifecycle enums for the tool-call path.
 
 V20 keeps these as *separate* enums rather than one flat set of states, because they
 answer different questions about the same call:
@@ -32,9 +32,9 @@ from enum import StrEnum
 
 
 class ToolRisk(StrEnum):
-    """What kind of tool ran (V20).
+    """What kind of tool ran.
 
-    READ executes immediately; CHANGE goes through the approval gate first (V16). This
+    READ executes immediately; CHANGE goes through the approval gate first. This
     is a classification of the tool, not a state of the run — see the module docstring.
     """
 
@@ -43,7 +43,7 @@ class ToolRisk(StrEnum):
 
 
 class ToolRunStatus(StrEnum):
-    """How far the execution got (V20).
+    """How far the execution got.
 
     STARTED is the row's initial state, written before the tool body runs, so a process
     that dies mid-call leaves evidence rather than nothing (T38's reaper sweeps those).
@@ -56,19 +56,19 @@ class ToolRunStatus(StrEnum):
 
 
 class ActionRequestStatus(StrEnum):
-    """Whether a CHANGE may run (V20, V23, T34).
+    """Whether a CHANGE may run.
 
-    PENDING is the initial state, written by the gate (T33). The three terminal states
-    are reached exactly once, under a row lock (V28).
+    PENDING is the initial state, written by the gate. The three terminal states
+    are reached exactly once, under a row lock.
 
     `EXPIRED` is new here — `noa-old` had only the first three, so a request nobody
     answered stayed PENDING forever and "may this run?" had no truthful answer after the
     TTL passed. V32 makes the expiry terminal; it is written by the decision door on read
-    (T37) and by T39's background sweep, which is what makes it true without traffic. The
+    and by T39's background sweep, which is what makes it true without traffic. The
     same sweep's predicate serves the render path, so a stale PENDING is never served.
 
     DENIED and EXPIRED are deliberately separate members rather than one "not approved":
-    a denial is an operator's answer and carries their reason (V15), while an expiry is
+    a denial is an operator's answer and carries their reason, while an expiry is
     the absence of one.
     """
 

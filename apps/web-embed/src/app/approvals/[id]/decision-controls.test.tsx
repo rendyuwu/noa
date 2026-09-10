@@ -8,7 +8,7 @@ import { DecisionControls } from './decision-controls'
  *
  * **What jsdom can prove here is the structure, and it is the half V80 is about**: there is no
  * `<form>` in this tree and neither button submits one, so the sandbox LibreChat renders the frame
- * under — `allow-scripts allow-same-origin`, `allow-forms` absent (R13, R29) — cannot silently
+ * under — `allow-scripts allow-same-origin`, `allow-forms` absent — cannot silently
  * swallow a click. That the `fetch` really does reach NOA from inside such a frame is
  * `e2e/approvals.browser.e2e.ts`'s claim; a jsdom assertion about a sandbox would be a check that
  * cannot fail.
@@ -53,7 +53,7 @@ describe('DecisionControls', () => {
     vi.restoreAllMocks()
   })
 
-  it('renders no form, and neither button submits one (V80)', () => {
+  it('renders no form, and neither button submits one', () => {
     const { container } = render(<DecisionControls actionRequestId={ID} csrf={CSRF} />)
 
     expect(container.querySelector('form')).toBeNull()
@@ -62,7 +62,7 @@ describe('DecisionControls', () => {
     }
   })
 
-  it('offers exactly one reason box and two decisions (C8, V15)', () => {
+  it('offers exactly one reason box and two decisions', () => {
     render(<DecisionControls actionRequestId={ID} csrf={CSRF} />)
 
     // Exactly one, because V43 says exactly one reason field exists anywhere.
@@ -73,7 +73,7 @@ describe('DecisionControls', () => {
     ])
   })
 
-  it('POSTs the typed reason and the token to the approve path (V22, V39)', async () => {
+  it('POSTs the typed reason and the token to the approve path', async () => {
     const seen = stubFetch(Response.json({ action_request_id: ID, tool_run_id: 'run-1' }))
     render(<DecisionControls actionRequestId={ID} csrf={CSRF} />)
 
@@ -88,7 +88,7 @@ describe('DecisionControls', () => {
 
   it('POSTs to the deny path when Deny is clicked', async () => {
     // The separating case: without it, "Approve posts to approve" passes just as well against a
-    // component whose two buttons do the same thing (V87).
+    // component whose two buttons do the same thing.
     const seen = stubFetch(Response.json({ action_request_id: ID, status: 'DENIED' }))
     render(<DecisionControls actionRequestId={ID} csrf={CSRF} />)
 
@@ -100,7 +100,7 @@ describe('DecisionControls', () => {
     expect(screen.getByRole('status').textContent).toContain('Nothing was changed')
   })
 
-  it('shows a blank-reason refusal and leaves the buttons usable (V15)', async () => {
+  it('shows a blank-reason refusal and leaves the buttons usable', async () => {
     // The gate is the endpoint, so a blank reason is submittable and answered — and the remedy is
     // to type one and click again, which means the buttons must not be spent.
     stubFetch(
@@ -122,7 +122,7 @@ describe('DecisionControls', () => {
     expect(screen.getByLabelText(/why is this change/i).hasAttribute('disabled')).toBe(false)
   })
 
-  it('spends the buttons once a decision is recorded (V28)', async () => {
+  it('spends the buttons once a decision is recorded', async () => {
     // Exactly one `pending → decided` transition exists, so a second click could only ever earn a
     // 409. Disabling after a *recorded* answer and not after a refused one is the distinction.
     stubFetch(Response.json({ action_request_id: ID, tool_run_id: 'run-1' }))

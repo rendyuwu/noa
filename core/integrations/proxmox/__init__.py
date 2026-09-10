@@ -1,4 +1,4 @@
-"""Proxmox VE integration layer (T17).
+"""Proxmox VE integration layer.
 
 Copied from `noa-old` branch `MCP` (`noa_api/proxmox/integrations/`) rather than rewritten
 (C13, V69). One transport, unlike WHM: Proxmox exposes everything NOA needs over its HTTP API,
@@ -12,19 +12,19 @@ Modules:
                 `permission_denied` (fix the ACL in Proxmox, ⊥ the token in NOA) and
                 `digest_mismatch` (re-read, ⊥ retry).
 - `cloudinit` — what cloud-init says about a VM's password, and whether NOA may claim a reset
-                took (T27, T69). Holds the crypt-compare and, critically, the third answer
+                took. Holds the crypt-compare and, critically, the third answer
                 `noa-old` did not have: **unavailable**, for a host whose libcrypt will not load
                 (V62 — verification-unavailable ≠ verified).
 - `nic`        — the `netN` codec: what one NIC line says, and how to flip its link state without
-                dropping a segment (T28). Here rather than in `mcp_tools/` because the grammar is
-                Proxmox's, and because `proxmox_vm_nic`'s two halves both need it (V66).
+                dropping a segment. Here rather than in `mcp_tools/` because the grammar is
+                Proxmox's, and because `proxmox_vm_nic`'s two halves both need it.
 
 There is no `errors.py` here, unlike WHM's: this layer returns dicts and raises nothing, because
 Proxmox needs no CLI over SSH. `SecretCipher` is injected rather than imported, following T15 —
-there is no settings singleton in this repo (C7).
+there is no settings singleton in this repo.
 
-Consumers: `proxmox_reset_vm_password` (T27), `proxmox_vm_nic` (T28) and the admin server CRUD +
-validate routes (T54). Reference doc: `docs/integrations/proxmox.md`.
+Consumers: `proxmox_reset_vm_password`, `proxmox_vm_nic` and the admin server CRUD +
+validate routes. Reference doc: `docs/integrations/proxmox.md`.
 
 Not ported from `MCP`: the C22 never-implement client methods (`get_user`, `get_pool`,
 `get_effective_permissions`, `add_vms_to_pool`, `remove_vms_from_pool`) and the

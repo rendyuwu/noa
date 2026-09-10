@@ -1,4 +1,4 @@
-"""PMG `pmgsh` CLI errors (T18, V73).
+"""PMG `pmgsh` CLI errors.
 
 `noa-old` declared `PMGSHCLIError` inside `pmg/integrations/pmgsh_cli.py` as a bare `Exception`
 subclass with hand-rolled `code`/`message` attributes. It lands in its own module here and
@@ -9,7 +9,7 @@ requires one handler shaping every body. A second parallel taxonomy would make "
 lie.
 
 The keyword-only `code=` / `message=` constructor is kept verbatim from `noa-old` so the copied
-raise sites read identically to the source they were hardened in (C13, V69). `code` maps onto
+raise sites read identically to the source they were hardened in. `code` maps onto
 `NoaError`'s `error_code`, which is the field clients and tests branch on.
 
 One class rather than one per failure mode, matching `SSHExecutionError`: a caller that must
@@ -33,7 +33,7 @@ Codes raised by this package, all stable strings tests and tools branch on:
   `ssh_host_key_mismatch`, `ssh_host_key_not_validated`, `ssh_not_configured`,
   `ssh_invalid_host`, `ssh_invalid_port`, …).
 
-Messages stay credential-free (V8) and carry the command's own output, which names PMG's refusal
+Messages stay credential-free and carry the command's own output, which names PMG's refusal
 — never the password or key that was presented.
 """
 

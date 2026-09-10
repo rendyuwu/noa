@@ -20,7 +20,7 @@ import type { AuditToolRunDetail, AuditToolRunListItem } from '@/lib/admin/audit
 import { AuditStatusCell } from './audit-status-cell'
 import { AuditIdRow, DetailRow, JsonBlock } from './audit-detail-rows'
 
-// Contextual detail for one tool run (T55). A Drawer inspects a run alongside
+// Contextual detail for one tool run. A Drawer inspects a run alongside
 // the list without losing it — the audit trail is append-only and its writers
 // are elsewhere, so there is no edit or delete affordance here. Technical
 // identifiers render full and monospace, never truncated, so an operator can

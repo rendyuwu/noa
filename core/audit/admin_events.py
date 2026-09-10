@@ -1,4 +1,4 @@
-"""Audit events for admin changes (V14, T9).
+"""Audit events for admin changes.
 
 V14 has two clauses and they are enforced in different places. "Permission updates take
 effect immediately" is enforced by `AuthorizationService` holding no cache — every check
@@ -39,8 +39,8 @@ EVENT_USER_ROLES_UPDATED = "admin_user_roles_updated"
 
 # T10. No `noa-old` equivalent — it had no per-user MCP credential to mint. Issuing and
 # revoking one is a change to what a bearer can reach, so it belongs in the same trail as
-# a role edit (V14). The payload carries the token id, the display prefix and the label;
-# never the plaintext, never the digest (V2, V8).
+# a role edit. The payload carries the token id, the display prefix and the label;
+# never the plaintext, never the digest.
 # S105: these are log event names, not credentials — `token` in the name trips the check.
 EVENT_MCP_TOKEN_MINTED = "admin_mcp_token_minted"  # noqa: S105
 EVENT_MCP_TOKEN_REVOKED = "admin_mcp_token_revoked"  # noqa: S105
@@ -52,11 +52,11 @@ EVENT_MCP_TOKEN_REVOKED = "admin_mcp_token_revoked"  # noqa: S105
 # reads `<system>_server_<verb>` for all three tables.
 #
 # `_validated` is in the trail beside the three mutations for a reason worth stating: a
-# validate is the only operator action that can *write* a host-key pin (V82), and "who pinned
+# validate is the only operator action that can *write* a host-key pin, and "who pinned
 # this key, and when" is the question a mismatch six months later turns into.
 #
 # Payloads carry ids, names, hosts, ports and booleans. Never an API token, never an SSH
-# credential, never a fingerprint's surrounding secret material (V8).
+# credential, never a fingerprint's surrounding secret material.
 EVENT_WHM_SERVER_CREATED = "whm_server_created"
 EVENT_WHM_SERVER_UPDATED = "whm_server_updated"
 EVENT_WHM_SERVER_DELETED = "whm_server_deleted"
@@ -80,7 +80,7 @@ class AdminAuditEvent:
     """One admin change, as recorded.
 
     `actor_email` is nullable because a change can originate outside a request — the
-    bootstrap admin path (V7) has no acting operator. Recording `None` says "NOA did
+    bootstrap admin path has no acting operator. Recording `None` says "NOA did
     this"; omitting the event would say nothing happened.
 
     `target` is the thing changed, as a display string (a user id or a role name), so a
@@ -94,7 +94,7 @@ class AdminAuditEvent:
 
 
 class AdminAuditSink(Protocol):
-    """Where admin audit events go (V14).
+    """Where admin audit events go.
 
     One method on purpose: a sink that also queried would tempt the engine into reading
     its own audit trail, and "may this run?" is answered from the domain tables, never
@@ -110,7 +110,7 @@ class StructlogAdminAuditSink:
     Chosen for T9 because it is the only sink available: no admin `audit_log` table
     exists yet, and inventing one here would create a table with no reader and no §T row.
     Structured logs satisfy V14's "produce audit events" literally and are queryable in
-    whatever the deployment ships (T60).
+    whatever the deployment ships.
 
     Known limit, recorded rather than papered over: log retention is not database
     retention. When the audit table lands, this stays useful as a second destination but

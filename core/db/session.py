@@ -1,7 +1,7 @@
-"""Async engine + session factory (T8, C3).
+"""Async engine + session factory.
 
 First DB access in the repo, so this module exists to serve T8's login flow and
-is shared by everything after it (C12).
+is shared by everything after it.
 
 `noa-old` reached for `@cache`d module-level `get_engine()` / `get_session_factory()`
 accessors. Both are functions here, and the app calls them once in its lifespan and
@@ -15,7 +15,7 @@ hangs the results on `app.state`. Two reasons:
   `engine.dispose()` on shutdown, so connections do not outlive the app.
 
 `create_async_engine` is lazy — it opens no connection until first use — so an app
-with an unreachable database still boots and answers `/health` (V51). A broken
+with an unreachable database still boots and answers `/health`. A broken
 `POSTGRES_URL` surfaces on the first query, not at import.
 """
 
@@ -51,7 +51,7 @@ class SessionFactory(Protocol):
 
 
 def create_engine(settings: Settings) -> AsyncEngine:
-    """Build the asyncpg engine from settings (C3).
+    """Build the asyncpg engine from settings.
 
     `pool_pre_ping` costs one round trip per checkout and buys immunity to stale
     connections after a Postgres restart or a firewall idle-timeout — otherwise the

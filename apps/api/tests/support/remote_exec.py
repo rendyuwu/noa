@@ -1,15 +1,15 @@
-"""Doubles for the SSH transport, shared by every integration that runs commands (T14, T16, T18).
+"""Doubles for the SSH transport, shared by every integration that runs commands.
 
-These started in `support/whm.py` (T16). None of them is WHM-specific — they are about
+These started in `support/whm.py`. None of them is WHM-specific — they are about
 `core/remote_exec`: a resolved `SSHConnectionConfig`, a `CommandResult`, and a stand-in for
-`ssh_exec`. PMG (T18) is the second caller and T54's validate routes are the third, so they
+`ssh_exec`. PMG is the second caller and T54's validate routes are the third, so they
 live here (V66, exactly the move `support/secrets.py` made for `build_cipher` at T17). This is
 their one home — the re-export `support/whm.py` carried through T18 is gone as of T72.
 
 Mostly no live host: the layers under test are command composition, output parsing and failure
 classification — none of which needs a socket. **The exception is the loopback `asyncssh` server
 at the bottom**, which is not a double at all and moved here at T54 for the reason recorded
-beside it: the host-key pin is only observable against a real key exchange (B2, V82), and two
+beside it: the host-key pin is only observable against a real key exchange, and two
 copies of the server that proves it are two copies that can stop proving it.
 """
 
@@ -29,7 +29,7 @@ PINNED_FINGERPRINT = "SHA256:pinned-fingerprint-value"
 SSH_PASSWORD = "operator-ssh-password"
 
 # What sudo prints when the user has no rule for the command. No `sudo:` prefix on common
-# versions, which is exactly why `core.remote_exec.sudo` matches the phrase (V55).
+# versions, which is exactly why `core.remote_exec.sudo` matches the phrase.
 SUDO_DENIED_STDERR = "operator is not allowed to execute '/usr/sbin/csf' as root on web16"
 
 # What sudo prints when the wrapped binary is absent — must NOT read as a rights failure.
@@ -103,7 +103,7 @@ def install_fake_ssh_exec_in(
 
     Several modules at once because a tool call crosses them: T24's preflight probes through
     `availability` and then queries through `csf_cli` and `imunify_cli`, and one shared `FakeSSH`
-    is what lets a test assert the *whole* command sequence and its order (V66).
+    is what lets a test assert the *whole* command sequence and its order.
     """
     fake = FakeSSH(handler=handler)
     for module in modules:
@@ -120,7 +120,7 @@ def install_fake_ssh_exec(
     return install_fake_ssh_exec_in(monkeypatch, [module], handler)
 
 
-# --- A real SSH server on loopback (T14, T54, V82) ---
+# --- A real SSH server on loopback ---
 #
 # **The one rig in this file that is not a double**, and the reason it is here rather than in
 # the test file that first needed it. B2 shipped because the pin's test called
@@ -128,8 +128,8 @@ def install_fake_ssh_exec(
 # and what was broken was that nothing did. Only a real key exchange can tell the difference,
 # and only a real server can report that it was never asked to authenticate anybody.
 #
-# `test_remote_exec_ssh.py` (T14) owns the pin itself; `test_server_host_key_validation.py`
-# (T54) owns the trust-on-first-use rule that decides *when* a pin is written. Both need the
+# `test_remote_exec_ssh.py` owns the pin itself; `test_server_host_key_validation.py`
+# owns the trust-on-first-use rule that decides *when* a pin is written. Both need the
 # same server, so it lives here — the move T39 made for the concurrency rig rather than copying
 # it, and V89's reason: two copies of the thing that holds a property are two things that can
 # silently stop holding it.

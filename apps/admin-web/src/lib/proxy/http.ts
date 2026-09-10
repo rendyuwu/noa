@@ -11,7 +11,7 @@ import type { NextRequest } from 'next/server'
  * rather than citing the old repo.
  *
  * `apps/web-embed` carries the same file. That is a COPY, not a shared module: the two web apps
- * are independent packages with their own lockfiles, own CI and own deploy artifact (C12), and
+ * are independent packages with their own lockfiles, own CI and own deploy artifact, and
  * `eslint.config.mjs` refuses an import across that line. Duplication across the boundary is the
  * boundary working — the alternative is an alias AGENTS.md forbids.
  */
@@ -101,8 +101,8 @@ export function filterRequestHeaders(src: Headers): Headers {
     if (k === 'host') continue
     if (k === 'content-length') continue
     // Departure from the `noa-old` port, and the same one `apps/web-embed` made.
-    // Every surface this panel reaches is cookie-authenticated (V40, V6); bearer
-    // tokens are MCP-only (C5) and are sent by LibreChat's server, never by a
+    // Every surface this panel reaches is cookie-authenticated; bearer
+    // tokens are MCP-only and are sent by LibreChat's server, never by a
     // browser. Dropping the header means the admin origin cannot be used to relay
     // one — including at `/api/mcp/`, which this proxy does carry.
     if (k === 'authorization') continue
@@ -147,7 +147,7 @@ export function filterResponseHeaders(src: Headers): Headers {
 // Copy every Set-Cookie value. `headers.get("set-cookie")` collapses multiple
 // cookies into one comma-joined string, so prefer getSetCookie() when present.
 // The attributes ride untouched: `Domain=.noa.internal` is what puts the session
-// on the same registrable domain as the embed (V40), and rewriting it here would
+// on the same registrable domain as the embed, and rewriting it here would
 // silently unscope the cookie the whole panel depends on.
 export function copySetCookies(from: Headers, to: Headers): void {
   const connectionHeaderNames = getConnectionHeaderNames(from)
@@ -252,7 +252,7 @@ function scrubBackendOriginHeader(headers: Headers, name: string): void {
 // browser as a 401 so `fetchWithAuth` runs the session-expiry flow (V6's
 // per-request `is_active` re-read is what makes that 401 meaningful), and
 // `x-request-id` rides along with the rest of the safe headers so the id in the
-// body still names a log line (V73).
+// body still names a log line.
 export function passthroughResponse(upstream: Response): Response {
   const headers = filterResponseHeaders(upstream.headers)
   copySetCookies(upstream.headers, headers)

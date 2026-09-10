@@ -1,4 +1,4 @@
-"""Fernet secret encryption (T15, C7, V48).
+"""Fernet secret encryption.
 
 V48 is three claims, and each gets its own assertion rather than being inferred from a
 round-trip passing: the round-trip itself, the `enc:v1:fernet:` format that makes the scheme
@@ -61,7 +61,7 @@ def test_ciphertext_differs_per_call() -> None:
 
 
 def test_encrypt_is_idempotent_on_encrypted_input() -> None:
-    """A PATCH resubmitting untouched ciphertext must not double-wrap it (T54)."""
+    """A PATCH resubmitting untouched ciphertext must not double-wrap it."""
     cipher = _cipher()
     once = cipher.encrypt_text(PLAINTEXT)
 
@@ -85,7 +85,7 @@ def test_decrypt_with_a_different_key_raises() -> None:
 
 
 def test_maybe_decrypt_passes_plaintext_through() -> None:
-    """The migration path: a column holding both encrypted and legacy rows (T54)."""
+    """The migration path: a column holding both encrypted and legacy rows."""
     cipher = _cipher()
 
     assert cipher.maybe_decrypt_text(PLAINTEXT) == PLAINTEXT
@@ -112,7 +112,7 @@ def test_from_settings_uses_the_configured_key() -> None:
 
 
 def test_from_settings_uses_the_dev_generated_key() -> None:
-    """Dev generates a key (V52), so `from_settings` works without one configured."""
+    """Dev generates a key, so `from_settings` works without one configured."""
     settings = build_settings()
 
     cipher = SecretCipher.from_settings(settings)

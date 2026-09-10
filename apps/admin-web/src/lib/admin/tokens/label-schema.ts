@@ -22,7 +22,7 @@ export const tokenLabelSchema: z.ZodType<string | undefined> = z
 
 // The form object react-hook-form resolves against. Kept here beside the field
 // rule rather than inlined at the dialog, so the two token surfaces (self and
-// admin) validate identically (V66).
+// admin) validate identically.
 export const mintTokenSchema = z.object({ label: tokenLabelSchema })
 
 export type MintTokenValues = z.infer<typeof mintTokenSchema>

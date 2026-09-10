@@ -155,7 +155,7 @@ describe('revokeToken', () => {
 })
 
 // The backend's wording is what the operator reads. `jsonOrThrow` prefers
-// `message`, which is the field NOA's error envelope actually carries (V8).
+// `message`, which is the field NOA's error envelope actually carries.
 describe('error surfacing', () => {
   it('preserves the backend message and error_code on a 400 invalid_token_label', async () => {
     mockFetch.mockResolvedValue(

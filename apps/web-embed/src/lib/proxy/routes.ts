@@ -31,14 +31,14 @@ type Rule = {
 }
 
 const ALLOWED: readonly Rule[] = [
-  // Identity for the card's header and for the 401 state (V38, V42). Cookie-only (§I.admin-api).
+  // Identity for the card's header and for the 401 state. Cookie-only (§I.admin-api).
   { method: 'GET', shape: ['auth', 'me'], why: 'V38/V42 — identity, and the 401 state' },
   // The card's detail read. Built API-side at §T.41, where the *page* reads it server-side
   // instead; this entry is the one the browser polls through, so the card follows its run to a
   // terminal state without being told the outcome by whoever started it (§T.42, V29 —
   // `lib/approvals/poll.ts`).
-  { method: 'GET', shape: ['action-requests', null], why: '§T.42 — polling the run (V29)' },
-  // The decision itself: the only path an approve/deny may travel (V22, C18).
+  { method: 'GET', shape: ['action-requests', null], why: '§T.42 — polling the run' },
+  // The decision itself: the only path an approve/deny may travel.
   {
     method: 'POST',
     shape: ['action-requests', null, 'approve'],

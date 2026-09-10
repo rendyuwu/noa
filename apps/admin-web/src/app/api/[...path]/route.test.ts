@@ -6,7 +6,7 @@ import { DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT } from './route'
 /**
  * The one door (§T.50, §I.admin-web).
  *
- * Ported from `noa-old` with its tests (C13, V69). What is asserted here is the hop itself: the
+ * Ported from `noa-old` with its tests. What is asserted here is the hop itself: the
  * method, the upstream path, the query, the body, and the response coming back unaltered — plus
  * the two properties that make a pass-through proxy safe on this origin, which is where the shape
  * differs from the embed's allowlist (§T.44).
@@ -74,9 +74,9 @@ describe('/api/[...path] — the admin panel’s same-origin proxy', () => {
     expect(seen).toEqual(['GET', 'HEAD', 'OPTIONS', 'POST', 'PUT', 'PATCH', 'DELETE'])
   })
 
-  it('forwards the session cookie and never an Authorization header (V40, C5)', async () => {
+  it('forwards the session cookie and never an Authorization header', async () => {
     // The pass-through does carry `/api/mcp/`, so the Authorization drop is what makes that
-    // reachability inert: an MCP bearer is LibreChat's to send, never a browser's (C5). The cookie
+    // reachability inert: an MCP bearer is LibreChat's to send, never a browser's. The cookie
     // assertion beside it is the negative control — a proxy that forwarded no credential at all
     // would satisfy the absence and authenticate as nobody.
     let headers: Headers | undefined
@@ -131,7 +131,7 @@ describe('/api/[...path] — the admin panel’s same-origin proxy', () => {
     expect(capturedInit?.body ?? null).toBeNull()
   })
 
-  it('preserves the status and the request id, and strips hop-by-hop headers (V73)', async () => {
+  it('preserves the status and the request id, and strips hop-by-hop headers', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('body', {
         status: 201,
@@ -167,7 +167,7 @@ describe('/api/[...path] — the admin panel’s same-origin proxy', () => {
     expect(res.headers.get('location')).toBe('/api/moved')
   })
 
-  it('preserves every Set-Cookie value — the login and the logout clear alike (V40, V6)', async () => {
+  it('preserves every Set-Cookie value — the login and the logout clear alike', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(null, {
         status: 200,

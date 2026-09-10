@@ -1,4 +1,4 @@
-"""`LoginRateLimiter` policy guards (T8, V9).
+"""`LoginRateLimiter` policy guards.
 
 Time is injected via the `now=` parameter on every method, so window rollover and block
 expiry are asserted exactly rather than slept through. `AuthService` does not pass `now`

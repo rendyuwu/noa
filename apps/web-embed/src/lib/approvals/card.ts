@@ -12,7 +12,7 @@
  * whether the operator may *act*: `canDecide` demands a PENDING status **and** a token, so
  * anything unrecognised — an unknown status string, an absent `csrf` — renders read-only.
  *
- * There is no `reason` field here and the API sends none (C8, V15, V43). The reason is typed into
+ * There is no `reason` field here and the API sends none. The reason is typed into
  * this card and travels outward only; nothing renders one back.
  *
  * The **receipt** is the one field that arrives late: it is `null` until something has recorded
@@ -21,17 +21,17 @@
  * shape is where "do not collapse this into 'done'" is enforced, not the component.
  */
 
-/** The four `ActionRequestStatus` values the API can send (V20). */
+/** The four `ActionRequestStatus` values the API can send. */
 export const APPROVAL_STATUSES = ['PENDING', 'APPROVED', 'DENIED', 'EXPIRED'] as const
 
 export type ApprovalStatus = (typeof APPROVAL_STATUSES)[number]
 
-/** The three `ToolRunStatus` values (V20). Separate set on purpose — the two never mix. */
+/** The three `ToolRunStatus` values. Separate set on purpose — the two never mix. */
 export const RUN_STATUSES = ['STARTED', 'COMPLETED', 'FAILED'] as const
 
 export type RunStatus = (typeof RUN_STATUSES)[number]
 
-/** The execution an approval started, if one has (V29, V47). */
+/** The execution an approval started, if one has. */
 export type ApprovalRun = {
   toolRunId: string
   status: string
@@ -40,7 +40,7 @@ export type ApprovalRun = {
   completedAt: string | null
 }
 
-/** Who asked for the change, and from where (V35). */
+/** Who asked for the change, and from where. */
 export type ApprovalRequester = {
   email: string
   librechatUserId: string
@@ -60,9 +60,9 @@ export type ApprovalRequester = {
  */
 export type ApprovalReceipt = {
   ok: boolean
-  /** The gate-time preflight the operator approved against (C9, V17). */
+  /** The gate-time preflight the operator approved against. */
   before: Record<string, unknown>
-  /** What the runner answered, redacted by the writer and carried, never re-derived (V8, V45). */
+  /** What the runner answered, redacted by the writer and carried, never re-derived. */
   after: Record<string, unknown>
   /** The named cause when the change did not complete. `null` when there is none. */
   errorCode: string | null
@@ -79,17 +79,17 @@ export type ApprovalCard = {
   status: string
   conversationRef: string | null
   requester: ApprovalRequester
-  /** Redacted at the gate (V8) and carried, never re-derived here. */
+  /** Redacted at the gate and carried, never re-derived here. */
   arguments: Record<string, unknown>
-  /** The in-process preflight (C9, V17) — the before-state this card exists to show. */
+  /** The in-process preflight — the before-state this card exists to show. */
   evidence: Record<string, unknown>
   createdAt: string
   expiresAt: string
   decidedAt: string | null
   run: ApprovalRun | null
-  /** What the run recorded, once something has (V46). `null` until then. */
+  /** What the run recorded, once something has. `null` until then. */
   receipt: ApprovalReceipt | null
-  /** Server-minted, session- and request-bound (V39). `null` once nothing may be decided. */
+  /** Server-minted, session- and request-bound. `null` once nothing may be decided. */
   csrf: string | null
 }
 
@@ -98,9 +98,9 @@ export type ApprovalCard = {
  *
  * Lives here rather than beside either reader because there are now two of them: the server-side
  * load `lib/approvals/detail.ts` does before the page renders, and the browser-side poll
- * `lib/approvals/poll.ts` repeats until the run is terminal (V29). Both answer the same four
+ * `lib/approvals/poll.ts` repeats until the run is terminal. Both answer the same four
  * questions and the card component switches on the result once — a second union would be a second
- * set of states for the same read, free to grow a fifth on one side only (V66).
+ * set of states for the same read, free to grow a fifth on one side only.
  *
  * **Four kinds because four of them render differently.** A 401 is V38's "cannot authenticate
  * here", a 404 is V27's single answer for absent / another operator's / a deleted requester's, and
@@ -210,10 +210,10 @@ export function parseApprovalCard(value: unknown): ApprovalCard | null {
 }
 
 /**
- * Whether this card may be approved or denied from here (V38, V39).
+ * Whether this card may be approved or denied from here.
  *
  * Both halves are required, and neither is the security boundary: the decision endpoint checks
- * the status under a row lock (V28, V32) and verifies the token itself (V39). What this decides
+ * the status under a row lock and verifies the token itself. What this decides
  * is whether an operator is *shown* a live button — and a button that cannot succeed is worse
  * than no button, because it reads as an action that was refused rather than one that was never
  * available.

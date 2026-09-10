@@ -1,4 +1,4 @@
-"""Doubles for the MCP token service (T10).
+"""Doubles for the MCP token service.
 
 Same split as `support.rbac`: the in-memory repository covers policy, and
 `SQLMcpTokenRepository` gets its own coverage against a live scratch database in
@@ -9,11 +9,11 @@ the mint/list/revoke rules are exercised for real — only the SQL is faked.
 is the point: a double that dropped the digest could not prove the service never leaks it,
 because there would be nothing to leak. The tests assert on `stored_hashes` directly.
 
-It also records commits (T53, V100). An in-memory double has no rollback, so "the row is
+It also records commits. An in-memory double has no rollback, so "the row is
 there" is true whether or not a boundary exists; `commits` and `committed` are what let a test
 assert that a mutation ended in a commit and that a refused one ended in none.
 
-`RecordingAuditSink` is reused from `support.rbac` rather than reimplemented (V66).
+`RecordingAuditSink` is reused from `support.rbac` rather than reimplemented.
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ class FakeMcpTokenRepository:
         self.users: set[UUID] = set()
         self.tokens: dict[UUID, StoredToken] = {}
         self._clock = NOW
-        # Commit counter and snapshot (T53, V100). The same trick `FakeAuthorizationRepository`
+        # Commit counter and snapshot. The same trick `FakeAuthorizationRepository`
         # uses: an in-memory double cannot roll back, so without recording *what was committed*
         # a test cannot tell a written row from a durable one — which is exactly the difference
         # B10 turned out to hinge on.
@@ -99,7 +99,7 @@ class FakeMcpTokenRepository:
         return True
 
     async def commit(self) -> None:
-        """Snapshot every row, so a test can separate "written" from "committed" (V100)."""
+        """Snapshot every row, so a test can separate "written" from "committed"."""
         self.commits += 1
         self.committed = dict(self.tokens)
 

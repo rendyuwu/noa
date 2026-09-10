@@ -1,4 +1,4 @@
-"""`noa_get_action_result` — the read side of the approval loop (T63 — V27, V32, V76).
+"""`noa_get_action_result` — the read side of the approval loop.
 
 The tool a model calls to find out what an operator did with a change it submitted. Real
 `current_mcp_identity`, real `ActionResultService`, real `sanitize_tool_errors`, real registry
@@ -219,7 +219,7 @@ async def test_a_foreign_id_an_unknown_id_and_a_malformed_id_answer_the_same_byt
 
 
 async def test_a_request_whose_requester_was_deleted_is_not_readable() -> None:
-    """V27 fails closed: the FK is `SET NULL` (T34), so a NULL requester matches nobody.
+    """V27 fails closed: the FK is `SET NULL`, so a NULL requester matches nobody.
 
     That the *statement* behaves this way is `test_action_results_live.py`'s claim; this is
     the tool answering the same refusal when the reader says there is no row for the caller.
@@ -341,7 +341,7 @@ async def test_a_read_failure_reaches_the_model_as_a_named_failure() -> None:
 
 
 def test_it_is_registered_as_a_read_tool() -> None:
-    """V10/V20/V83a: in the catalog, and classified where it is defined (T73)."""
+    """V10/V20/V83a: in the catalog, and classified where it is defined."""
     context = build_tool_context().context
 
     registered = register_mcp_tools(build_mcp_server(tool_context=context), context=context)
@@ -457,7 +457,7 @@ def test_another_operators_request_is_not_readable_over_the_mount(scenario) -> N
     assert payload["ok"] is False
     assert payload["error_code"] == ERROR_ACTION_REQUEST_NOT_FOUND
     assert payload["message"] == MESSAGE_ACTION_REQUEST_NOT_FOUND
-    # An `admin` bypasses per-tool permission checks (V10), so the refusal above is the
+    # An `admin` bypasses per-tool permission checks, so the refusal above is the
     # requester-match and nothing else — the strongest caller NOA has still cannot read
-    # another operator's action (V76).
+    # another operator's action.
     assert tools.action_expiry.rows[request_id].status is ActionRequestStatus.PENDING

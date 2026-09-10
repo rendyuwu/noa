@@ -2,10 +2,10 @@
 
 Every other tool here asks a hosting system a question. This one asks NOA: **what happened to
 the change I asked for?** It is the read side of the approval loop — T33's gate opens a
-request, an operator answers it from the card (T37, V22), and this is how the model finds out,
-from the row that *is* the authorization (V23) rather than from anything it was told.
+request, an operator answers it from the card, and this is how the model finds out,
+from the row that *is* the authorization rather than from anything it was told.
 
-**The caller is the access control** (V27, V76). The requester comes from the MCP access token
+**The caller is the access control**. The requester comes from the MCP access token
 (`current_mcp_identity`, T12), never from an argument, and the repository puts it in the
 `WHERE` — so a request that is not the caller's is not fetched at all. A foreign id and an
 unknown id answer the same bytes, which is what stops this tool being an enumeration oracle
@@ -17,12 +17,12 @@ parsed here rather than declared as a UUID in the schema. A schema-level UUID wo
 pydantic-shaped error for a malformed id, which is a second envelope for "there is no such
 request", and one code is what V83(d) settled for the RBAC gate one layer up.
 
-**What the model is not told.** The operator's reason never appears here (C8, V15, V43) and
-neither does the in-process preflight evidence (V17). Neither is stripped: `ActionResultView`
+**What the model is not told.** The operator's reason never appears here and
+neither does the in-process preflight evidence. Neither is stripped: `ActionResultView`
 has no field for either, so this module cannot emit what it never loads — see
 `core.approvals.results`.
 
-Registration declares `ToolRisk.READ` (T73, V20), so `ToolRunAuditMiddleware` writes this
+Registration declares `ToolRisk.READ`, so `ToolRunAuditMiddleware` writes this
 call's own `tool_runs` row beside the RBAC gate (V45, V83b). Reading an approval is itself an
 audited read.
 """
@@ -68,7 +68,7 @@ async def noa_get_action_result(
     action_request_id: str,
     context: McpToolContext,
 ) -> ToolPayload:
-    """What became of one approval request, for the operator who opened it (T63, V27, V76).
+    """What became of one approval request, for the operator who opened it.
 
     The identifier is parsed before any I/O, and a malformed one is refused with the same
     code and the same message an unknown id gets: there is no request behind either, and two
@@ -76,7 +76,7 @@ async def noa_get_action_result(
 
     Then one database session: read the caller's request, and — inside the same session —
     make it terminal if its deadline has passed, so a PENDING nobody may act on any more is
-    never served (V32). Both are `core.approvals.results`' to order; the tool supplies the
+    never served. Both are `core.approvals.results`' to order; the tool supplies the
     caller and shapes the answer.
     """
     request_id = _parse_action_request_id(action_request_id)
@@ -108,7 +108,7 @@ def _parse_action_request_id(action_request_id: str) -> UUID | None:
 
 
 def _not_found() -> ToolPayload:
-    """The one refusal this tool has (V27, V76)."""
+    """The one refusal this tool has."""
     return tool_failure(ERROR_ACTION_REQUEST_NOT_FOUND, MESSAGE_ACTION_REQUEST_NOT_FOUND)
 
 

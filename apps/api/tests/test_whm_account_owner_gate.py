@@ -10,14 +10,14 @@ the thing it is about:
 
 - **no card exists.** The recorded `action_requests` rows are counted, because the cost this guard
   exists to prevent is an operator's decision *and* a reason typed for nothing — and a reason is
-  born at decision time (C8), so a burnt one cannot be recovered. A refusal that still wrote the
+  born at decision time, so a burnt one cannot be recovered. A refusal that still wrote the
   row would satisfy an exception assertion and none of the invariant.
 - **the refusal is usable.** The message carries the `server_ref` that would have worked, because
   the model constructed the argument and cannot infer the right value from a bare refusal.
 - **a matching credential still works.** The negative control. Without it the suite cannot tell a
   guard from a tool that refuses everything (V87's rule, one system over).
 - **the check runs again after the approval.** A `whm_servers` row is editable between a request
-  and its decision (V33), so the runner reads `api_username` live and compares it against the
+  and its decision, so the runner reads `api_username` live and compares it against the
   `owner` the card was built from. Asserted on the mutation *count* at the WHM socket: zero
   requests to `suspendacct` is the only evidence that nothing ran.
 
@@ -250,7 +250,7 @@ def test_a_name_that_could_not_be_read_is_its_own_verdict_and_it_refuses() -> No
     generation. `owner` has the opposite evidence — measured present on 451 of 451 rows across 7
     owners, never blank (§R.33) — so failing closed costs nothing measured, while failing open
     buys the one harm §V106 exists to prevent: an operator decision spent on a card that must
-    fail, and a reason typed for nothing that cannot be recovered (C8).
+    fail, and a reason typed for nothing that cannot be recovered.
 
     Two verdicts rather than one, because the two halves are not the same fact: WHM said nothing,
     or NOA's own row records nothing. `EVIDENCE_UNRECORDED` counts as unreadable on both sides —
@@ -277,7 +277,7 @@ def test_only_one_of_the_four_verdicts_lets_a_change_proceed() -> None:
 
 
 def test_the_compare_agrees_with_the_shared_identity_normalisation() -> None:
-    """One normalisation for two guards (V66), driven from the shared function rather than from
+    """One normalisation for two guards, driven from the shared function rather than from
     strings this test picked.
 
     V109(b)'s admin write refuses a reseller row whose `name` is not its `api_username`, and
@@ -322,7 +322,7 @@ async def test_a_credential_that_does_not_own_the_account_opens_no_request() -> 
 
     "It refused" would pass against a guard that refused *after* writing the PENDING row, which
     is the one outcome this invariant exists to prevent: a card an operator has to decide, plus
-    a reason typed for a run that cannot succeed (C8).
+    a reason typed for a run that cannot succeed.
     """
     fixture, api, _, _ = gate_context()
 
@@ -359,7 +359,7 @@ async def test_the_refusal_carries_the_remedy_and_the_value_that_was_passed() ->
 
 async def test_the_owning_credential_opens_the_request_as_before() -> None:
     """The negative control. Without it the suite cannot tell this guard from a tool that
-    refuses every change, and "it raised" would be all the suite knows (V87)."""
+    refuses every change, and "it raised" would be all the suite knows."""
     fixture, api, _, _ = gate_context()
 
     answer = await suspend(fixture, server_ref=OWNER)
@@ -479,7 +479,7 @@ async def test_an_account_whm_reports_no_owner_for_is_refused_and_opens_no_reque
 
     §R.33 measured `owner` present on 451 of 451 rows, so nothing below is reachable on the
     measured hardware — which is the reason it is tested rather than reasoned about. An
-    unexercised control is what T15 parked `redaction.py` over (V69).
+    unexercised control is what T15 parked `redaction.py` over.
     """
     for absent in (_NO_OWNER_KEY, None, "", "   "):
         rows = (
@@ -544,7 +544,7 @@ async def test_a_no_op_answers_before_the_ownership_compare() -> None:
 async def test_the_refusal_is_logged_with_both_names_and_the_site() -> None:
     """ "Why is there no card" is answerable from the logs, and for this refusal that needs both
     identities and which of the two sites refused (§V106). Identifiers only, never the account
-    payload (V8)."""
+    payload."""
     fixture, _, _, _ = gate_context()
 
     with capture_logs() as events:
@@ -579,7 +579,7 @@ async def test_the_card_evidence_names_the_row_the_credential_the_host_and_the_o
 
 
 def test_the_audit_rows_whitelist_names_the_same_four_fields_the_evidence_does() -> None:
-    """The one thing that couples §V108's two vocabularies (V66).
+    """The one thing that couples §V108's two vocabularies.
 
     `core.approvals.context.AUDIT_IDENTITY_KEYS` restates the four names as literals because it
     cannot import them: `core/` is below `apps/api` and the dependency runs one way only. So a
@@ -627,7 +627,7 @@ async def test_the_audit_row_reader_takes_all_four_off_a_real_preflight() -> Non
 async def test_the_receipt_carries_the_same_four_and_the_token_appears_in_neither() -> None:
     """The receipt's `before` half is the gate's evidence copied verbatim
     (`core.approvals.execution.build_receipt`), so §V108's four reach an audit surface without a
-    second writer deciding what to record — and the API token is in none of it (V8). Asserted on
+    second writer deciding what to record — and the API token is in none of it. Asserted on
     the serialized JSON rather than on a key list, because a token nested inside the account
     summary would satisfy a key check.
     """
@@ -650,7 +650,7 @@ async def test_the_receipt_carries_the_same_four_and_the_token_appears_in_neithe
 
 
 # --------------------------------------------------------------------------------------
-# The runner: the same compare, after the decision (V33)
+# The runner: the same compare, after the decision
 # --------------------------------------------------------------------------------------
 
 
@@ -735,7 +735,7 @@ async def test_the_runner_refuses_evidence_that_names_no_owner() -> None:
 
 async def test_the_runner_refusal_is_logged_at_the_runner_site() -> None:
     """Which of the two sites refused is a field on one event, so "why did this approved change
-    not run" is one query rather than two (§V106). Identifiers only, never the payload (V8)."""
+    not run" is one query rather than two (§V106). Identifiers only, never the payload."""
     fixture, _, _, reseller = gate_context()
     runner = payload_runner(build_whm_suspend_runner(context=fixture.context))
     reseller.api_username = OTHER_CREDENTIAL

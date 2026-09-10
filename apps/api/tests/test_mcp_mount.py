@@ -7,7 +7,7 @@ hold in the installed `fastmcp==3.4.5`.
 
 The harness — `mounted_app` and friends — lives in `support.mcp_mount` since T19, because
 `test_mcp_tool_rbac.py` drives the same mount to assert V1 over it and two copies of a
-sixty-line fixture would drift (V66). Everything in it is production code except the two
+sixty-line fixture would drift. Everything in it is production code except the two
 context builders, which are patched to return in-memory doubles, so the whole mount runs
 without Postgres or a directory.
 
@@ -131,7 +131,7 @@ def test_the_mount_answers_the_era_the_client_asks_for(
 
     assert response.status_code == status.HTTP_200_OK
     assert f'"protocolVersion":"{expected}"' in response.text
-    # Every era C23 admits is a handshake era: the session header is minted either way (R8).
+    # Every era C23 admits is a handshake era: the session header is minted either way.
     assert response.headers.get("mcp-session-id")
 
 

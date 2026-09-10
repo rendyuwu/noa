@@ -1,4 +1,4 @@
-"""Run `/usr/sbin/csf` over SSH (T16, V55, V57, V69).
+"""Run `/usr/sbin/csf` over SSH.
 
 Copied from `noa-old` branch `MCP` (`whm/integrations/csf_cli.py`). One structural change:
 `noa-old` had `build_csf_command(args, *, escalate: bool)` and every call site passed
@@ -30,7 +30,7 @@ binary is not misread as a rights problem.
 Both `SSHExecutionError` and a non-zero exit surface as `CSFCLIError`, so a caller catches one
 tree (see `core.integrations.whm.errors`).
 
-**A resolved `SSHConnectionConfig` comes in, not a `whm_servers` row** (T24). `noa-old` — and
+**A resolved `SSHConnectionConfig` comes in, not a `whm_servers` row**. `noa-old` — and
 this module until T24 — took the row plus a `SecretCipher` and called `resolve_whm_ssh_config`
 per command. The caller resolves it once instead, because the caller is a tool that has to
 close its database session *before* the SSH round trip: holding a pooled connection open across
@@ -65,7 +65,7 @@ _CSF_ENV = {"TERM": "dumb"}
 
 
 def build_csf_command(args: list[str], *, config: SSHConnectionConfig) -> str:
-    """Compose one shell-safe csf command, escalating iff the SSH user is not root (V55)."""
+    """Compose one shell-safe csf command, escalating iff the SSH user is not root."""
     return build_remote_command([CSF_BINARY, *args], config=config, env=_CSF_ENV)
 
 

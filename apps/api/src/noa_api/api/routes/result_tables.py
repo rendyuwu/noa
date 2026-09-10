@@ -1,11 +1,11 @@
 """The large-READ table surface's read: one parked table, for its requester (T56, I.embed).
 
 **Read-only, and there is nothing here to decide.** The approval routes next door own the
-one door on an authorization (V22); this one owns a listing that a READ already produced.
+one door on an authorization; this one owns a listing that a READ already produced.
 No POST, no CSRF token, no reason — a table has nothing to authorise, and the embed page
 that renders it carries no decision controls either (§I.embed).
 
-**The access control is the cookie plus the requester-match** (V27). `SessionUserDep` is the
+**The access control is the cookie plus the requester-match**. `SessionUserDep` is the
 first half and V6's row re-read with it: a disabled operator loses the table on their next
 request rather than at cookie expiry. The second half sits inside the statement
 (`core.results.tables.select_table_for_requester`), so a table that is not this caller's is
@@ -14,10 +14,10 @@ never fetched — and neither is one past its lifetime, which is judged by the s
 **One refusal for four causes.** Unknown token, another operator's, one whose requester was
 deleted, one expired: all 404 `result_table_not_found`, one body, only `request_id` differing
 (V73). The token is unguessable (32 random bytes) but that is defence beside the guard, never
-instead of it — the URL travels in a tool result that persists in LibreChat's MongoDB (V26),
+instead of it — the URL travels in a tool result that persists in LibreChat's MongoDB,
 so it is a name, not a key.
 
-**The bound rides in the body** (V85). `total_rows` and `truncated` are stored on the row and
+**The bound rides in the body**. `total_rows` and `truncated` are stored on the row and
 carried here, so the page can say how many matches there were rather than how many it was
 given. A body that shipped rows alone would leave the surface reporting a capped table as a
 complete one, which is the fabrication V85 exists to stop.
@@ -37,7 +37,7 @@ router = APIRouter(prefix="/tables", tags=["tables"])
 
 
 class ResultTableResponse(BaseModel):
-    """200 body for one parked table (T56 — V64, V85).
+    """200 body for one parked table.
 
     Shaped by `ResultTableView.as_payload()` rather than re-listed field by field, the way
     `ApprovalCardResponse` is: two spellings of one payload is one that can disagree, and the
@@ -49,7 +49,7 @@ class ResultTableResponse(BaseModel):
 
     `stored_rows` beside `total_rows` because they answer different questions: how many are on
     this page, and how many matched. Both are sent even when they are equal, so a renderer
-    switching on `truncated` never has to infer a total from what it can count (V85).
+    switching on `truncated` never has to infer a total from what it can count.
     """
 
     token: str
@@ -69,7 +69,7 @@ async def read_table(
     current_user: SessionUserDep,
     tables: ResultTableServiceDep,
 ) -> ResultTableResponse:
-    """One parked table, for the operator whose READ produced it (T56 — V27, V64, V85).
+    """One parked table, for the operator whose READ produced it.
 
     `token` is a plain `str`, not a shaped identifier: V27 owns what an absent, malformed or
     foreign token answers and answers all of them alike, so a format check here would be a

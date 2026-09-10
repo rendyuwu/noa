@@ -1,11 +1,11 @@
-"""Key-name redaction for anything persisted or logged (T73, V8, V45).
+"""Key-name redaction for anything persisted or logged.
 
 Ported from `noa-old` branch `MCP` (`core/secrets/redaction.py`) per C13 — the key list and
 the recursive walk are the source's, and what the walk does is unchanged. Its mapping branch
 is a named function here (`redact_mapping`), for a caller that holds a mapping and would
 otherwise have to assert its way back to one. T15 deliberately left the module behind: it lands
 with the code that *writes* redacted audit args, which is T73, because a redactor with no
-caller is a control no test exercises, and that is how B2 shipped (V69).
+caller is a control no test exercises, and that is how B2 shipped.
 
 **Redaction by key name, not by value.** Nothing here inspects a string for entropy or for
 an `enc:v1:fernet:` prefix. A tool argument is named by its schema, the schema is ours, and
@@ -17,12 +17,12 @@ sensitive args (`_encrypt_sensitive_args` in `storage/postgres/action_tool_runs.
 admin UI could decrypt them back. §V45/V47 say **redacted**, and an encrypted argument is
 recoverable — a Fernet key compromise turns the whole audit table into a credential dump.
 So the replacement is one-way and the plaintext never reaches `tool_runs` at all. That
-choice costs nothing NOA needs: the audit surface (T55) shows an operator *what was asked
+choice costs nothing NOA needs: the audit surface shows an operator *what was asked
 for*, and `[redacted]` answers that for a password field.
 
 Applied to results as well as arguments (`noa_api.mcp_audit`). `whm_list_servers` already
 renders through `core.servers.whm_ref.describe()` and carries no credential material — id,
-name, `base_url` only (V110) — but the summary path is shared by every later tool and a
+name, `base_url` only — but the summary path is shared by every later tool and a
 per-tool exemption is how one of them eventually writes a secret into the audit trail.
 """
 
@@ -57,12 +57,12 @@ SENSITIVE_KEYS: Final[frozenset[str]] = frozenset(
 
 
 def is_sensitive_key(key: str) -> bool:
-    """True when a value under `key` must never be stored or logged (V8)."""
+    """True when a value under `key` must never be stored or logged."""
     return key.strip().lower() in SENSITIVE_KEYS
 
 
 def redact_sensitive_data(value: object, *, replacement: str = REDACTED) -> object:
-    """`value` with every sensitive-keyed entry replaced, at any depth (V8).
+    """`value` with every sensitive-keyed entry replaced, at any depth.
 
     Recurses through mappings and sequences so a credential nested inside a structured
     argument is caught too — a flat top-level scan would miss
@@ -83,7 +83,7 @@ def redact_sensitive_data(value: object, *, replacement: str = REDACTED) -> obje
 
 
 def redact_mapping(value: Mapping[str, Any], *, replacement: str = REDACTED) -> dict[str, Any]:
-    """One mapping redacted, answering a mapping (V8).
+    """One mapping redacted, answering a mapping.
 
     The walk above, split out rather than copied: `noa-old`'s function answers `object` because
     it takes one, and a caller holding a mapping then has to say in some way that a dict comes
@@ -105,12 +105,12 @@ def redact_mapping(value: Mapping[str, Any], *, replacement: str = REDACTED) -> 
 
 
 def sensitive_key_paths(value: object, *, _prefix: str = "") -> list[str]:
-    """Every location inside `value` that `redact_sensitive_data` would replace (V8).
+    """Every location inside `value` that `redact_sensitive_data` would replace.
 
     The same walk as the redactor, answering "where" instead of rewriting — so a caller that
     has to *refuse* a redacted payload rather than produce one (T38's executor, which will
     not run a change whose arguments came back as `[redacted]`) asks the same question the
-    redactor answered and cannot disagree with it (V66).
+    redactor answered and cannot disagree with it.
 
     A flat top-level scan is the failure this exists to prevent: the redactor recurses, so
     `{"server": {"ssh_password": ...}}` is stored redacted and a top-level check sees nothing

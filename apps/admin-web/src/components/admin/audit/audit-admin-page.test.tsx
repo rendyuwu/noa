@@ -8,7 +8,7 @@ import type { AuditToolRunListItem } from '@/lib/admin/audit/types'
 // filter wiring, pagination, row → drawer — deterministically.
 //
 // Ported with two tabs and a URL/pushState dance between them; the
-// action-requests tab named routes NOA does not serve (T55), so what is asserted
+// action-requests tab named routes NOA does not serve, so what is asserted
 // here now is that there is *one* view, no tab strip to get out of step with the
 // address bar, and no control bound to a column `tool_runs` does not have.
 const mocks = vi.hoisted(() => ({

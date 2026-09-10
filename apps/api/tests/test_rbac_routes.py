@@ -1,4 +1,4 @@
-"""`require_admin` and the authorization status mapping (T9, T65 — V12, V13, V73, V75).
+"""`require_admin` and the authorization status mapping.
 
 T9 ships no `/admin` routes (T51-T55 own those), but two of its cited invariants are HTTP
 properties: V13's "non-admin users → 403 on admin endpoints" and V12's "admin self-delete →
@@ -87,7 +87,7 @@ def test_disabled_admin_loses_the_admin_route_on_the_next_request() -> None:
     """V6 + V13: the row re-read runs before the role check.
 
     A valid, unexpired cookie stops working the moment the row flips, because the session
-    JWT itself is not revocable (V6) — `require_admin` inherits that guarantee by depending
+    JWT itself is not revocable — `require_admin` inherits that guarantee by depending
     on `require_session_user` rather than reading a role claim.
     """
     with admin_probe_app() as harness:
@@ -103,7 +103,7 @@ def test_disabled_admin_loses_the_admin_route_on_the_next_request() -> None:
 
 
 def test_admin_role_lost_between_requests_stops_working() -> None:
-    """The cookie carries no role claim, so a demotion lands on the next request (V14)."""
+    """The cookie carries no role claim, so a demotion lands on the next request."""
     with admin_probe_app() as harness:
         admin = harness.sign_in(ADMIN_EMAIL, roles=(ADMIN_ROLE_NAME,))
         assert harness.client.get(PROBE_PATH).status_code == status.HTTP_200_OK

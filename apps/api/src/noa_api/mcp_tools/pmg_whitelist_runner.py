@@ -1,8 +1,8 @@
-"""The half of `pmg_whitelist` that edits `mynetworks` (T29 — V60, V61).
+"""The half of `pmg_whitelist` that edits `mynetworks`.
 
 Beside `pmg_whitelist.py` rather than inside it, for C14 and on the boundary the design already
 draws — **nothing in the tool module can change anything, and nothing here is reachable without an
-approval** (V22). T27 and T28 made the same split for the same reason. The evidence keys, the
+approval**. T27 and T28 made the same split for the same reason. The evidence keys, the
 action words and the tool's name come from that module; nothing there imports this one, so
 `registry.py` reaches the tool and `change_runners.py` reaches the runner with no cycle between
 them.
@@ -22,24 +22,24 @@ whether the target is on the list, re-measured now. Three ways that goes and onl
 **Two deliberate departures from `noa-old`** (C13, V69: a port carries the code, not the defect):
 
 1. **A removal takes every matching line, each by PMG's own spelling.** `mynetworks` can hold two
-   spellings of one address — `1.2.3.4` and `1.2.3.4/32` are one entry to a reader (V59) and two
+   spellings of one address — `1.2.3.4` and `1.2.3.4/32` are one entry to a reader and two
    lines in the file — and `core.integrations.pmg.mynetworks` keeps both for exactly this reason.
    `noa-old` sent one `delete` for the *normalised* form, which leaves the duplicate standing and
    aims `pmgsh delete /config/mynetworks/<cidr>` at a path segment PMG may never have printed. The
    deletion here names `entry.cidr`, the token `pmgsh ls` emitted, which is the object identifier
    PMG itself gave.
 2. **An add writes the normalised form**, because that is what membership was decided on and what
-   the card showed the operator (V59). A `1.2.3.4/24` typed in chat is a request about
+   the card showed the operator. A `1.2.3.4/24` typed in chat is a request about
    `1.2.3.0/24`, and writing back the operator's own spelling would put a line in `mynetworks`
    that NOA's own reader then normalises to something else.
 
-**`pmgconfig sync --restart 1` after every mutation** (V60, V61). `pmgsh` writes PMG's config and
+**`pmgconfig sync --restart 1` after every mutation**. `pmgsh` writes PMG's config and
 Postfix does not pick the change up until the sync runs, so a mutation that skips it looks applied
 and is not. A write that landed while the sync failed gets **its own code**: the config row moved
 and mail flow did not, and neither `ok: true, status: changed` nor a bare failure says that — the
 first is a lie and the second sends an operator back to re-add into a no-op.
 
-**The postflight asks the change's own question** (V97). It re-reads `mynetworks` and re-tests
+**The postflight asks the change's own question**. It re-reads `mynetworks` and re-tests
 membership — not the `200 OK` on stdout, which says PMG accepted a write, and not the sync's exit
 code. A read that cannot answer is `unavailable`, never `false`: silence is not evidence of absence
 (V86), and V62's rule holds one system over — **verification-unavailable is not verified, and it is
@@ -129,7 +129,7 @@ ERROR_SYNC_FAILED: Final = "pmg_sync_failed"
 ERROR_POSTFLIGHT_FAILED: Final = "postflight_failed"
 
 # One structured event per outcome an operator may have to act on. Identifiers and codes only
-# (V8) — and never `request.reason`, which this runner does not read at all.
+# — and never `request.reason`, which this runner does not read at all.
 LOG_WHITELIST_RUN_NO_OP: Final = "pmg_whitelist_no_op"
 LOG_WHITELIST_RUN_UNVERIFIED: Final = "pmg_whitelist_unverified"
 
@@ -144,7 +144,7 @@ class WhitelistChangeTarget:
     """The node, the direction and the address an approved whitelist change runs against.
 
     Both spellings of the address travel, for the reason they travel on the card: `normalized` is
-    what is compared and written (V59), and `target` is what the operator typed and therefore what
+    what is compared and written, and `target` is what the operator typed and therefore what
     a sentence about their request has to be able to say.
     """
 
@@ -161,14 +161,14 @@ class WhitelistChangeTarget:
 
 
 def build_pmg_whitelist_runner(*, context: McpToolContext) -> ChangeRunner:
-    """The half that edits `mynetworks`, once an operator approved (T29, T38 — V22, V46).
+    """The half that edits `mynetworks`, once an operator approved.
 
     A closure over the tool context rather than a class, for T22's reason: what it needs is the
     same session factory, cipher and repository the tool used, so the change goes through the
     production decrypt site rather than a second copy of it.
 
     `request.reason` is on the request — the executor reads it off the row for every approved
-    change (V43) — and this runner never touches it. A `mynetworks` entry has no field for one, so
+    change — and this runner never touches it. A `mynetworks` entry has no field for one, so
     nothing C8 keeps from the LLM leaves NOA here and V96's bound has no instance on this tool.
     """
 
@@ -177,10 +177,10 @@ def build_pmg_whitelist_runner(*, context: McpToolContext) -> ChangeRunner:
 
         Resolve from the evidence, re-read, decide, write, sync, verify. Every refusal answers the
         ordinary tool envelope rather than raising, because the executor's own catch records
-        something coarser than what this knew (V19).
+        something coarser than what this knew.
 
         Three deltas are decided here and the rest below. The resolution refusal carries **none**
-        — nothing was read and nothing was written, so there is nothing to state (V86). A
+        — nothing was read and nothing was written, so there is nothing to state. A
         `mynetworks` read that could not answer carries one with **no list move**, because the
         list was never seen. The no-op carries one with an **empty** list move, which is not the
         same thing: the list was read, it already held what was asked for, and "NOA compared and
@@ -256,7 +256,7 @@ def build_pmg_whitelist_runner(*, context: McpToolContext) -> ChangeRunner:
 
 
 def build_pmg_whitelist_runners(*, context: McpToolContext) -> dict[str, ChangeRunner]:
-    """Tool name → runner for this module's CHANGE tool (T29)."""
+    """Tool name → runner for this module's CHANGE tool."""
     return {TOOL_PMG_WHITELIST: build_pmg_whitelist_runner(context=context)}
 
 
@@ -266,7 +266,7 @@ def build_pmg_whitelist_runners(*, context: McpToolContext) -> dict[str, ChangeR
 async def _resolve_change_target(
     evidence: Mapping[str, Any], *, context: McpToolContext
 ) -> WhitelistChangeTarget | ToolPayload:
-    """The node, direction and address an approved change runs against (V33).
+    """The node, direction and address an approved change runs against.
 
     **From the evidence, never from the arguments.** `server_ref` is a string a model supplied and
     inventory can be edited between a request and its approval; the evidence is the state the
@@ -319,7 +319,7 @@ async def _resolve_change_target(
 
 
 async def _read_matches(target: WhitelistChangeTarget) -> list[MynetworksEntry] | ToolPayload:
-    """Every `mynetworks` line that *is* this target, as PMG has it now (V59).
+    """Every `mynetworks` line that *is* this target, as PMG has it now.
 
     Exact membership, never containment: a containing network is not this entry, and a removal that
     treated it as one would delete a CIDR the operator never named.
@@ -416,7 +416,7 @@ async def _apply_change(
 
 
 def _evidence_total_entries(evidence: Mapping[str, Any]) -> int | None:
-    """How many lines `mynetworks` held when the operator was asked (V85).
+    """How many lines `mynetworks` held when the operator was asked.
 
     Off the evidence, because it is the only place the whole list was counted: this runner reads
     the lines that *match* its target and never the rest, so a total taken here would be a total
@@ -442,7 +442,7 @@ def _whitelist_delta(
 
     **The facet is `list_delta`**, because a `mynetworks` entry has no value that changes — it is
     either a line in the file or it is not, and the change is its membership. Both spellings of
-    the address ride on the identity for the reason they ride in the payload (V59): a reader told
+    the address ride on the identity for the reason they ride in the payload: a reader told
     only that `203.0.113.0/24` moved cannot tell whether an operator asked about a network or a
     host inside it.
 
@@ -465,7 +465,7 @@ async def _verify_membership(
     request: ChangeExecutionRequest,
     moved: ListDelta,
 ) -> ChangeOutcome:
-    """Is the address on the list now? Read off `mynetworks`, ⊥ off the exit code (V97, V62, V86).
+    """Is the address on the list now? Read off `mynetworks`, ⊥ off the exit code.
 
     `pmgsh` printing `200 OK` says PMG accepted a write; it does not say what the whitelist now
     holds. So this re-reads the list and re-tests membership, which is the fact the change is about.
@@ -558,7 +558,7 @@ def _common(target: WhitelistChangeTarget) -> ToolPayload:
     """The identifiers every answer from this runner carries.
 
     Both spellings, for V59's reason: this payload becomes `tool_runs.result_summary` and
-    `noa_get_action_result` hands that to a model (V45, V76), and a model told only that
+    `noa_get_action_result` hands that to a model, and a model told only that
     `1.2.3.4/24` was whitelisted would report a host where a network was changed.
 
     The whitelist's other entries are deliberately not among them. What a model needs is which

@@ -1,23 +1,23 @@
-"""Shared auth building blocks (C12, V66).
+"""Shared auth building blocks.
 
-`LDAPService` (T6), `JWTService` (T7), `AuthService` (T8) and the RBAC engine (T9) live
-here; MCP identity resolution (T11-T12) joins them so all three deployables read one
+`LDAPService`, `JWTService`, `AuthService` and the RBAC engine live
+here; MCP identity resolution joins them so all three deployables read one
 implementation.
 
 Authentication and authorization are separate taxonomies on purpose. `AuthError` means "we
 do not know who you are" and its unclassified case is an infrastructure answer (503);
 `AuthorizationError` means "we know, and no". Both derive from `core.errors.NoaError`, so
-one handler shapes both responses (V73).
+one handler shapes both responses.
 
 Two credentials live in this package and never mix:
 
 - session JWT in the `noa_session` cookie — admin panel + embed, LDAP-backed,
-  short-lived (V6). `JWTService` owns mint, verify, and the cookie itself.
-- MCP bearer token — opaque, hashed at rest, no JWT (C5, V2). `McpTokenService` owns mint,
-  list and revoke (T10); T11-T12 add the verify path on top of `hash_mcp_token`.
+  short-lived. `JWTService` owns mint, verify, and the cookie itself.
+- MCP bearer token — opaque, hashed at rest, no JWT. `McpTokenService` owns mint,
+  list and revoke; T11-T12 add the verify path on top of `hash_mcp_token`.
 
 `AuthService` is where the mechanisms meet: it authenticates against the directory,
-applies NOA's activation gate (V7), rate limits attempts (V9), and re-reads
+applies NOA's activation gate, rate limits attempts, and re-reads
 `users.is_active` on every session-authenticated request — the only bound V6 leaves
 on a disabled operator's live session.
 """

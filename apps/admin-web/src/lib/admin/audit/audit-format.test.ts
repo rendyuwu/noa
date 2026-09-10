@@ -9,7 +9,7 @@ import {
   resolveToolRunStatus,
 } from './audit-format'
 
-// Presentation mapping for the audit list (T55). `resolveActionStatus` and its
+// Presentation mapping for the audit list. `resolveActionStatus` and its
 // cases went with the action-requests tab: they read a `terminalPhase` off a
 // receipt route NOA does not serve.
 

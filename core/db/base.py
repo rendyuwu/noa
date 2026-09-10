@@ -1,4 +1,4 @@
-"""Declarative base for the single shared schema (C3, C12).
+"""Declarative base for the single shared schema.
 
 One DB, one schema, one `MetaData` — Alembic's `target_metadata` is
 `Base.metadata`, so a table that is not imported into `core.db.models` does not

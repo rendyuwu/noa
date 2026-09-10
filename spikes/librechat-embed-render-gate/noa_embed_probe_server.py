@@ -3,7 +3,7 @@
 This is a **verification harness**, not product code. It exists to answer one question with
 a live run rather than a source read: when LibreChat at pin `45cc53c4` renders a NOA-served
 `text/uri-list` UI resource, does the resulting document sit on NOA's origin with the
-`noa_session` cookie riding into it (C17, V37), so the approve POST V22 requires is possible?
+`noa_session` cookie riding into it, so the approve POST V22 requires is possible?
 
 Three things about the shape here are deliberate.
 
@@ -16,7 +16,7 @@ process serves is NOA's app plus a probe surface, not a simulation of it.
 
 **Authentication is real.** The probe server takes the same `NoaTokenVerifier` and the same
 `McpAuthErrorMiddleware` as production, so LibreChat has to present a minted bearer token and
-the `X-Noa-LibreChat-User` header C24 requires, and TOFU binding (V3) is exercised live for
+the `X-Noa-LibreChat-User` header C24 requires, and TOFU binding is exercised live for
 the first time. What the probe server does *not* carry is `RbacToolMiddleware`: its tools are
 uncatalogued by construction, so the RBAC gate would refuse them (V83c) — correctly, and
 uselessly for this question.
@@ -28,7 +28,7 @@ because V80 says a native form submit is dead in that sandbox. The verdicts land
 attributes so the browser probe reads a value rather than a screenshot.
 
 `/embed-probe/decide` stands in for the approve endpoint and deliberately implements none of
-it: no CSRF token (V39), no row lock (V28), no reason (V15). It answers "did the cookie
+it: no CSRF token, no row lock, no reason. It answers "did the cookie
 arrive" and nothing else. T33/T37 build the real thing once this gate has chosen a branch.
 
 Run:
@@ -97,10 +97,10 @@ def _frame_html(*, action_request_id: str, mode: str) -> str:
       is NOA's origin; on the `srcDoc` path it is `null` (an opaque origin), which is the
       failure C17 describes.
     - `data-cookie-visible` — `document.cookie`. Must stay empty: the session cookie is
-      httpOnly (V6), so a value here would mean something else is setting a readable one.
+      httpOnly, so a value here would mean something else is setting a readable one.
     - `data-me` / `data-decide` — the two requests that matter. A 200 on both means the
       cookie rode into the frame and a decision POST from this document would reach NOA
-      authenticated (V22). A 401 means it did not.
+      authenticated. A 401 means it did not.
 
     `mode` is echoed so a screenshot of either run names which path produced it.
     """
@@ -189,7 +189,7 @@ def _register_probe_tools(server: FastMCP) -> None:
         ),
     )
     async def embed_probe_uri_list() -> ToolResult:
-        """Path A: `ui://` + `text/uri-list` ⇒ mcp-ui renders an iframe `src` (R12).
+        """Path A: `ui://` + `text/uri-list` ⇒ mcp-ui renders an iframe `src`.
 
         The plain URL rides in the text block as well. That is not decoration: V25 makes the
         link-out permanent, both as the T59-fail path and as the iframe-load-failure path, so
@@ -225,7 +225,7 @@ def _register_probe_tools(server: FastMCP) -> None:
         ),
     )
     async def embed_probe_html() -> ToolResult:
-        """Control path: `text/html` ⇒ `srcDoc` ⇒ opaque origin ⇒ the cookie cannot ride (C17).
+        """Control path: `text/html` ⇒ `srcDoc` ⇒ opaque origin ⇒ the cookie cannot ride.
 
         Its job is to fail. Without it, a green result on the `text/uri-list` run proves only
         that the probe returns 200 somewhere — the same tautology V87 describes one axis over.
@@ -253,7 +253,7 @@ def _register_probe_tools(server: FastMCP) -> None:
         ),
     )
     async def embed_probe_notify_tools_changed(ctx: Context) -> str:
-        """Item (f): fire the notification and let the request log answer (V74, T66).
+        """Item (f): fire the notification and let the request log answer.
 
         Emitted from inside a tool call because that is the only place with a live session to
         emit it on. What is being measured is not this call — it is whether a `tools/list`
@@ -313,7 +313,7 @@ class JsonRpcMethodLog:
 
 
 def build_probe_mcp_app(*, auth: AuthProvider) -> StarletteWithLifespan:
-    """The probe MCP server, authenticated exactly like production (T11, T12, V3)."""
+    """The probe MCP server, authenticated exactly like production."""
     server = FastMCP("NOA embed render gate probe", auth=auth, mask_error_details=True)
     _register_probe_tools(server)
     app = server.http_app(

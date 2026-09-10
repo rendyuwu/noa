@@ -53,3 +53,4 @@ Thumbs.db
 # --- Scratch / local artifacts ---
 tmp/
 .artifacts/
+.cavekit-purge/

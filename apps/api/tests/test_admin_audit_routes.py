@@ -7,9 +7,9 @@ is the shipped token, and the body is the shipped body.
 
 What this file owns, and what it deliberately does not:
 
-- **owns** the HTTP surface: the admin gate on both routes (V13), the query string → filter
+- **owns** the HTTP surface: the admin gate on both routes, the query string → filter
   mapping, V47's field list *on the serialized payload*, the page bound, the cursor walk, and the
-  one refusal a bad id or a bad cursor produces (V73).
+  one refusal a bad id or a bad cursor produces.
 - **does not own** whether a filter narrows anything. The predicates live in the SQL, so a Python
   double applying them would be a second, more forgiving judge — `test_tool_run_audit_read.py`
   reads the compiled statement and `test_admin_audit_live.py` runs it against Postgres.
@@ -42,7 +42,7 @@ from support.tool_run_audit import RUN_CREATED_AT, FakeToolRunAuditReader, build
 # Every query parameter the list route accepts, with the `ToolRunAuditFilters` field it must reach.
 # One table rather than seven assertions: the panel builds this exact key set
 # (`apps/admin-web/src/lib/admin/audit/audit-model.ts`), so the accepted names live in one place
-# here and one place there (V66) instead of drifting apart across a dozen tests.
+# here and one place there instead of drifting apart across a dozen tests.
 FILTER_QUERIES: tuple[tuple[str, str, str, Any], ...] = (
     ("toolName", "whm_list_accounts", "tool_name", "whm_list_accounts"),
     ("status", "FAILED", "status", ToolRunStatus.FAILED),
@@ -57,7 +57,7 @@ FILTER_QUERIES: tuple[tuple[str, str, str, Any], ...] = (
 # formatted. Compared against `router.routes` below rather than trusted: a table checked only
 # against its own `len()` is pinned to itself and can never notice an address that was added and
 # never listed. The comparison is `support.admin.registered_routes`, shared with the
-# action-request route test (V66).
+# action-request route test.
 ID_PARAM: str = "tool_run_id"
 
 ROUTE_TABLE: tuple[tuple[str, str], ...] = (
@@ -187,7 +187,7 @@ def test_a_started_run_has_no_completion_or_duration(harness: AdminHarness) -> N
 
 
 def test_a_deleted_requester_leaves_the_email_null(harness: AdminHarness) -> None:
-    """`SET NULL` (T35): the run outlives its operator, and the list says so rather than hiding it.
+    """`SET NULL`: the run outlives its operator, and the list says so rather than hiding it.
 
     An inner join on `users` would drop exactly these rows — the reason `select_tool_run_page` uses
     an outer one.
@@ -217,7 +217,7 @@ def test_the_detail_carries_args_summary_and_timing(harness: AdminHarness) -> No
 
 
 def test_a_call_with_no_arguments_answers_an_empty_object(harness: AdminHarness) -> None:
-    """`{}`, never `null` (T35): "took no arguments" and "arguments not recorded" differ."""
+    """`{}`, never `null`: "took no arguments" and "arguments not recorded" differ."""
     run = harness.tool_runs.items[0]
     harness.tool_runs.args = {}
 
@@ -324,7 +324,7 @@ def test_the_last_page_carries_a_null_cursor(harness: AdminHarness) -> None:
 
 
 def test_unknown_and_malformed_ids_answer_one_body(harness: AdminHarness) -> None:
-    """404 `tool_run_not_found` for both, byte-identical apart from `request_id` (V73).
+    """404 `tool_run_not_found` for both, byte-identical apart from `request_id`.
 
     A 422 for the malformed id would describe what the path validator accepts rather than what
     exists; `core.audit.errors` records why the split is refused. Asserted on the *body* and not
@@ -352,7 +352,7 @@ def test_an_undecodable_cursor_is_refused(harness: AdminHarness) -> None:
     """400 `invalid_audit_cursor` — one code for every malformed shape, and no page served.
 
     `noa-old` raised FastAPI's own `RequestValidationError` here, so a bad cursor answered 422 with
-    a validation-error list; NOA answers the shared envelope (V8, V73).
+    a validation-error list; NOA answers the shared envelope.
     """
     for cursor in ("not-base64", "", "e30", "!!!!"):
         harness.tool_runs.calls.clear()

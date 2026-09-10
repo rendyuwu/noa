@@ -98,7 +98,7 @@ export function filterRequestHeaders(src: Headers): Headers {
     if (k === 'host') continue
     if (k === 'content-length') continue
     // Departure from the `noa-old` port. Every surface this app reaches is
-    // cookie-authenticated (V40, V22); bearer tokens are MCP-only (C5) and are
+    // cookie-authenticated; bearer tokens are MCP-only and are
     // sent by LibreChat's server, never by a browser. Dropping the header means
     // the embed origin cannot be used to relay one into the API.
     if (k === 'authorization') continue
@@ -143,7 +143,7 @@ export function filterResponseHeaders(src: Headers): Headers {
 // Copy every Set-Cookie value. `headers.get("set-cookie")` collapses multiple
 // cookies into one comma-joined string, so prefer getSetCookie() when present.
 // The attributes ride untouched: `Domain=.noa.internal` is what puts the session
-// on the same registrable domain as the admin app (V40), and rewriting it here
+// on the same registrable domain as the admin app, and rewriting it here
 // would silently unscope the cookie the whole decision path depends on.
 export function copySetCookies(from: Headers, to: Headers): void {
   const connectionHeaderNames = getConnectionHeaderNames(from)
@@ -200,7 +200,7 @@ export function rewriteLocationHeader(location: string, requestUrl: string): str
   // Returning the raw value would let a protocol-relative ("//evil.com") or
   // backslash-obfuscated ("/\\evil.com") Location be re-interpreted against the
   // APP origin by the browser — an open redirect attributable to this origin,
-  // which is the one origin LibreChat is allowed to frame (V41). `target.href`
+  // which is the one origin LibreChat is allowed to frame. `target.href`
   // is the unambiguous absolute form the backend actually meant.
   if (target.origin !== base.origin) return target.href
 
@@ -245,9 +245,9 @@ function scrubBackendOriginHeader(headers: Headers, name: string): void {
 // Link) is rewritten so the NOA_API_URL host is never leaked to the browser.
 //
 // The status is passed through as-is on purpose: a 401 has to arrive at the card
-// as a 401 so it can render "cannot authenticate here" (V38) instead of a blank
+// as a 401 so it can render "cannot authenticate here" instead of a blank
 // card, and `x-request-id` rides along with the rest of the safe headers so the
-// id in the body still names a log line (V73).
+// id in the body still names a log line.
 export function passthroughResponse(upstream: Response): Response {
   const headers = filterResponseHeaders(upstream.headers)
   copySetCookies(upstream.headers, headers)

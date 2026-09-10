@@ -1,6 +1,6 @@
 """Per-system integration layers (C12, C13, DECISIONS §4.1).
 
-One subpackage per external system NOA drives: `whm` (T16), `proxmox` (T17), `pmg` (T18).
+One subpackage per external system NOA drives: `whm`, `proxmox`, `pmg`.
 
 They live in `core/` and not in `apps/api/` because the integration layer is joint property.
 DECISIONS §4.1 makes that the load-bearing argument for the monorepo: validating a server from

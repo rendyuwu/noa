@@ -219,7 +219,7 @@ function ActionRequestDetailContent({
 // as an em dash, and an em dash under "LibreChat account" says *there is none* —
 // an absence claim manufactured out of an answer that has not arrived yet.
 // A source that could not answer gets named beside the verdict instead of
-// folding into the benign value (V86), which is the same treatment the reason
+// folding into the benign value, which is the same treatment the reason
 // and approval-context blocks below already give the same fetch.
 function librechatAccount(
   detail: AuditActionRequestDetail | undefined,

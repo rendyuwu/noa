@@ -1,4 +1,4 @@
-"""`pmgsh ls /config/mynetworks` output → normalised CIDR entries (T31, V58, V59).
+"""`pmgsh ls /config/mynetworks` output → normalised CIDR entries.
 
 The half of `noa-old`'s `pmg/tools/whitelist_tools.py` that is not a tool: T18 ported the
 command layer and named this as deferred (`core.integrations.pmg.__init__`), because parsing
@@ -42,9 +42,9 @@ defect):
   could make the id column get parsed in its place.
 - **Duplicates are kept.** `noa-old` deduplicated by normalised form while parsing. Two
   spellings of one address in `mynetworks` are a fact about the whitelist, and a search that
-  drops one reports a list its own source does not have. `pmg_whitelist_list` (T30) keeps them
+  drops one reports a list its own source does not have. `pmg_whitelist_list` keeps them
   too, for the same reason one layer up: a listing that collapses two identical lines describes
-  a file PMG does not have, and a removal (T29) has to know both lines are there.
+  a file PMG does not have, and a removal has to know both lines are there.
 
 Entries keep `cidr` — the token exactly as PMG printed it — beside `normalized`. That is the
 evidence an operator reads: the two differ whenever the whitelist stores a bare host, and only
@@ -53,9 +53,9 @@ the raw form tells them what is actually in the file.
 ## Order
 
 Parsing preserves PMG's own, and `sort_entries` is opt-in beside it, because the two callers
-owe different things. `pmg_whitelist_search` (T31) reports *membership*: it hands back the
+owe different things. `pmg_whitelist_search` reports *membership*: it hands back the
 entries that matched, in the order the file holds them, and re-ordering there would only make
-one fact harder to check against the box. `pmg_whitelist_list` (T30) reports a *listing* that
+one fact harder to check against the box. `pmg_whitelist_list` reports a *listing* that
 may be capped by the table surface, and V85's ordering clause lands on the producer —
 `core.results.tables.cap_rows` keeps a prefix and never re-sorts, so an unsorted listing would
 make a capped page an arbitrary subset that changes between two identical calls. `pmgsh ls`
@@ -73,7 +73,7 @@ from dataclasses import dataclass
 class MynetworksEntry:
     """One `mynetworks` line NOA could read as an address or a network.
 
-    `cidr` is PMG's own spelling and `normalized` is what membership is decided on (V59).
+    `cidr` is PMG's own spelling and `normalized` is what membership is decided on.
     Both travel, because a verdict computed on the normalised form has to be justifiable
     against the text the operator would see on the box.
     """
@@ -82,7 +82,7 @@ class MynetworksEntry:
     normalized: str
 
     def as_payload(self) -> dict[str, str]:
-        """The entry as a tool result carries it. No line numbers, no raw line (V26)."""
+        """The entry as a tool result carries it. No line numbers, no raw line."""
         return {"cidr": self.cidr, "normalized": self.normalized}
 
 
@@ -134,7 +134,7 @@ def _entry_sort_key(entry: MynetworksEntry) -> tuple[int, int, int, str]:
 
 
 def sort_entries(entries: Sequence[MynetworksEntry]) -> list[MynetworksEntry]:
-    """Entries in an order that is the same for the same whitelist, every call (V85).
+    """Entries in an order that is the same for the same whitelist, every call.
 
     For the listing tool, not the search: see the module docstring. Numeric rather than
     lexicographic, because an operator reading a page of CIDRs reads them as addresses —
@@ -146,7 +146,7 @@ def sort_entries(entries: Sequence[MynetworksEntry]) -> list[MynetworksEntry]:
 def find_matching_entries(
     entries: list[MynetworksEntry], *, normalized_target: str
 ) -> list[MynetworksEntry]:
-    """The entries that *are* `normalized_target` (V59) — exact membership, ⊥ containment.
+    """The entries that *are* `normalized_target` — exact membership, ⊥ containment.
 
     A containing network is not a match: `1.2.3.0/24` in `mynetworks` does not make
     `1.2.3.4/32` an entry, and answering otherwise would tell an operator their address is

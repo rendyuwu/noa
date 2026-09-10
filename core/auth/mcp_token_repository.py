@@ -1,22 +1,22 @@
-"""SQL behind MCP token management (T10, C5, V2) and verification (T11, C20, V3, V4).
+"""SQL behind MCP token management and verification.
 
 New work — `noa-old` has no `mcp_tokens` table to port from.
 
 Two classes, one table. They are separate because their transaction discipline is opposite,
 not because the SQL is unrelated:
 
-- `SQLMcpTokenRepository` (T10) — the admin CRUD path. Like T9's
+- `SQLMcpTokenRepository` — the admin CRUD path. Like T9's
   `SQLAuthorizationRepository`, every method takes the caller's `AsyncSession` and flushes
   rather than commits, so a mint and its audit event land together or not at all. `commit()`
-  (T53) is the boundary itself: `noa_api.api.deps.get_db_session` never commits, so without
+  is the boundary itself: `noa_api.api.deps.get_db_session` never commits, so without
   it a mint would return a plaintext over a transaction that rolls back at teardown and the
   operator would hold a credential authenticating nothing (V100, B10's shape one table over).
-- `SQLMcpIdentityRepository` (T11) — the MCP request path. It runs outside FastAPI's
+- `SQLMcpIdentityRepository` — the MCP request path. It runs outside FastAPI's
   dependency graph, inside `verify_token`, where there is no request transaction to join.
   It therefore owns its session and exposes `commit()`, which `McpIdentityResolver` calls
   at the two points a write must become durable.
 
-Keeping both here rather than in two modules is deliberate (V66): every statement that
+Keeping both here rather than in two modules is deliberate: every statement that
 touches `mcp_tokens` is in one file, so a column added later cannot be handled on one path
 and forgotten on the other.
 
@@ -113,7 +113,7 @@ class SQLMcpTokenRepository:
         return bool(result.rowcount)
 
     async def commit(self) -> None:
-        """Make this request's token writes durable (T53, V100).
+        """Make this request's token writes durable.
 
         Delegated to the session rather than to `SQLMcpIdentityRepository.commit` below, even
         though both classes wrap a session and both commit: they are handed *different*
@@ -126,7 +126,7 @@ class SQLMcpTokenRepository:
 
 @dataclass(frozen=True)
 class McpAuthenticationRecord:
-    """One `mcp_tokens ⋈ users` row, as the verify path reads it (T11).
+    """One `mcp_tokens ⋈ users` row, as the verify path reads it.
 
     Frozen and hash-free: `McpIdentityResolver` decides from these fields and writes
     through the repository, so a mutable row it could edit in place would be a second,
@@ -144,17 +144,17 @@ class McpAuthenticationRecord:
 
 
 class SQLMcpIdentityRepository:
-    """`McpIdentityRepository` over one `AsyncSession` owned by the verify path (T11)."""
+    """`McpIdentityRepository` over one `AsyncSession` owned by the verify path."""
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
     async def get_by_token_hash(self, token_hash: str) -> McpAuthenticationRecord | None:
-        """The token row joined to its user, in one statement (V1, V2).
+        """The token row joined to its user, in one statement.
 
         Joined rather than two lookups: `is_active` must describe the same instant the
         token was found, or a disable landing between the reads would authenticate against
-        a stale row. `token_hash` is the unique lookup key (T4), so this is an index hit
+        a stale row. `token_hash` is the unique lookup key, so this is an index hit
         and at most one row.
         """
         result = await self._session.execute(
@@ -187,12 +187,12 @@ class SQLMcpIdentityRepository:
         )
 
     async def bind_librechat_user(self, token_id: UUID, librechat_user_id: str) -> str:
-        """Pin an unbound token to `librechat_user_id`; return what the row now holds (C20).
+        """Pin an unbound token to `librechat_user_id`; return what the row now holds.
 
         `WHERE … AND librechat_user_id IS NULL` makes this a compare-and-set, so two first
         calls racing cannot both bind. The loser updates nothing, and the re-read below
         hands back the winner's value — which the resolver then treats as an ordinary
-        mismatch (V3). A read-then-write in Python could not close that window.
+        mismatch. A read-then-write in Python could not close that window.
 
         `RETURNING` gives the committed value rather than the one we sent, so the caller
         compares against reality instead of its own optimistic guess.
@@ -227,13 +227,13 @@ class SQLMcpIdentityRepository:
         )
 
     async def touch_ldap_check(self, token_id: UUID, *, now: datetime) -> None:
-        """Stamp `last_ldap_check_at` after the directory vouched for the operator (V4)."""
+        """Stamp `last_ldap_check_at` after the directory vouched for the operator."""
         await self._session.execute(
             update(McpToken).where(McpToken.id == token_id).values(last_ldap_check_at=now)
         )
 
     async def delete_tokens_for_user(self, user_id: UUID) -> int:
-        """Cascade-revoke every token this operator holds; return how many (V4).
+        """Cascade-revoke every token this operator holds; return how many.
 
         Every token, not only the presented one: V4 revokes on the *operator* leaving, and
         a colleague-facing token left alive would authenticate on the next request.
@@ -250,7 +250,7 @@ class SQLMcpIdentityRepository:
 
 
 def _to_view(record: McpToken) -> McpTokenView:
-    """ORM row → `McpTokenView`. `token_hash` has no destination and is dropped (V2)."""
+    """ORM row → `McpTokenView`. `token_hash` has no destination and is dropped."""
     return McpTokenView(
         id=record.id,
         user_id=record.user_id,

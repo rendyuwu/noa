@@ -1,4 +1,4 @@
-"""Server inventory: reads, reference resolution, and the admin write path (T19, T54, V18).
+"""Server inventory: reads, reference resolution, and the admin write path.
 
 `core/integrations/<system>/` knows how to *talk to* a server. This package knows how to
 *find* one: which rows exist, and which row an operator meant when they typed a word.
@@ -6,7 +6,7 @@ They are kept apart deliberately — the integration modules take a `Protocol`-s
 (`WHMServerSecretLike`) precisely so they stay independent of SQLAlchemy and of the session
 that loaded it, and putting a `select()` in there would undo that.
 
-Landed: WHM (T19), PMG (T31), Proxmox (T27).
+Landed: WHM, PMG, Proxmox.
 
 **The question this docstring carried is answered.** T19 noted that `noa-old` had one
 `server_ref.py` per system and that the third would show "whether that difference is two

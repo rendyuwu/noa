@@ -250,11 +250,11 @@ despite the unique index, because Postgres uniqueness is case-sensitive and the 
 | `whm_list_servers` | READ | Every configured server, via `WHMServer.to_safe_dict()`. Exposed per DECISIONS §6.6 — the model needs to know which servers exist. The only `*_list_servers` that is exposed. |
 | `whm_list_accounts` | READ | `server_ref`. Every account on one server, parked at `/tables/{token}` — the rows never enter the transcript (§V.64). |
 | `whm_search_accounts` | READ | `server_ref` + `query` + `limit` (1–100, default 20). Case-insensitive substring of the account username **or** its domain. |
-| `whm_suspend_account` | **CHANGE** | `server_ref` + `username`. Opens an approval request and suspends nothing; the change runs after an operator decides (§V.16). No reason parameter, ever (C8). |
-| `whm_unsuspend_account` | **CHANGE** | `server_ref` + `username`. The mirror, and a separate grant: suspend and unsuspend carry opposite risk, so DECISIONS §9 leaves them two names rather than one `action` enum. Opens an approval request and lifts nothing. No reason parameter, ever (C8). |
+| `whm_suspend_account` | **CHANGE** | `server_ref` + `username`. Opens an approval request and suspends nothing; the change runs after an operator decides (§V.16). No reason parameter, ever. |
+| `whm_unsuspend_account` | **CHANGE** | `server_ref` + `username`. The mirror, and a separate grant: suspend and unsuspend carry opposite risk, so DECISIONS §9 leaves them two names rather than one `action` enum. Opens an approval request and lifts nothing. No reason parameter, ever. |
 | `whm_preflight_firewall_entries` | READ | `server_ref` + `target`. Asks CSF and Imunify360 what they hold for the target. Exposed per DECISIONS §6.5 — the one operator-facing preflight. |
-| `whm_firewall_release_and_allow` | **CHANGE** | `server_ref` + `target` (IPv4 only, §V.54) + `duration_minutes` (1–525600, required, no default, §V.77). Steps 2 and 3 of the firewall flow in one approval (DECISIONS §6.5). Opens an approval request and changes nothing. No reason parameter, ever (C8). |
-| `whm_firewall_allowlist_remove` | **CHANGE** | `server_ref` + `target` (IPv4 only). The undo path, kept a separate tool and a separate approval (DECISIONS §6.5). Answers `no_op` when the address is on no allow list. Opens an approval request and changes nothing. No reason parameter, ever (C8). |
+| `whm_firewall_release_and_allow` | **CHANGE** | `server_ref` + `target` (IPv4 only, §V.54) + `duration_minutes` (1–525600, required, no default, §V.77). Steps 2 and 3 of the firewall flow in one approval (DECISIONS §6.5). Opens an approval request and changes nothing. No reason parameter, ever. |
+| `whm_firewall_allowlist_remove` | **CHANGE** | `server_ref` + `target` (IPv4 only). The undo path, kept a separate tool and a separate approval (DECISIONS §6.5). Answers `no_op` when the address is on no allow list. Opens an approval request and changes nothing. No reason parameter, ever. |
 
 Both the RBAC gate (§V.1, `noa_api/mcp_rbac.py`) and error sanitization (§V.19,
 `noa_api/mcp_tools/results.py`) sit in front of every tool, so nothing below is per-tool code.
@@ -654,7 +654,7 @@ config change. The flag is **visibility and naming, never authorization**: it hi
 account CHANGE preflight compares `account["owner"]` against the resolved row's `api_username`
 (both normalized) **before** `action_requests` is written, and refuses
 `whm_wrong_credential_for_owner` naming the `server_ref` that would have worked — a card that
-could only fail would cost an operator a decision and a reason typed for nothing (C8). The
+could only fail would cost an operator a decision and a reason typed for nothing. The
 runner re-checks the same equality off the approval's own evidence, since a row is editable
 between a request and its decision (§V.33).
 

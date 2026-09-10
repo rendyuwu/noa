@@ -1,13 +1,13 @@
-"""The half of `proxmox_reset_vm_password` that changes the VM (T27, T69).
+"""The half of `proxmox_reset_vm_password` that changes the VM.
 
 Beside `proxmox_password.py` rather than inside it, for C14: a CHANGE tool is two halves and
 together they run past the 900-line budget. T26 made the same split for the same reason and it
 falls on the boundary the design already draws — **nothing in the tool module can change
-anything, and nothing here is reachable without an approval** (V22). The evidence keys and the
+anything, and nothing here is reachable without an approval**. The evidence keys and the
 tool's name come from that module; nothing there imports this one, so `registry.py` reaches the
 tool and `change_runners.py` reaches the runner with no cycle between them.
 
-**The order is the safety property, not an implementation detail** (V62). Generate → *deliver* →
+**The order is the safety property, not an implementation detail**. Generate → *deliver* →
 apply. yopass is stored **before** `cipassword` is written, so a delivery failure aborts with the
 VM untouched and nobody locked out. The reverse order has one failure mode that cannot be
 recovered from a log: the password is live on the VM and the only copy of it is gone. What the
@@ -27,7 +27,7 @@ exactly when NOA cannot rule out that the new password reached the VM.
   `noa-old` withheld it on the verification branches; this is the one behavioural correction to
   its flow beyond §T.69.
 
-**§T.69 is decided here** (V62). `noa-old` answered verification with a `bool`, and a host whose
+**§T.69 is decided here**. `noa-old` answered verification with a `bool`, and a host whose
 libcrypt would not load produced `False` — indistinguishable from a password that genuinely does
 not match. So a change that in fact succeeded was reported as failed, and an operator was sent to
 reset a password that was already live. `core.integrations.proxmox.cloudinit` answers three
@@ -129,12 +129,12 @@ MESSAGE_TASK_TIMEOUT: Final = (
 ERROR_TASK_FAILED: Final = "task_failed"
 
 # One structured event per outcome an operator may have to act on. Identifiers and codes only,
-# never the password and never the yopass URL (V8, V49) — a URL in a log is a credential in a
-# log, because whoever holds the whole link holds the secret (V50).
+# never the password and never the yopass URL — a URL in a log is a credential in a
+# log, because whoever holds the whole link holds the secret.
 LOG_RESET_DELIVERY_FAILED: Final = "proxmox_reset_vm_password_delivery_failed"
 LOG_RESET_UNVERIFIED: Final = "proxmox_reset_vm_password_unverified"
 
-# `noa-old`'s numbers, kept (C13, V69). The config write answers with a UPID that finishes in
+# `noa-old`'s numbers, kept. The config write answers with a UPID that finishes in
 # well under a second in practice; the verification window exists because the rendered user-data
 # lags the write by a moment.
 TASK_POLL_ATTEMPTS: Final = 30
@@ -178,7 +178,7 @@ def build_proxmox_reset_vm_password_runner(
     context: McpToolContext,
     crypt_loader: CryptLibraryLoader = _load_crypt_lib,
 ) -> ChangeRunner:
-    """The half that resets the password, once an operator approved (T27, T38 — V22, V46).
+    """The half that resets the password, once an operator approved.
 
     A closure over the tool context rather than a class, for T22's reason: what it needs is the
     same session factory, cipher, repositories and delivery seam the tool used, so the change
@@ -190,7 +190,7 @@ def build_proxmox_reset_vm_password_runner(
     the next test inherits (V90's neighbourhood: the setup must not become the subject).
 
     `request.reason` is on the request — the executor reads it off the row for every approved
-    change (V43) — and this runner never touches it. Cloud-init has no note field, so nothing C8
+    change — and this runner never touches it. Cloud-init has no note field, so nothing C8
     keeps from the LLM leaves NOA here and V96's bound has no instance on this tool.
     """
 
@@ -199,10 +199,10 @@ def build_proxmox_reset_vm_password_runner(
 
         Resolve from the evidence, generate, deliver, apply, verify. Every refusal answers the
         ordinary tool envelope rather than raising, because the executor's own catch records
-        something coarser than what this knew (V19).
+        something coarser than what this knew.
 
         The resolution refusal carries **no delta** — nothing was generated, delivered or
-        written, so there is nothing to state (V86). Every path below carries one, and **none of
+        written, so there is nothing to state. Every path below carries one, and **none of
         them carries a field change**: what this tool alters is a password, so neither side of
         that diff may be rendered at all. `delivered_credential` is the facet instead, and its
         presence carries the same claim the payload's `yopass_url` does — that the password may
@@ -256,7 +256,7 @@ def build_proxmox_reset_vm_password_runner(
 
 
 def build_proxmox_password_runners(*, context: McpToolContext) -> dict[str, ChangeRunner]:
-    """Tool name → runner for this module's CHANGE tool (T27)."""
+    """Tool name → runner for this module's CHANGE tool."""
     return {
         TOOL_PROXMOX_RESET_VM_PASSWORD: build_proxmox_reset_vm_password_runner(context=context),
     }
@@ -268,7 +268,7 @@ def build_proxmox_password_runners(*, context: McpToolContext) -> dict[str, Chan
 async def _resolve_change_target(
     evidence: Mapping[str, Any], *, context: McpToolContext
 ) -> ProxmoxChangeTarget | ToolPayload:
-    """The endpoint and VM an approved reset runs against (V33).
+    """The endpoint and VM an approved reset runs against.
 
     **From the evidence, never from the arguments.** `server_ref` is a string a model supplied and
     inventory can be edited between a request and its approval; the evidence is the state the
@@ -412,7 +412,7 @@ async def _verify_password(
     password: str,
     crypt_loader: CryptLibraryLoader,
 ) -> CloudInitPasswordVerification:
-    """Is the password NOA generated the one the VM now carries? (V62, T69)
+    """Is the password NOA generated the one the VM now carries?
 
     **The library is probed once, up front, and a host without it does not poll.** Ten seconds of
     re-reading a document nobody can compare against is time an operator waits for an answer that
@@ -487,7 +487,7 @@ def _reset_outcome(
     verification: CloudInitPasswordVerification,
     yopass_url: str,
 ) -> ChangeOutcome:
-    """What the change did, read off the crypt compare (V62, T69).
+    """What the change did, read off the crypt compare.
 
     Three answers, and the middle one is §T.69:
 
@@ -500,7 +500,7 @@ def _reset_outcome(
     3. **mismatch** — the VM carries a *different* password. That is a failure, and the link still
        goes out because Proxmox accepted the write and the password may be live anyway.
 
-    The `yopass_url` is the only thing here derived from the secret (V49, C15). Nothing read out
+    The `yopass_url` is the only thing here derived from the secret. Nothing read out
     of the cloud-init dump reaches this payload: it becomes `result_summary`, and
     `noa_get_action_result` hands that to a model.
     """
@@ -604,7 +604,7 @@ def _failure_payload(
 
 
 def _common(target: ProxmoxChangeTarget) -> ToolPayload:
-    """The identifiers every answer from this runner carries. No credential material (V8)."""
+    """The identifiers every answer from this runner carries. No credential material."""
     return {
         "server": target.server_name,
         "node": target.node,

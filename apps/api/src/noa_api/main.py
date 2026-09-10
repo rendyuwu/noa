@@ -1,12 +1,12 @@
-"""FastAPI application factory (T3, T8, T13, T37).
+"""FastAPI application factory.
 
-Live surfaces: `/health` (V51), `/auth` (T8), `/action-requests` (T37) and the mounted MCP
-server at `/mcp` (T13).
+Live surfaces: `/health`, `/auth`, `/action-requests` and the mounted MCP
+server at `/mcp`.
 
 **What is built where, and why it moved.** T8 put every long-lived object in the lifespan.
 T13 splits that in two, because mounting the MCP app forces the order: `http_app()` reads
 `self.auth` when it builds the authentication middleware, and the FastAPI app needs
-`mcp_app.lifespan` at construction (R6). So the verifier — and therefore the session
+`mcp_app.lifespan` at construction. So the verifier — and therefore the session
 factory and the directory it resolves identities against — must exist *before* `FastAPI(...)`
 is called. `AppRuntime` holds those, built in `create_app`:
 
@@ -15,7 +15,7 @@ is called. `AppRuntime` holds those, built in `create_app`:
   deliberate: a liveness probe that needs Postgres cannot report "the API is up but the
   database is not".
 - `LDAPService` — holds settings and a connect factory; nothing to fail at construction.
-- `SecretCipher` — the one instance, from `NOA_SECRET_ENCRYPTION_KEY` (C7, T21). Here rather
+- `SecretCipher` — the one instance, from `NOA_SECRET_ENCRYPTION_KEY`. Here rather
   than in the lifespan because the tool context is built before `FastAPI(...)` too, and
   because construction *does* fail on a bad key: that is a boot failure, by the same rule
   `JWTService` follows below.
@@ -97,10 +97,10 @@ class AppRuntime:
     ldap_service: LDAPService
     secret_cipher: SecretCipher
     # The tool context, held rather than rebuilt: the MCP mount needs it and so does the
-    # executor's runner map (T38), and two contexts would be two worlds configured alike.
+    # executor's runner map, and two contexts would be two worlds configured alike.
     tool_context: McpToolContext
     # T37's approvals hand a started run to this; T38 filled it with the real asyncio host
-    # (V29, V30). One per app, not one per request — a per-request executor would leave nobody
+    #. One per app, not one per request — a per-request executor would leave nobody
     # holding its outstanding tasks at shutdown.
     #
     # Typed to the host, not to `ApprovedChangeExecutor`, and deliberately: the lifespan below
@@ -126,28 +126,28 @@ def build_runtime(settings: Settings) -> AppRuntime:
     """Construct one app's long-lived objects. Opens no connection (the engine is lazy)."""
     engine = create_engine(settings)
     session_factory = create_session_factory(engine)
-    # One cipher for the whole app (C7, V48). Every decrypt site takes it as an argument —
-    # there is no module-level cipher to import (T15) — so this is the only place it is built,
+    # One cipher for the whole app. Every decrypt site takes it as an argument —
+    # there is no module-level cipher to import — so this is the only place it is built,
     # and T54's admin routes will read the same one off `AppRuntime`.
     secret_cipher = SecretCipher.from_settings(settings)
     tool_context = build_mcp_tool_context(
         session_factory=session_factory,
         secret_cipher=secret_cipher,
         # V32's deadline, resolved once here rather than read again inside the gate:
-        # `get_settings()` is called in exactly one place (T5) and the CHANGE gate (T33)
+        # `get_settings()` is called in exactly one place and the CHANGE gate
         # stamps `action_requests.expires_at` from this value.
         pending_ttl_seconds=settings.approval_pending_ttl_seconds,
-        # V26's address, resolved here for the same reason: the CHANGE gate (T32) builds every
+        # V26's address, resolved here for the same reason: the CHANGE gate builds every
         # approval URL off this base, and a second `get_settings()` caller inside the gate is
         # how one deployment ends up handing out two different origins.
         embed_base_url=settings.noa_embed_base_url,
         # V64's two numbers, resolved here for the same reason as the two above: a large READ
-        # parks its rows with this lifetime and this cap (T56), and a second `get_settings()`
+        # parks its rows with this lifetime and this cap, and a second `get_settings()`
         # caller inside a tool is how two tools end up capping at two different counts.
         result_table_ttl_seconds=settings.result_table_ttl_seconds,
         result_table_max_rows=settings.result_table_max_rows,
         # C15's delivery hop, bound once here for the reason every line above is: `_yopass_store`
-        # needs three settings and there is no settings singleton to reach for (T15). Absent
+        # needs three settings and there is no settings singleton to reach for. Absent
         # `YOPASS_BASE_URL` is *not* a boot failure — the reset tool reports
         # `yopass_not_configured` when an approved change reaches delivery, which is C15's own
         # call and keeps a deployment that uses no Proxmox tools from being blocked by them.
@@ -167,25 +167,25 @@ def build_runtime(settings: Settings) -> AppRuntime:
         ldap_service=LDAPService(settings),
         secret_cipher=secret_cipher,
         tool_context=tool_context,
-        # T38's real executor (V29, V30). Constructing it starts nothing: it owns tasks only
+        # T38's real executor. Constructing it starts nothing: it owns tasks only
         # once an approval hands it a run, and `stop()` in the lifespan is what ends them.
-        # `build_change_runners` covers the CHANGE tools that exist (T22, T23) and grows with
+        # `build_change_runners` covers the CHANGE tools that exist and grows with
         # T25-T29; that it covers *every* registered one is the registry's coverage check, which
         # makes it a startup guarantee rather than a hope.
         approved_change_executor=AsyncioApprovedChangeExecutor(
             session_factory=session_factory,
             runners=build_change_runners(context=tool_context),
         ),
-        # Constructed here, started by the lifespan (T39, V32). Constructing it opens nothing
+        # Constructed here, started by the lifespan. Constructing it opens nothing
         # — like the engine above, it is inert until the lifespan says otherwise, so building
         # an app still costs no connection.
         expiry_sweeper=PendingExpirySweeper(
             session_factory=session_factory,
             interval_seconds=settings.approval_expiry_sweep_interval_seconds,
         ),
-        # The same arrangement for T38's reaper (V30). Three settings, none derived from
+        # The same arrangement for T38's reaper. Three settings, none derived from
         # another: how often it looks is a resolution, how long a run may sit STARTED is a
-        # lifetime, and how much one pass may resolve is a bound (V92). Batch over interval is
+        # lifetime, and how much one pass may resolve is a bound. Batch over interval is
         # the drain rate, which is the number `core.config` argues.
         stranded_run_reaper=StrandedRunReaper(
             session_factory=session_factory,
@@ -203,7 +203,7 @@ def build_lifespan(
 ) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
     """The app's own lifespan: publish `app.state`, then dispose the engine on shutdown.
 
-    `JWTService` is constructed inside, once (T8). A construction failure here is a boot
+    `JWTService` is constructed inside, once. A construction failure here is a boot
     failure, which is the point: a bad `AUTH_JWT_ALGORITHM`, or a secret too short for it,
     should stop the process rather than wait to surface as a 500 on someone's login.
     """
@@ -220,10 +220,10 @@ def build_lifespan(
         setattr(app.state, STATE_TOOL_LIST_NOTIFIER, runtime.tool_list_notifier)
         # T54: the *same* cipher the MCP tool path holds through `McpToolContext`, not a second
         # one built per request. A credential the admin routes encrypt and a tool decrypts has
-        # to be under one key, and one construction site is how that stays true (C7, V48).
+        # to be under one key, and one construction site is how that stays true.
         setattr(app.state, STATE_SECRET_CIPHER, runtime.secret_cipher)
 
-        # V32's terminality without traffic (T39) and V30's reaper (T38). Started here rather
+        # V32's terminality without traffic and V30's reaper. Started here rather
         # than at construction because the tasks belong to the running loop, and stopped before
         # the engine is disposed below — a pass still in flight would otherwise run against a
         # dead pool.
@@ -250,14 +250,14 @@ def build_lifespan(
 def create_app() -> FastAPI:
     """Build the FastAPI app with the MCP server mounted at `/mcp` (T13, I.mcp).
 
-    Router set still to land: the audit half of `/admin` (T55).
+    Router set still to land: the audit half of `/admin`.
 
     Three things about the mount are load-bearing:
 
     - **The verifier is built here, not in the lifespan.** `http_app()` snapshots
       `self.auth` into the authentication middleware, so an app assembled without one would
-      serve `/mcp` unauthenticated for its whole life (V1).
-    - **`combine_lifespans` runs both** (R6). The MCP app's lifespan starts the
+      serve `/mcp` unauthenticated for its whole life.
+    - **`combine_lifespans` runs both**. The MCP app's lifespan starts the
       streamable-HTTP session manager; skip it and every MCP request fails at the transport
       while `/health` looks fine.
     - **`/mcp` versus `/mcp/`.** Starlette's mount matches the sub-app at the stripped path,
@@ -269,7 +269,7 @@ def create_app() -> FastAPI:
 
     # T12's production wiring: the same session factory and directory the rest of the app
     # uses, so an operator disabled through `/admin` is refused on their next MCP call by
-    # the row this reads (V1), not by a second copy of the world. T19's tool context reads
+    # the row this reads, not by a second copy of the world. T19's tool context reads
     # that same factory for the same reason — the RBAC gate in front of every tool has to
     # see the grant an admin wrote a moment ago, not a pool of its own.
     mcp_app = build_mcp_http_app(
@@ -278,7 +278,7 @@ def create_app() -> FastAPI:
             directory=runtime.ldap_service,
             settings=runtime.settings,
         ),
-        # The runtime's own context, not a second one built here (T38): the executor's runner
+        # The runtime's own context, not a second one built here: the executor's runner
         # map is derived from it too, and two contexts would be two worlds configured alike —
         # the failure mode `AppRuntime` exists to prevent one field over.
         tool_context=runtime.tool_context,
@@ -297,15 +297,15 @@ def create_app() -> FastAPI:
 
     install_error_handling(app)
     app.include_router(auth_router)
-    # The only writer of a terminal `action_requests.status` (T37, V22, V28). On the FastAPI
+    # The only writer of a terminal `action_requests.status`. On the FastAPI
     # side of the app deliberately: it is reached by a cookie POST from a NOA-origin
     # document, never through the MCP mount below.
     app.include_router(action_requests_router)
-    # The large-READ table surface (T56, V64). Read-only and cookie-authenticated, beside the
+    # The large-READ table surface. Read-only and cookie-authenticated, beside the
     # decision routes rather than inside them: a parked listing has nothing to authorise, and
     # the service behind this one can write nothing at all.
     app.include_router(result_tables_router)
-    # Admin user management (T51, I.admin-api). Every route behind `require_admin` (V13) and
+    # Admin user management (T51, I.admin-api). Every route behind `require_admin` and
     # therefore behind V6's row re-read: the panel's own surface, never the LLM's — the MCP mount
     # below cannot reach it, and this router holds no tool.
     app.include_router(admin_users_router)
@@ -316,11 +316,11 @@ def create_app() -> FastAPI:
     # MCP token management (T53, I.admin-api). The routes that issue the credential §I.mcp's
     # whole surface authenticates with — so they are the one admin surface whose output is a
     # secret, and the reason `MintedTokenResponse` is the only model in this app carrying a
-    # plaintext (V2).
+    # plaintext.
     app.include_router(admin_tokens_router)
     # The self-service half of the same pair. Behind `require_session_user` rather than
     # `require_admin`: the id it acts on is the session's, never the request's, so an operator
-    # can reach their own credentials and no one else's (V6).
+    # can reach their own credentials and no one else's.
     app.include_router(me_tokens_router)
     # Server inventory: WHM, Proxmox, PMG (T54, I.admin-api). Three routers because they are
     # three tables, one module because they share the validate answer shape and the field
@@ -332,7 +332,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_proxmox_servers_router)
     app.include_router(admin_pmg_servers_router)
     # The audit trail (T55, I.admin-api). Reads `tool_runs` and nothing else — the writers are
-    # the MCP tool path (T73) and the approval executor (T37, T38), all on the far side of V22's
+    # the MCP tool path and the approval executor, all on the far side of V22's
     # boundary, and the service this router holds has no `commit` to write with. It closes V45's
     # last clause: the rows have existed since T73 and until now nothing could ask about them.
     app.include_router(admin_audit_router)
@@ -348,7 +348,7 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health() -> dict[str, str]:
-        """Liveness probe (V51). No dependencies: it must answer with Postgres down."""
+        """Liveness probe. No dependencies: it must answer with Postgres down."""
         return {"status": "ok"}
 
     # Mounted last: the sub-app has no NOA exception handlers and no OpenAPI presence, so

@@ -1,4 +1,4 @@
-"""`McpIdentityResolver` policy over in-memory doubles (T11 — C5, C20, V1, V2, V3, V4).
+"""`McpIdentityResolver` policy over in-memory doubles.
 
 `test_mcp_identity_repository.py` covers the SQL and `test_mcp_token_verifier.py` covers the
 fastmcp adapter. Everything here is about the rules: which gate closes first, what TOFU
@@ -132,7 +132,7 @@ async def test_token_is_dead_at_its_expiry_instant() -> None:
 
 
 async def test_a_non_expiring_token_resolves() -> None:
-    """Default mint leaves `expires_at` NULL — live until the row is deleted (V2)."""
+    """Default mint leaves `expires_at` NULL — live until the row is deleted."""
     fixture = build_resolver()
     plaintext, _ = fixture.repository.add_token(expires_at=None)
 

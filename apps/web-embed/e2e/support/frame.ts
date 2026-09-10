@@ -8,7 +8,7 @@ import { CHAT_ORIGIN, MEASURED_SANDBOX, UPSTREAM_ORIGIN } from '../../playwright
  * Shared by the browser lanes that need a framed card — the decision path (`approvals`) and the 401
  * state (`sign-in`) — because they need the *same* frame: the same parent origin, the same sandbox
  * string, the same session cookie. Two copies of this setup would be two frames free to drift apart,
- * and a spec measuring a frame LibreChat does not serve measures nothing (V66).
+ * and a spec measuring a frame LibreChat does not serve measures nothing.
  *
  * Not a `*.e2e.ts` file, so Playwright's `testMatch` leaves it alone.
  */
@@ -44,7 +44,7 @@ export function pendingId(suffix: string): string {
  *
  * Here rather than in one spec file because both frame-size lanes pin it — the table's and the
  * card's — and a second copy would be a second number free to drift from the one the sizing is
- * actually measured against (V66).
+ * actually measured against.
  */
 export const HOST_OPENING_HEIGHT = 150
 
@@ -167,7 +167,7 @@ export function cardBody(card: FrameLocator) {
  *
  * Scoped to `localhost`, not `.noa.internal`: a browser will not accept the real domain for a
  * localhost document, and asserting it anyway would be a check that cannot fail. The
- * registrable-domain scoping is the API's setting (V40) and is asserted API-side; what belongs here
+ * registrable-domain scoping is the API's setting and is asserted API-side; what belongs here
  * is that the browser's cookie for this origin reaches NOA.
  */
 export async function signIn(context: BrowserContext): Promise<void> {

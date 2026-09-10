@@ -147,7 +147,7 @@ target:  whm_suspend_account(server, username, reason)     1 tool, preflight run
 ### 3.1 Why this is the only lever available
 
 The old repo solved context bloat with dynamic relevance gating — `tool_selection.py`, 535 LOC.
-That approach is **dead under MCP**, and the old SPEC already recorded why (V177):
+That approach is **dead under MCP**, and the old SPEC already recorded why:
 `select_tools_for_turn(messages, registry)` needs the latest user message per turn, but MCP
 `tools/list` is per-connection and never sees user messages. Unimplementable.
 
@@ -314,7 +314,7 @@ Re-adding any of them is a policy decision, not a technical one.
 - `whm_change_primary_domain` — note the sunk cost: T45/T46 removed DNS-zone verification and
   dropped the `cpanel-api` ACL dependency for security. That work dies with the tool.
 - `proxmox_move_vms_between_pools` ("Change Email PIC") — heaviest schema (1,995 ch), most-fixed
-  workflow (B8/B11/B12/B13). Its preflight and `proxmox_get_user_by_email` die with it.
+  workflow. Its preflight and `proxmox_get_user_by_email` die with it.
 - `whm_check_binary_exists` — build-time test tool, never real usage.
 - `whm_firewall_denylist_add_ttl` — **owner reversed course 2026-08-04**: manually adding an IP to
   the denylist is not part of the workflow. CSF and Imunify already auto-deny spam sources. The
@@ -552,7 +552,7 @@ as inert `sandbox=""` srcDoc.
 ### 7.3 Net effect on plan
 
 - Nothing in §§3–6 changes. Tool granularity, single repo, and the tool surface all stand.
-- The P1 spike list from the old SPEC (T98–T104) is **still required**, and T98's upgrade checklist
+- The P1 spike list from the old SPEC is **still required**, and T98's upgrade checklist
   is now urgent rather than hypothetical: pin an exact LibreChat commit, and on every bump
   re-verify (a) no mcp-ui proxy at any render site, (b) `text/uri-list` still maps to `src` mode.
 - ~~Add a spike: confirm LibreChat's merged HITL gate stays **out of the path** for NOA tools.~~

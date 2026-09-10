@@ -1,12 +1,12 @@
-"""Refusals from the CHANGE approval gate and from a decision on one (T33, T37, T38).
+"""Refusals from the CHANGE approval gate and from a decision on one.
 
 **Two trees, not one**, and the split is who is being refused.
 
-`ChangeGateError` (T33 — C8, V17, V22, V43, V73) is raised on the MCP tool path, before a
+`ChangeGateError` is raised on the MCP tool path, before a
 change has been submitted for approval at all. Every message in it ends in "nothing was
 changed", and the base maps to 503.
 
-`ActionDecisionError` (T37, T38 — V15, V27, V28, V31, V32, V39) is raised on the HTTP decision
+`ActionDecisionError` is raised on the HTTP decision
 path, against a request that already exists. Sharing one tree would mean an operator whose
 approval arrived a minute late reading "this change could not be submitted for approval",
 which is a sentence about a different moment, and would put a 404 and a 409 under a base
@@ -22,18 +22,18 @@ about it:
   boundary be crossed from the inside.
 - `ChangeEvidenceRequiredError` — the gate was opened with no in-process preflight evidence
   (V17), so the approval card would ask an operator to authorise a change it cannot
-  describe (V35).
+  describe.
 - `ChangeGateBranchUnavailableError` — the request was written and then the approval surface
-  could not be shaped, because NOA selected one of V24's branches it has not built (T32).
+  could not be shaped, because NOA selected one of V24's branches it has not built.
 
-`NoaError` rather than a bare exception for the usual two reasons (V73): `sanitize_tool_errors`
+`NoaError` rather than a bare exception for the usual two reasons: `sanitize_tool_errors`
 passes a `NoaError`'s own `error_code` through to the model instead of collapsing it into
-`tool_execution_failed` (V19), so the code that names the fix survives the boundary; and
+`tool_execution_failed`, so the code that names the fix survives the boundary; and
 `noa_api.api.errors` maps every class here to a status, so T37's endpoints raise rather than
 build responses. All of them are mapped explicitly — a subclass-tree test per tree asserts
 none falls through to the 503 default.
 
-Messages are operator-safe (V8): they say what NOA declined to do, never which column, key
+Messages are operator-safe: they say what NOA declined to do, never which column, key
 or argument was involved. That detail rides in `detail`, which is logs only.
 
 One of these messages is read by an operator staring at an approval card, so they say what
@@ -53,7 +53,7 @@ class ChangeGateError(NoaError):
 
 
 class ChangeGateUnavailableError(ChangeGateError):
-    """The pending request could not be written (T33, V23).
+    """The pending request could not be written.
 
     Fail-closed, and the same argument T73(c) made for the opening `tool_runs` write: V23
     answers "may this run?" from a row, so a gate that let the tool proceed without one
@@ -68,7 +68,7 @@ class ChangeGateUnavailableError(ChangeGateError):
 
 
 class ChangeReasonForbiddenError(ChangeGateError):
-    """A gate call carried an argument that reads as a reason (C8, V15, V43).
+    """A gate call carried an argument that reads as a reason.
 
     The reason is born when an operator types it into the approval card and nowhere else.
     A CHANGE tool whose arguments carry one has either accepted a reason from the model or
@@ -85,7 +85,7 @@ class ChangeReasonForbiddenError(ChangeGateError):
 
 
 class ChangeEvidenceRequiredError(ChangeGateError):
-    """A gate call carried no preflight evidence (C9, V17, V33, V35).
+    """A gate call carried no preflight evidence.
 
     C9 puts the preflight in-process inside the CHANGE call precisely so the card can show a
     before-state the model never touched. A gate opened without one produces a card that
@@ -100,7 +100,7 @@ class ChangeEvidenceRequiredError(ChangeGateError):
 
 
 class ChangeGateBranchUnavailableError(ChangeGateError):
-    """The approval surface was asked for in a branch NOA has not built (T32, V24).
+    """The approval surface was asked for in a branch NOA has not built.
 
     V24 gives `build_change_gate_response()` three branches — link-out text, UI resource, and
     elicitation — and only the first two exist. The third is declared rather than omitted so
@@ -108,7 +108,7 @@ class ChangeGateBranchUnavailableError(ChangeGateError):
     refuse rather than fall through to something that *looks* like an approval surface.
 
     Not reachable from anything a client sends: the branch is a module constant selected by
-    T59's live run (R29), never a tool argument. Reaching this means NOA's own wiring points
+    T59's live run, never a tool argument. Reaching this means NOA's own wiring points
     at a branch with no implementation behind it, which is why the message says nothing about
     branches — an operator can do nothing with that word.
 
@@ -126,7 +126,7 @@ class ChangeGateBranchUnavailableError(ChangeGateError):
 
 
 class ActionDecisionError(NoaError):
-    """Base: a decision on an existing request was refused (T37, T38 — V15, V27, V28, V31, V32).
+    """Base: a decision on an existing request was refused.
 
     Sibling of `ChangeGateError`, not a subclass — see the module docstring. Nothing raises
     this class directly; it exists so `noa_api.api.errors` can map the tree and so a
@@ -138,7 +138,7 @@ class ActionDecisionError(NoaError):
 
 
 class ActionRequestNotFoundError(ActionDecisionError):
-    """No such request, *or* not this operator's (V27).
+    """No such request, *or* not this operator's.
 
     One class for both, because V27 makes a mismatch a 404 rather than a 403: an operator
     who is told "forbidden" has been told the request exists. The requester-match is the
@@ -146,7 +146,7 @@ class ActionRequestNotFoundError(ActionDecisionError):
     the decider is the requester), so "yours and absent" and "someone else's" have to be
     indistinguishable from outside, down to the response body.
 
-    The requester FK is `SET NULL` (T34), so a deleted operator's request matches nobody and
+    The requester FK is `SET NULL`, so a deleted operator's request matches nobody and
     lands here too. That is the fail-closed direction.
 
     **A third cause joined these two on the admin side** (§I.admin-api's `/admin/action-requests`
@@ -154,7 +154,7 @@ class ActionRequestNotFoundError(ActionDecisionError):
     requester-match, so nothing there is being hidden — the shared 404 is there because a 422
     would describe what the path validator accepts rather than what exists, which is the call
     T63(e) made for `noa_get_action_result`. Same class rather than a second code, because "no
-    such approval request" is one fact and two spellings of it would be one that can drift (V66).
+    such approval request" is one fact and two spellings of it would be one that can drift.
     """
 
     error_code: str = "action_request_not_found"
@@ -180,7 +180,7 @@ class ActionReceiptNotFoundError(ActionDecisionError):
 
 
 class ActionRequestAlreadyDecidedError(ActionDecisionError):
-    """The request left PENDING before this decision reached the lock (V28).
+    """The request left PENDING before this decision reached the lock.
 
     V28 permits exactly one `pending → decided` transition. The loser of a double-click gets
     this, and so does a second operator's tab that had the card open — the first answer
@@ -195,7 +195,7 @@ class ActionRequestAlreadyDecidedError(ActionDecisionError):
 
 
 class ActionRequestExpiredError(ActionDecisionError):
-    """The request's TTL passed before anyone answered (V32).
+    """The request's TTL passed before anyone answered.
 
     Raised by the decision path's check-on-read, which also makes the row terminal rather
     than leaving something that still reads PENDING. Distinct from
@@ -208,7 +208,7 @@ class ActionRequestExpiredError(ActionDecisionError):
 
 
 class ChangeReasonRequiredError(ActionDecisionError):
-    """A decision arrived without the operator's reason (C8, V15).
+    """A decision arrived without the operator's reason.
 
     V15 names both the status and this code: a decision without a non-blank reason is a 409
     `change_reason_required`, and the gate is *this endpoint* — not the tool call, which
@@ -224,7 +224,7 @@ class ChangeReasonRequiredError(ActionDecisionError):
 
 
 class ChangeExecutionLimitReachedError(ActionDecisionError):
-    """The operator already has their allowance of changes running (V31, T38).
+    """The operator already has their allowance of changes running.
 
     409, and the same reading as `ActionRequestAlreadyDecidedError`: the caller may approve
     changes in general, just not one more right now. Not a 429 — nothing is rate-limiting the
@@ -248,7 +248,7 @@ class ChangeExecutionLimitReachedError(ActionDecisionError):
 
 
 class DecisionCsrfInvalidError(ActionDecisionError):
-    """The decision POST carried no valid CSRF token (V22, V39).
+    """The decision POST carried no valid CSRF token.
 
     403 rather than 401: the session is fine and re-authenticating changes nothing. The
     token is missing, malformed, minted for a different operator or a different request, or

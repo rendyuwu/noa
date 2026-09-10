@@ -4,14 +4,14 @@
  * **A JS `fetch`, never a form submit.** V80 is not a style preference: the sandbox LibreChat
  * renders this frame under was measured at pin `45cc53c4` and is `allow-scripts
  * allow-same-origin` (plus `allow-popups` on one of the two render sites) with **`allow-forms`
- * absent** (R13, R29). A native `<form>` submit therefore dies silently inside the frame — no
+ * absent**. A native `<form>` submit therefore dies silently inside the frame — no
  * error, no request, an operator clicking a button that does nothing. A same-origin `fetch` was
  * measured returning 200 from inside that same frame, with the `noa_session` cookie riding.
  *
  * **Same-origin, so the cookie rides and there is no CORS surface.** The path is this app's
  * `/api/*` proxy (§T.44), whose allowlist already carries both decision routes; the proxy adds the
  * hop to the API server-side. `credentials: 'same-origin'` is the default and is stated anyway,
- * because it is the whole mechanism (V22, V40).
+ * because it is the whole mechanism.
  *
  * **The reason is not validated here.** V15 puts the gate on the endpoint — a blank reason is a
  * 409 `change_reason_required` from the API, under a row lock, checked against the same rule the
@@ -24,7 +24,7 @@ import type { DecisionOutcome } from '@/lib/approvals/outcome'
 
 export type DecisionKind = 'approve' | 'deny'
 
-/** Body shape the API expects (§I.embed). Two fields, and neither is a status (V23). */
+/** Body shape the API expects (§I.embed). Two fields, and neither is a status. */
 type DecisionBody = {
   reason: string
   csrf: string
@@ -78,7 +78,7 @@ export async function submitDecision(input: {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
-      // The mechanism, stated: the cookie is what authenticates this (V22, V40).
+      // The mechanism, stated: the cookie is what authenticates this.
       credentials: 'same-origin',
       cache: 'no-store',
     })

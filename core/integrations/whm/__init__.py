@@ -1,4 +1,4 @@
-"""WHM/cPanel integration layer (T16).
+"""WHM/cPanel integration layer.
 
 Copied from `noa-old` branch `MCP` (`noa_api/whm/integrations/`) rather than rewritten
 (C13, V69). Two transports to one server, because WHM splits its surface across them:
@@ -10,28 +10,28 @@ Copied from `noa-old` branch `MCP` (`noa_api/whm/integrations/`) rather than rew
 Modules, one job each:
 
 - `errors`       — `WHMFirewallCLIError` with `CSFCLIError` / `ImunifyCLIError` under it, all
-                   `NoaError` so the one shared handler shapes them (V73).
+                   `NoaError` so the one shared handler shapes them.
 - `client`       — `WHMClient` + `build_whm_client_from_creds`. Normalises WHM's HTTP-200
                    failures into stable `error_code` strings.
 - `accounts`     — pure shaping: a `listaccts` row → the fields NOA speaks about, plus the
-                   search predicate (T21). Shared by T20-T23, hence `core/` (V66).
+                   search predicate. Shared by T20-T23, hence `core/`.
 - `ssh`          — `whm_servers` row → pinned `SSHConnectionConfig`, with the three refusals
                    that happen before a socket opens.
-- `csf`          — pure parsing: target classification (V54) and `csf -g` verdicts.
+- `csf`          — pure parsing: target classification and `csf -g` verdicts.
 - `csf_cli`      — build and run `/usr/sbin/csf` over SSH.
 - `imunify`      — pure parsing: `ip-list` responses.
 - `imunify_cli`  — build and run `imunify360-agent`, decode its `--json`.
 - `availability` — is each backend usable here? The `asyncio.gather` dual probe behind V57.
 - `firewall_gate` — the one door from that answer to acting on it: zero usable backends is
-                   `no_firewall_backend`, never an empty success (T68, V57).
+                   `no_firewall_backend`, never an empty success.
 
 Nothing here reaches for global state. A `SecretCipher` is injected wherever credentials are
 decrypted (C7 — there is no settings singleton in this repo), and **the SSH side takes a
-resolved `SSHConnectionConfig`, not a `whm_servers` row** (T24): `resolve_whm_ssh_config` is
+resolved `SSHConnectionConfig`, not a `whm_servers` row**: `resolve_whm_ssh_config` is
 called once by the caller, inside its database session, and every command and probe below runs
-off that value. `core.remote_exec.sudo` reads the `sudo -n` decision from the same config (V55).
+off that value. `core.remote_exec.sudo` reads the `sudo -n` decision from the same config.
 
-Consumers: the WHM tools (T19-T26), and the admin server CRUD + validate routes (T54).
+Consumers: the WHM tools, and the admin server CRUD + validate routes.
 Reference doc: `docs/integrations/whm.md`.
 
 Not ported from `MCP`, each for a stated reason (see the module docstrings): the per-reseller

@@ -1,4 +1,4 @@
-"""`SQLMcpIdentityRepository` against a live database (T11 — C20, V1, V2, V3, V4).
+"""`SQLMcpIdentityRepository` against a live database.
 
 `test_mcp_identity_resolver.py` covers policy with in-memory doubles; this covers the SQL.
 Anything asserted here is something a fake cannot tell you: that the join really reads
@@ -10,7 +10,7 @@ A scratch database is created, migrated with `alembic upgrade head`, and dropped
 (never failed) when Postgres is unreachable, exactly as the other repository tests do.
 
 One end-to-end case sits at the bottom: the real `McpIdentityResolver` over this repository
-and a real minted token, so a mint (T10) and a verify (T11) are proved to agree on the
+and a real minted token, so a mint and a verify are proved to agree on the
 digest against real SQL rather than only against a double.
 """
 
@@ -202,7 +202,7 @@ async def test_bind_will_not_overwrite_an_existing_binding(
     """The compare-and-set: `WHERE librechat_user_id IS NULL` is what closes the race.
 
     The loser of two concurrent first calls gets the winner's value back and the resolver
-    turns that into a mismatch (V3) — a read-then-write in Python could not.
+    turns that into a mismatch — a read-then-write in Python could not.
     """
     user = await make_user(session, EMAIL)
     _, view = await make_token(session, user, librechat_user_id=LIBRECHAT_USER)
@@ -279,7 +279,7 @@ async def test_delete_for_an_operator_with_no_tokens_is_zero(
 async def test_commit_makes_a_binding_visible_to_another_session(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """The verify path owns its transaction, so `commit()` has to be real (T11).
+    """The verify path owns its transaction, so `commit()` has to be real.
 
     Without it a binding would live only inside `verify_token`'s session and vanish, and
     every request would look like a first use — TOFU that never pins anything.
@@ -299,13 +299,13 @@ async def test_commit_makes_a_binding_visible_to_another_session(
         assert stored.scalar_one() == LIBRECHAT_USER
 
 
-# --- End to end over real SQL: mint (T10) then verify (T11) ---
+# --- End to end over real SQL: mint then verify ---
 
 
 async def test_a_minted_token_resolves_and_binds_over_real_sql(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """T10 and T11 agree on the digest, and TOFU pins on the first call (C20, V2, V3)."""
+    """T10 and T11 agree on the digest, and TOFU pins on the first call."""
     async with session_factory() as session:
         user = await make_user(session, EMAIL)
         minted = await McpTokenService(

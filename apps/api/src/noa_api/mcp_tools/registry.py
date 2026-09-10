@@ -6,19 +6,19 @@ what makes three properties checkable instead of hoped for:
 - **Every exposed name is in `TOOL_CATALOG`.** RBAC grants are written against that catalog
   (T9), so a tool registered under a name outside it is a capability no role can be granted
   — and one the `admin` bypass would still reach, because the bypass hands out "every known
-  tool" and the execution check only rejects names the catalog does not know (V10). The
+  tool" and the execution check only rejects names the catalog does not know. The
   check below turns that into a startup failure rather than a permission surprise.
 - **C22's never-implement names cannot appear.** They are absent from `TOOL_CATALOG`
   (`core.auth.tool_catalog`), so the same check refuses them. That is a management-policy
   boundary, not a technical one: re-adding one is an owner decision, and it should not be
   possible to do it by accident while wiring a tool.
-- **Every exposed name has a declared `ToolRisk`** (T73, V20). The return value is a mapping
+- **Every exposed name has a declared `ToolRisk`**. The return value is a mapping
   rather than a set for exactly this: `ToolRunAuditMiddleware` stamps `risk` on the audit row
-  and skips CHANGE tools, whose row belongs to the post-approval executor (T38, V46). A
+  and skips CHANGE tools, whose row belongs to the post-approval executor. A
   default would make a CHANGE tool that nobody remembered to classify record itself as a
   READ *and* write a row for a change that has not happened — silently, and in the audit
   trail. Declaring the risk beside the tool means a registrar cannot omit it.
-- **Every CHANGE name has a runner** (T38, V46). A CHANGE tool can open an approval request
+- **Every CHANGE name has a runner**. A CHANGE tool can open an approval request
   without being able to execute one: the two halves live in different modules and run at
   different moments (`noa_api.mcp_tools.change_runners`). Registered without a runner, the tool
   would produce a card an operator could approve and NOA could only answer
@@ -35,7 +35,7 @@ and it is closed by a test rather than trusted: `test_mcp_tool_rbac.py` asserts 
 `server.list_tools()` names equal these keys, so a registrar that under- or over-reports
 fails there.
 
-Registration order does not matter — `tools/list` is filtered per user (V1) and sorted by
+Registration order does not matter — `tools/list` is filtered per user and sorted by
 the client — so tools are grouped by system for reading.
 """
 
@@ -63,8 +63,8 @@ from noa_api.mcp_tools.whm_read import register_whm_read_tools
 
 
 class RegistryError(RuntimeError):
-    """A tool was registered under a name the catalog does not know (V10, C22), or a CHANGE
-    tool was registered with nothing able to run it after approval (T38, V46)."""
+    """A tool was registered under a name the catalog does not know, or a CHANGE
+    tool was registered with nothing able to run it after approval."""
 
 
 def register_mcp_tools(server: FastMCP, *, context: McpToolContext) -> dict[str, ToolRisk]:
@@ -87,7 +87,7 @@ def register_mcp_tools(server: FastMCP, *, context: McpToolContext) -> dict[str,
 
 
 def assert_names_in_catalog(names: frozenset[str]) -> None:
-    """Refuse an uncatalogued tool name (V10, C22)."""
+    """Refuse an uncatalogued tool name."""
     unknown = sorted(names - TOOL_CATALOG)
     if unknown:
         raise RegistryError(
@@ -99,7 +99,7 @@ def assert_change_runners_cover(
     registered: Mapping[str, ToolRisk],
     runners: Mapping[str, ChangeRunner],
 ) -> None:
-    """Refuse a CHANGE tool that nothing can execute after approval (T38, V46).
+    """Refuse a CHANGE tool that nothing can execute after approval.
 
     A startup failure rather than a runtime one, for the reason the catalog check above is: the
     consequence otherwise lands on an operator who has already typed a reason and pressed

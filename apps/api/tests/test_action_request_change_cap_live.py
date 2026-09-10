@@ -1,4 +1,4 @@
-"""V31's per-user cap on in-flight changes, against a real Postgres (T38 — V31, V87, V89).
+"""V31's per-user cap on in-flight changes, against a real Postgres.
 
 The cap counts `tool_runs` rows that are `CHANGE` and `STARTED` for one requester, and an
 advisory lock taken inside the counting transaction is what makes it hold. Neither half is
@@ -16,7 +16,7 @@ requires: the window is held open on purpose, the assertion is on *order* rather
 count, and the control shows the forbidden order is reachable once the lock is gone.
 
 Row helpers come from `support.action_decisions` and the scratch-database fixtures from
-`support.database` (V66).
+`support.database`.
 
 Skipped, never failed, when Postgres is unreachable — like every other DB-backed test here.
 """
@@ -70,7 +70,7 @@ async def factory(database_url: str) -> AsyncIterator[async_sessionmaker[AsyncSe
 
 
 # --------------------------------------------------------------------------------------
-# V31 — the per-user cap, and the lock that makes it hold (T38, V89)
+# V31 — the per-user cap, and the lock that makes it hold
 # --------------------------------------------------------------------------------------
 
 
@@ -78,7 +78,7 @@ async def test_the_cap_counts_a_started_change_run(factory) -> None:
     """V31, sequentially: one change in flight, a limit of one, and the second is refused.
 
     The count is `tool_runs` rows that are `CHANGE` and `STARTED` — which is what "in flight"
-    means when the executor has not written a terminal status yet (T38). Two requests, because a
+    means when the executor has not written a terminal status yet. Two requests, because a
     second approval of the *same* request is V28's 409 and would pass this test for the wrong
     reason.
     """
@@ -108,7 +108,7 @@ async def test_the_cap_counts_a_started_change_run(factory) -> None:
 
 
 async def test_a_finished_change_frees_the_operators_slot(factory) -> None:
-    """The negative control for the cap (V87): it must let go.
+    """The negative control for the cap: it must let go.
 
     A cap that counted every change an operator ever made would refuse the second approval
     forever, and this test would be the only thing that noticed.
@@ -125,7 +125,7 @@ async def test_a_finished_change_frees_the_operators_slot(factory) -> None:
             reason=REASON,
         )
 
-    # What the executor does when the change finishes (T38).
+    # What the executor does when the change finishes.
     async with factory() as session:
         runs = SQLToolRunRepository(session)
         await runs.finish_run(
@@ -170,7 +170,7 @@ async def test_another_operators_change_does_not_spend_this_ones_allowance(facto
 
 
 async def test_two_overlapping_approvals_by_one_operator_start_one_run(factory) -> None:
-    """V31 under concurrency, proven overlapped (V89, B5).
+    """V31 under concurrency, proven overlapped.
 
     **Why V28's row lock does not cover this.** Two approvals of *different* requests never
     touch each other's rows, so `SELECT … FOR UPDATE` serializes nothing between them. Both read

@@ -1,4 +1,4 @@
-"""Settings guards (T5).
+"""Settings guards.
 
 Every test builds `Settings` explicitly with `_env_file=None` so the developer's
 own `.env` cannot change the outcome.
@@ -24,7 +24,7 @@ from core.config import (
     resolve_env_file,
 )
 
-# The two operator-facing addresses a production deployment has to state (V95), and the field
+# The two operator-facing addresses a production deployment has to state, and the field
 # each one sets. Kept as a pair so the guard's coverage and the tests' coverage move together.
 PROD_EMBED_BASE_URL = "https://embed.noa.internal"
 PROD_API_URL = "https://noa.internal"
@@ -42,13 +42,13 @@ PROD_REQUIRED = {
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-# The Fernet key's name, written once (T67). The field guard below asserts `Settings` calls it
+# The Fernet key's name, written once. The field guard below asserts `Settings` calls it
 # this, and the doc guard asserts `.env.example` and `README.md` say the same — so a rename
 # edits this line and then has to edit both documents to get back to green.
 ENCRYPTION_KEY_FIELD = "noa_secret_encryption_key"
 ENCRYPTION_KEY_ENV_VAR = ENCRYPTION_KEY_FIELD.upper()
 
-# The name T67 rejects: the key encrypts server credentials, not the database (C7).
+# The name T67 rejects: the key encrypts server credentials, not the database.
 LEGACY_ENCRYPTION_KEY_FIELD = "noa_db_secret_key"
 
 # Files that carry the rejected name legitimately, because their subject is the prohibition:
@@ -187,7 +187,7 @@ def test_short_jwt_secret_allowed_in_dev() -> None:
 
 
 def test_encryption_key_generated_in_dev_is_valid_fernet() -> None:
-    """V52: generated in dev, and actually round-trips (C7)."""
+    """V52: generated in dev, and actually round-trips."""
     key = build(environment="development").secret_encryption_key
     cipher = Fernet(key.encode())
 
@@ -264,7 +264,7 @@ def test_explicit_addresses_boot_in_production() -> None:
 
 
 def test_dev_default_addresses_boot_in_development() -> None:
-    """The negative control (V87): without it, "it raised" is all the suite knows.
+    """The negative control: without it, "it raised" is all the suite knows.
 
     A guard that refused the localhost address in *every* environment would pass the two tests
     above and break a fresh clone — the case that has to stay green is this one.
@@ -385,7 +385,7 @@ def test_samesite_none_without_secure_rejected_in_dev() -> None:
 
 
 def test_samesite_none_allowed_when_secure() -> None:
-    """The attribute itself is legitimate — the embed path may need it (C17, C18)."""
+    """The attribute itself is legitimate — the embed path may need it."""
     settings = build_production(auth_session_cookie_samesite="none")
 
     assert settings.session_cookie_kwargs()["samesite"] == "none"

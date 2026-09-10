@@ -22,7 +22,7 @@ import {
  * both strings rather than trusting either.
  *
  * **The allow-popups case is the negative control.** Without it, "no tab opened" would pass just as
- * well against a link that is simply broken (V87).
+ * well against a link that is simply broken.
  *
  * **And the retry is asserted as a non-navigation.** §T.43 forbids an LDAP redirect inside the
  * iframe, which is an absence: the assertion is that the framed document is still on the card's URL
@@ -84,13 +84,13 @@ test('the sign-in link opens nothing where the sandbox omits allow-popups (§T.4
   await expect(cardBody(card)).toContainText(SIGN_IN_URL)
 })
 
-test('the same click does open a top-level tab where allow-popups is granted (V87)', async ({
+test('the same click does open a top-level tab where allow-popups is granted', async ({
   page,
   context,
 }) => {
   // The negative control for the spec above, and the reason it means anything: without it, "no tab
   // opened" passes just as well against a link that is simply broken. `MCPUIResource` — LibreChat's
-  // other render site — frames the card under this string (R13, R29).
+  // other render site — frames the card under this string.
   const card = await frameCard(page, APPROVAL_IDS.unauthorized, POPUP_SANDBOX)
 
   const opened = context.waitForEvent('page')
@@ -141,7 +141,7 @@ test('Try again picks the session up without leaving the card URL (§T.43 — V4
 }) => {
   // §T.43's ⊥ clause, asserted: no LDAP redirect inside the iframe. The operator signs in somewhere
   // else, comes back, clicks once — and the frame is still the document it was, on the URL that owns
-  // this request's lifecycle (V34).
+  // this request's lifecycle.
   const id = APPROVAL_IDS.recovers
   const card = await frameCard(page, id)
   const cardUrl = `${EMBED_ORIGIN}/approvals/${id}`

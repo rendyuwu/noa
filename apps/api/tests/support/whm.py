@@ -1,4 +1,4 @@
-"""Doubles for the WHM integration layer (T16).
+"""Doubles for the WHM integration layer.
 
 What is left here is the WHM-specific part: a `whm_servers`-shaped row. Everything else these
 tests reach for is shared, and lives where its name is honest (V66, the same reason

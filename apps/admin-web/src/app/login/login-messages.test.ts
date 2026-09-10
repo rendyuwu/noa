@@ -30,7 +30,7 @@ describe('loginErrorMessage', () => {
     )
   })
 
-  it('never carries the backend detail into operator-facing copy (V8)', () => {
+  it('never carries the backend detail into operator-facing copy', () => {
     // `detail` is a log-line diagnostic (V8: body = error_code + message + request_id). On the
     // credential path it can name the account or the bind failure, so no branch may echo it.
     const codes = [
@@ -47,7 +47,7 @@ describe('loginErrorMessage', () => {
     }
   })
 
-  it('separates a pending account from a wrong password (V7)', () => {
+  it('separates a pending account from a wrong password', () => {
     // The credentials were right and the account exists; V7 provisions it `is_active=False`. This
     // one names a state an administrator has to clear, not a field an attacker can probe.
     expect(loginErrorMessage(withCode('user_pending_approval', 403)).title).toBe(
@@ -55,7 +55,7 @@ describe('loginErrorMessage', () => {
     )
   })
 
-  it('separates rate limiting (V9) and an LDAP outage (V4) from both', () => {
+  it('separates rate limiting and an LDAP outage from both', () => {
     expect(loginErrorMessage(withCode('login_rate_limited', 429)).title).toBe('Too many attempts')
     expect(loginErrorMessage(withCode('authentication_service_unavailable', 503)).title).toBe(
       'Sign-in unavailable',
@@ -71,7 +71,7 @@ describe('loginErrorMessage', () => {
     })
   })
 
-  it('does not answer the vague credential copy for every input (V87)', () => {
+  it('does not answer the vague credential copy for every input', () => {
     // The negative control for the two "separates" specs: a mapper that returned INVALID always
     // would satisfy the first three cases in this file.
     const distinct = new Set(

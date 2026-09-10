@@ -1,4 +1,4 @@
-"""A WHM `/json-api/` endpoint, doubled at the socket (T21).
+"""A WHM `/json-api/` endpoint, doubled at the socket.
 
 `httpx.MockTransport` rather than a fake `WHMClient`, for the reason `build_whm_client_from_creds`
 takes a `transport` at all: the client's job is normalising WHM's answers — HTTP 200 with
@@ -10,7 +10,7 @@ It also keeps the credential path live. The request is captured, so a test can a
 the one decrypt site all run, and the only thing replaced is the network.
 
 Separate from `support/servers.py` (rows and repositories) and separate from `support/whm.py`,
-whose surface `test_support_layout.py` pins to `FakeWHMServer` alone (T72) — this is the WHM
+whose surface `test_support_layout.py` pins to `FakeWHMServer` alone — this is the WHM
 *API*, not a WHM row.
 """
 
@@ -24,7 +24,7 @@ import httpx
 # What `listaccts` wraps its rows in: `{"data": {"acct": [...]}}` under a success `metadata`.
 LISTACCTS_PATH = "/json-api/listaccts"
 
-# The account CHANGE endpoints (T22, T23). Named here beside the read so a test asserting "the
+# The account CHANGE endpoints. Named here beside the read so a test asserting "the
 # gate ran nothing" can count requests to *this* path rather than to WHM in general.
 SUSPENDACCT_PATH = "/json-api/suspendacct"
 UNSUSPENDACCT_PATH = "/json-api/unsuspendacct"
@@ -106,7 +106,7 @@ class FakeWHMApi:
     """A `MockTransport` answering `/json-api/*`, with every request recorded.
 
     `body` is the default answer for any path. `scripted` overrides it per path with a queue,
-    which is what a CHANGE workflow needs (T22): one endpoint answers *differently* on the
+    which is what a CHANGE workflow needs: one endpoint answers *differently* on the
     preflight read and the postflight read, and a single body cannot express "the account was
     live, then it was suspended". The last entry of a queue repeats once the queue runs dry, so
     a test only scripts the answers it is asserting on.

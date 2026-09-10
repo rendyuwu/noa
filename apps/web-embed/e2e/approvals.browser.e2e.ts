@@ -33,7 +33,7 @@ import {
  * **The negative control is a separate document in the same sandbox** (`/__sandbox-control` on the
  * stub), which fires both a `fetch` and a native form submit at two paths. If the browser performed
  * both, the sandbox is not withholding forms and V80's premise has changed — which would make the
- * positive assertion above true for a reason that has nothing to do with the card (V87).
+ * positive assertion above true for a reason that has nothing to do with the card.
  *
  * **Every test that counts hits uses an id of its own.** The stub is one process shared by every
  * spec file and Playwright runs files in parallel, so its counter is cumulative and cannot be reset
@@ -46,7 +46,7 @@ import {
 
 // The frame LibreChat gives this card, and the session it is read with — both from
 // `support/frame.ts`, so the 401 lane (`sign-in.browser.e2e.ts`) measures the same frame this one
-// does (V66).
+// does.
 test.use({ launchOptions: { args: HOST_RESOLVER_ARGS } })
 
 test.beforeEach(async ({ context }) => {
@@ -76,7 +76,7 @@ test('the frame is on NOA’s own origin, and the operator’s cookie reached th
 
   const frame = await framedDocument(page)
   expect(await frame.evaluate(() => window.location.origin)).toBe(EMBED_ORIGIN)
-  // `document.cookie` is empty because the session cookie is httpOnly (V6) — the same reading R29
+  // `document.cookie` is empty because the session cookie is httpOnly — the same reading R29
   // recorded. The cookie's arrival is asserted on the API's side instead.
   expect(await frame.evaluate(() => document.cookie)).toBe('')
 
@@ -84,7 +84,7 @@ test('the frame is on NOA’s own origin, and the operator’s cookie reached th
   await expect(cardBody(card)).toContainText('operator@noa.internal')
 })
 
-test('Approve posts from inside a frame whose sandbox omits allow-forms (V80)', async ({
+test('Approve posts from inside a frame whose sandbox omits allow-forms', async ({
   page,
 }) => {
   const id = pendingId('a2')
@@ -106,7 +106,7 @@ test('Approve posts from inside a frame whose sandbox omits allow-forms (V80)', 
 
 test('Deny posts to the other door', async ({ page }) => {
   // The separating case: without it, the spec above passes just as well against a card whose two
-  // buttons do the same thing (V87).
+  // buttons do the same thing.
   const id = pendingId('a3')
   const card = await frameCard(page, id)
 
@@ -141,7 +141,7 @@ test('in that same sandbox a fetch reaches NOA and a form submit does not', asyn
   expect((await hits(page))['POST /__probe/form']).toBeUndefined()
 })
 
-test('a 404 renders one not-available state and no Approve button (V27)', async ({ page }) => {
+test('a 404 renders one not-available state and no Approve button', async ({ page }) => {
   // Absent, another operator's, and one whose requester was deleted all answer alike — the API
   // gives one body for the three and the card gives one sentence.
   const card = await frameCard(page, APPROVAL_IDS.notFound)
@@ -150,7 +150,7 @@ test('a 404 renders one not-available state and no Approve button (V27)', async 
   await expect(cardBody(card).getByRole('button')).toHaveCount(0)
 })
 
-test('a decided card shows the outcome and no live buttons (V34, V39)', async ({ page }) => {
+test('a decided card shows the outcome and no live buttons', async ({ page }) => {
   // One URL through the whole lifecycle: the second click reads the answer. And with no token on
   // the body (the API sends `null` once nothing may be decided), no reason box and no buttons.
   const card = await frameCard(page, APPROVAL_IDS.decided)
@@ -193,7 +193,7 @@ test('the card follows its run to a terminal state, on the same URL (§T.42 — 
   expect((await hits(page))[`GET /action-requests/${id}`]).toBeGreaterThan(1)
 })
 
-test('the card never renders the CSRF token as text (V26, V39)', async ({ page }) => {
+test('the card never renders the CSRF token as text', async ({ page }) => {
   // It rides in the POST body, not in the document an operator (or a screenshot) can read.
   const card = await frameCard(page, pendingId('a4'))
 

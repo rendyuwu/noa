@@ -12,7 +12,7 @@
 // `token_prefix` (marker + 8 characters) must NOT match, or every assertion
 // built on this fires on a row that is safe to render.
 //
-// ONE home (V66) because two lanes assert with it — the controller's "never in
+// ONE home because two lanes assert with it — the controller's "never in
 // state" and the dialog's per-sink not-logged proofs. Two copies drift, and a
 // detector that has quietly stopped matching passes every not-logged test
 // ever written while seeing nothing. That failure is silent, which is exactly

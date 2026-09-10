@@ -1,8 +1,8 @@
-"""WHM account CHANGE tools: `whm_suspend_account` (T22), `whm_unsuspend_account` (T23).
+"""WHM account CHANGE tools: `whm_suspend_account`, `whm_unsuspend_account`.
 
 **The first CHANGE tool NOA exposed**, and therefore the first call that runs the whole gate
 over the real mount: `tools/call` → in-process preflight → `action_requests(PENDING)` → the
-approval card → an operator's cookie POST (T37) → the executor (T38) → the runner one module
+approval card → an operator's cookie POST → the executor → the runner one module
 over. Everything above the runner was already built and, until T22, vacuous.
 
 **Two halves, on opposite sides of V22's boundary, and now in two modules.** A tool is what the
@@ -22,7 +22,7 @@ from being a cycle.
 
 **Two tools, one shape, and the shape is shared rather than mirrored.** Suspend and unsuspend are
 not merged — opposite risk directions, clearer as two names (DECISIONS §9) — but everything
-between the two names is one implementation (V66): `collect_account_state` is the preflight for
+between the two names is one implementation: `collect_account_state` is the preflight for
 both, and one module over, the resolution of an approved request into the client that performs it
 and the postflight that confirms it are each written once, differing only in the value
 `suspended` must hold when the change took. What is deliberately written twice is the surface a
@@ -30,8 +30,8 @@ model reads — the two tool functions, their descriptions and their registratio
 genuinely differ and a shared spelling of them would be one sentence trying to describe two
 opposite acts.
 
-**The preflight runs inside the call** (C9, V17), and it is `fetch_whm_accounts` — T20/T21's
-internal, not a second copy of "resolve a server and list its accounts" (V66). The evidence it
+**The preflight runs inside the call**, and it is `fetch_whm_accounts` — T20/T21's
+internal, not a second copy of "resolve a server and list its accounts". The evidence it
 produces is born in-process, lives milliseconds, belongs to the same user, and reaches the
 operator's card through `approval_context` rather than through a transcript. That is the whole of
 DECISIONS §3.2: no evidence store, no freshness window, no `require_preflight` protocol.
@@ -43,7 +43,7 @@ asking an operator to authorise a change that would do nothing is worse than say
 which is the right amount of trace for a call that changed nothing (a CHANGE tool's `tools/call`
 writes no `tool_runs` row either, T73).
 
-**A locked suspension is refused before a card exists** (T23). WHM's `unsuspendacct` refuses an
+**A locked suspension is refused before a card exists**. WHM's `unsuspendacct` refuses an
 account whose suspension is locked, so opening a request for one costs an operator a decision and
 buys a run that fails — the no-op argument above, one state over. The lock is already on the
 normalised summary (`core.integrations.whm.accounts`, which reads `is_locked` and falls back to
@@ -62,13 +62,13 @@ one step harder, and `whm_account_owner_gate` holds all of it: cPanel gates an a
 that one. The guard sits in `_open_account_change`, the single door both tools reach
 `open_change_request` through, so a third account CHANGE tool cannot be written without it; and
 it runs **again** in the runner, off the stored evidence, because a row is editable between a
-request and its decision (V33) and repointing `api_username` after the card was rendered would
+request and its decision and repointing `api_username` after the card was rendered would
 otherwise substitute the acting identity silently.
 
 **The card and the receipt name the credential, not just the machine** (§V108): the row's
 `name`, its `api_username`, the host out of its `base_url`, and the account's `owner`. A
 privileged write whose credential is not recorded is not auditable, and what an audit needs is
-which identity acted — a username, never the token (V8).
+which identity acted — a username, never the token.
 
 **A runner acts on the server the card described, not on the operator's word.** `server_ref` is
 whatever the model passed, and inventory can be edited between a request and its approval;
@@ -92,7 +92,7 @@ It does meet a case T22 could not: an account being unsuspended *is* suspended w
 reads it, so its summary carries `suspendreason` — an operator's earlier words. That summary goes
 onto the row as evidence, where V27's requester-match and the card are its only readers (a model
 cannot reach it: `ActionResultView` has no field for evidence, V76). What is not closed by
-construction is this tool's own answers, which do land in a transcript (V26) — so the no-op and
+construction is this tool's own answers, which do land in a transcript — so the no-op and
 the locked refusal are built from the username and the server name, never from the summary.
 
 **Postflight, and its third answer.** A change WHM accepted is re-read to confirm it took, and it
@@ -121,7 +121,7 @@ from core.integrations.whm.accounts import WHMAccount
 from noa_api.mcp_tools.change_gate import build_change_gate_response, open_change_request
 from noa_api.mcp_tools.change_target import (
     # Hoisted to `change_target` at T25, when the firewall runner became the second caller of
-    # the same refusals and the same status words (V66). Re-exported below, so every name this
+    # the same refusals and the same status words. Re-exported below, so every name this
     # module already published keeps working from here — including the two the runners one
     # module over are now the only readers of, because a code's home is where a reader looking
     # it up expects to find it.
@@ -172,7 +172,7 @@ ERROR_USERNAME_REQUIRED = "username_required"
 ERROR_ACCOUNT_NOT_FOUND = "account_not_found"
 # WHM accepted the mutation and the confirming read says it did not take.
 ERROR_POSTFLIGHT_FAILED = "postflight_failed"
-# The account's suspension is locked, and `unsuspendacct` refuses a locked account (T23). A
+# The account's suspension is locked, and `unsuspendacct` refuses a locked account. A
 # refusal rather than an approval request: the card would buy a decision and a failed run.
 ERROR_SUSPENSION_LOCKED = "account_suspension_locked"
 
@@ -185,7 +185,7 @@ MESSAGE_POSTFLIGHT_UNSUSPEND_FAILED = (
 )
 
 # One structured event per call that found nothing to do, so "why is there no approval card" is
-# answerable from the logs. Identifiers only, never the account payload (V8).
+# answerable from the logs. Identifiers only, never the account payload.
 LOG_SUSPEND_NO_OP = "whm_suspend_account_no_op"
 LOG_UNSUSPEND_NO_OP = "whm_unsuspend_account_no_op"
 
@@ -218,7 +218,7 @@ DESCRIPTION_WHM_UNSUSPEND_ACCOUNT = (
 )
 
 # Both tools take the same `server_ref`, and it means the same thing in both. One string so the
-# two schemas cannot drift into describing one argument two ways (V66).
+# two schemas cannot drift into describing one argument two ways.
 #
 # It does **not** mean what it means on the read tools, and this is where a model learns that
 # (§V106). Both branches are stated because neither covers the other: reseller rows are named
@@ -245,10 +245,10 @@ async def collect_account_state(
     username: str,
     context: McpToolContext,
 ) -> ToolPayload:
-    """One account's current state on one WHM server. Internal — ⊥ an MCP tool (C9, V17).
+    """One account's current state on one WHM server. Internal — ⊥ an MCP tool.
 
     The before-state an operator authorises against, and the same function both account CHANGE
-    tools call (T22, T23). Not decorated with `sanitize_tool_errors`: its callers are exposed
+    tools call. Not decorated with `sanitize_tool_errors`: its callers are exposed
     tools that already are, and a second boundary would turn a `NoaError` into a payload the
     caller then has to unwrap twice (`fetch_whm_accounts`' rule, one module over).
 
@@ -258,7 +258,7 @@ async def collect_account_state(
     round trip, and the day they disagree the card describes a machine the tool did not read.
 
     Failures travel back as payloads rather than exceptions, because each is something the model
-    can act on (V18, V19): a `server_ref` that named nothing or several things keeps the
+    can act on: a `server_ref` that named nothing or several things keeps the
     resolver's own code and its `choices`, and a WHM that refused keeps `WHMClient`'s stable code
     — those strings say which system to fix.
 
@@ -317,25 +317,25 @@ async def whm_suspend_account(
     username: str,
     context: McpToolContext,
 ) -> ToolAnswer:
-    """Ask for one cPanel account to be suspended; suspend nothing (T22 — V16, V17, V23).
+    """Ask for one cPanel account to be suspended; suspend nothing.
 
     Four things happen and none of them is a change: a malformed request is refused, the account
     is read, the call decides whether there is anything to do, and the question is opened.
 
-    - a blank or whitespace-only `username` is refused before any I/O (V21). The schema cannot
+    - a blank or whitespace-only `username` is refused before any I/O. The schema cannot
       express it — `min_length` counts whitespace — so this is the gate, and `listaccts` would
       otherwise be fetched in order to match nothing.
-    - the preflight's failures pass straight through with their own codes and `choices` (V18).
+    - the preflight's failures pass straight through with their own codes and `choices`.
     - an account that is **already suspended** is answered `no_op` and no request is opened. That
-      payload names the account and the server and carries nothing else: it is transcript (V26),
+      payload names the account and the server and carries nothing else: it is transcript,
       and the account summary holds WHM's own `suspendreason`, which as of T22 is the operator's
-      reason (C8).
+      reason.
     - otherwise `open_change_request` writes the PENDING row with the preflight as evidence (V33,
       V35) and `build_change_gate_response` turns its id into the card's address and the iframe
       (V24, V25).
 
     No `reason` parameter, and nowhere to add one: the word is typed by an operator on the card,
-    after this result has been rendered and forgotten (C8, V15, V43). The gate refuses a
+    after this result has been rendered and forgotten. The gate refuses a
     reason-shaped argument as well (`assert_no_reason_argument`), so the boundary holds even for
     a caller that reaches this function directly rather than over MCP.
     """
@@ -382,14 +382,14 @@ async def whm_unsuspend_account(
     username: str,
     context: McpToolContext,
 ) -> ToolAnswer:
-    """Ask for one cPanel account's suspension to be lifted; lift nothing (T23 — V16, V17, V23).
+    """Ask for one cPanel account's suspension to be lifted; lift nothing.
 
     `whm_suspend_account`'s mirror, and the preflight is the same function, so what differs is
     only what the account's state means. Two of the three states answer instead of gating, and
     both are discovered by the read rather than declared by the caller:
 
-    - a blank or whitespace-only `username` is refused before any I/O (V21), as above.
-    - the preflight's failures pass straight through with their own codes and `choices` (V18).
+    - a blank or whitespace-only `username` is refused before any I/O, as above.
+    - the preflight's failures pass straight through with their own codes and `choices`.
     - an account that is **not suspended** is answered `no_op`. There is nothing to lift, so
       there is nothing for an operator to authorise.
     - an account whose suspension is **locked** is refused: `unsuspendacct` will not lift a
@@ -404,7 +404,7 @@ async def whm_unsuspend_account(
     being unsuspended is suspended right now, so its summary carries `suspendreason` — the
     operator's own words from the suspension (C8, V26, V96a).
 
-    No `reason` parameter, and nowhere to add one (C8, V15, V43). Nothing is written out to WHM
+    No `reason` parameter, and nowhere to add one. Nothing is written out to WHM
     on this path either: `unsuspendacct` has no note field, so V96's return paths do not open.
     """
     normalized_username = username.strip()
@@ -464,7 +464,7 @@ def register_whm_account_change_tools(
     """Register the WHM account CHANGE tools; return each name with its risk (I.mcp, V20).
 
     `ToolRisk.CHANGE` is what tells `ToolRunAuditMiddleware` to write no `tool_runs` row for
-    these calls (T73) — they open an approval request and execute nothing, and V46's row belongs
+    these calls — they open an approval request and execute nothing, and V46's row belongs
     to the executor that runs after a decision. It is also what makes
     `registry.assert_change_runners_cover` demand a runner for each name at startup, rather than
     letting an operator discover the gap after typing a reason and pressing Approve.
@@ -474,7 +474,7 @@ def register_whm_account_change_tools(
         name=TOOL_WHM_SUSPEND_ACCOUNT,
         description=DESCRIPTION_WHM_SUSPEND_ACCOUNT,
         # Standard MCP hints, and nothing NOA relies on — a client may ignore them. The split
-        # that matters is the approval gate (V16); the classification that matters is the risk
+        # that matters is the approval gate; the classification that matters is the risk
         # returned below.
         annotations={"readOnlyHint": False, "destructiveHint": True, "idempotentHint": True},
     )
@@ -491,7 +491,7 @@ def register_whm_account_change_tools(
         ],
     ) -> ToolAnswer:
         # Annotated with the union on purpose: the success path answers content blocks — the
-        # text block and the approval iframe, in that order (V24, V25) — while every refusal
+        # text block and the approval iframe, in that order — while every refusal
         # answers the envelope every tool shares.
         return await whm_suspend_account(server_ref=server_ref, username=username, context=context)
 
@@ -536,10 +536,10 @@ async def _open_account_change(
     state: ToolPayload,
     context: McpToolContext,
 ) -> ToolAnswer:
-    """Write the PENDING row and shape the answer — the tail both tools share (T33, T32).
+    """Write the PENDING row and shape the answer — the tail both tools share.
 
     The preflight `state` becomes the row's evidence verbatim, so the card describes the read
-    that decided there was something to approve (V33, V35). `server_ref` is recorded as the model
+    that decided there was something to approve. `server_ref` is recorded as the model
     passed it, because the arguments are a record of what was asked for; what the change will
     actually run against is `evidence["server_id"]` (V33, `_resolve_change_target`).
 

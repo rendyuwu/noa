@@ -1,4 +1,4 @@
-"""In-memory `action_requests` writer for the CHANGE gate tests (T33).
+"""In-memory `action_requests` writer for the CHANGE gate tests.
 
 The double records the row a real `SQLActionRequestRepository` would have written, so a test
 can assert on the pending request without Postgres — and can make the write fail on demand.
@@ -77,7 +77,7 @@ class FakeActionRequestRepository:
             tool_name=tool_name,
             requested_by_user_id=requested_by_user_id,
             # Mirrors the production repository, which passes PENDING explicitly rather than
-            # leaning on the column default (T34). A double that hardcoded some other status
+            # leaning on the column default. A double that hardcoded some other status
             # would let a gate test pass against a row the schema would never hold.
             status=ActionRequestStatus.PENDING,
             conversation_ref=conversation_ref,

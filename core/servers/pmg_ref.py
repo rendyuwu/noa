@@ -1,4 +1,4 @@
-"""Operator word → one PMG server, or a structured refusal (T31, V18, V21).
+"""Operator word → one PMG server, or a structured refusal.
 
 Ported from `noa-old` branch `MCP` (`pmg/server_ref.py`, C13).
 
@@ -49,7 +49,7 @@ def describe(server: PMGServerRowLike) -> dict[str, str]:
     """One candidate, as a `choices` entry.
 
     Id, name and `ssh_host` — what lets an operator recognise a node and then name it
-    unambiguously. No credentials: this text goes into an LLM transcript (V8, V26).
+    unambiguously. No credentials: this text goes into an LLM transcript.
     """
     return {"id": str(server.id), "name": server.name, "ssh_host": server.ssh_host}
 
@@ -57,11 +57,11 @@ def describe(server: PMGServerRowLike) -> dict[str, str]:
 async def resolve_pmg_server_ref(
     server_ref: str, *, repository: PMGServerReadRepository[RowT]
 ) -> ServerRefResolution[RowT]:
-    """Resolve `server_ref` to one PMG server, or refuse with a named code (V18, V21).
+    """Resolve `server_ref` to one PMG server, or refuse with a named code.
 
     Never raises for a bad reference: every outcome is a resolution the tool layer turns into a
     structured result, because "I could not tell which server" is information the model can act
-    on, while an exception is not (V19).
+    on, while an exception is not.
     """
     return await resolve_server_ref(
         server_ref,

@@ -27,11 +27,11 @@ export type ResultTable = {
   toolName: string
   columns: ResultTableColumn[]
   rows: Record<string, unknown>[]
-  /** Matches before the cap (V85). Never `rows.length` — see the module docstring. */
+  /** Matches before the cap. Never `rows.length` — see the module docstring. */
   totalRows: number
   /** How many rows this page holds. */
   storedRows: number
-  /** Whether the cap dropped anything (V85). */
+  /** Whether the cap dropped anything. */
   truncated: boolean
   createdAt: string
   expiresAt: string
@@ -93,7 +93,7 @@ function parseRows(value: unknown): Record<string, unknown>[] {
  *
  * `truncated` is `true` only for a literal `true`, but it is also inferred when the counts
  * disagree: a body claiming 900 matches with 25 rows and `truncated: false` is malformed, and the
- * direction that must never fail open is the one where a capped table looks complete (V85).
+ * direction that must never fail open is the one where a capped table looks complete.
  */
 export function parseResultTable(value: unknown): ResultTable | null {
   if (!isRecord(value)) return null
@@ -119,7 +119,7 @@ export function parseResultTable(value: unknown): ResultTable | null {
 }
 
 /**
- * The sentence a table says about its own bound (V85).
+ * The sentence a table says about its own bound.
  *
  * Both numbers either way, so "1,240 of 1,240" and "25 of 900" are the same sentence with
  * different numbers rather than two shapes a reader has to tell apart — and so a capped page can

@@ -140,7 +140,7 @@ async def test_maps_a_bare_failure_message_to_proxmox_api_error() -> None:
     """No `errors`, just prose on a 4xx. Pins which of `_payload_error`'s two branches answers:
     the first (`proxmox_api_error`, carrying the prose), ⊥ its trailing `status_code >= 400`
     block — that block re-reads the same `message` the first branch already consumed, so it is
-    unreachable. Ported that way (V69); this test is what fails if someone "revives" it."""
+    unreachable. Ported that way; this test is what fails if someone "revives" it."""
     result = await build_client(
         json_handler({"message": "no such VM"}, status_code=400)
     ).get_version()

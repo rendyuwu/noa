@@ -22,5 +22,5 @@ export type AdminRoleToolsResponse = {
 }
 
 // No `DirectGrantsMigrationResponse`: the endpoint it typed does not exist in NOA
-// (T65). V75 makes per-user grants a 410, so there is nothing to migrate and no
+//. V75 makes per-user grants a 410, so there is nothing to migrate and no
 // summary shape to normalise.

@@ -1,7 +1,7 @@
 # LibreChat Integration Reference
 
-Canonical reference for the operator-side configuration of NOA's **only** MCP client (C24).
-LibreChat provides transport and rendering; every authorization decision stays in NOA (C19).
+Canonical reference for the operator-side configuration of NOA's **only** MCP client.
+LibreChat provides transport and rendering; every authorization decision stays in NOA.
 
 NOA does not own, generate or deploy the file this page describes. It is the operator's
 `librechat.yaml`, on the operator's host, editable after we hand it over — so this page is a
@@ -14,7 +14,7 @@ Working config, standing rig and the measurements behind everything here:
 `spikes/librechat-embed-render-gate/` and [`../spikes/librechat-embed-render-gate.md`](../spikes/librechat-embed-render-gate.md).
 
 Update this file in the same change as any feature that touches the MCP surface, and re-verify it
-on every LibreChat bump (C21).
+on every LibreChat bump.
 
 ## The server entry
 
@@ -179,7 +179,7 @@ A LibreChat login is not a NOA authorization — the MCP token is.
 
 ## What LibreChat is not
 
-LibreChat's own `toolApproval` is **not used** (C19). The split is:
+LibreChat's own `toolApproval` is **not used**. The split is:
 
 - **NOA RBAC** — who may call a tool (C6, §V.1).
 - **NOA's approval gate** — whether one specific change may run (C18, §V.23), answered from

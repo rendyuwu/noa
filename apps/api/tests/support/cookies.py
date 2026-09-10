@@ -18,7 +18,7 @@ def cookie_shape(header: str) -> tuple[str, str, dict[str, object]]:
 
     Everything that carries meaning stays in the comparison: `Max-Age=0` still proves the
     cookie is cleared, `Domain`/`Path`/`SameSite`/`HttpOnly`/`Secure` still prove the
-    clear targets the cookie the set path wrote (V6).
+    clear targets the cookie the set path wrote.
     """
     cookie: SimpleCookie = SimpleCookie()
     cookie.load(header)

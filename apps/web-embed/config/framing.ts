@@ -2,8 +2,8 @@
  * Who may frame this app, and nobody else (§T.45, V41).
  *
  * The embed is the one NOA origin LibreChat is allowed to put in an iframe, and the card it will
- * host carries the Approve button and the operator-typed reason (C8, V15). The decision POST is a
- * same-origin `fetch` riding the `noa_session` cookie (V22, V80), so a page that can frame this app
+ * host carries the Approve button and the operator-typed reason. The decision POST is a
+ * same-origin `fetch` riding the `noa_session` cookie, so a page that can frame this app
  * and land a click on it is the reachability this header exists to deny. The admin app answers
  * `frame-ancestors 'none'` for the same reason from the other side (V41, §T.49).
  *

@@ -1,4 +1,4 @@
-"""`proxmox_reset_vm_password`'s runner — the half that changes the VM (T27, T69).
+"""`proxmox_reset_vm_password`'s runner — the half that changes the VM.
 
 Reachable only after an operator approved (§V.22's far side), so nothing here goes through the
 tool. `core.approvals.execution` hands a runner a `ChangeExecutionRequest`, and that is what
@@ -509,7 +509,7 @@ async def test_unusable_evidence_is_refused_before_anything_is_generated(
     assert vm.requests == []
 
 
-# --- How the executor records what came back (V20, V46) ---
+# --- How the executor records what came back ---
 
 
 async def test_a_confirmed_reset_records_a_completed_run_and_a_two_part_receipt() -> None:

@@ -93,7 +93,7 @@ REGISTERED_TOOLS = sorted(
 # that no longer separates against production is one to keep separating against a fixture, not
 # one to drop (V87, and `test_change_runner_registry`'s probe one guard over).
 
-# Never in the catalog at all (V10).
+# Never in the catalog at all.
 UNKNOWN_TOOL = "whm_delete_everything"
 
 
@@ -245,7 +245,7 @@ def test_a_disabled_user_sees_no_tools_and_may_call_none(scenario) -> None:
     Disabled *after* the session opened, and disabled only in the `users` row the RBAC
     engine reads. In production one write flips one row and both readers see it, so a
     disabled operator is stopped twice over — the identity resolver refuses the request with
-    `mcp_user_inactive` (T11/T12) before this gate is reached. That is why the two are
+    `mcp_user_inactive` before this gate is reached. That is why the two are
     separated here: V11 is a claim about *permission resolution*, and it has to hold on its
     own rather than because authentication happened to get there first. An operator disabled
     while holding an open MCP session is exactly the case where it matters.
@@ -272,7 +272,7 @@ def test_an_admin_sees_every_registered_tool(scenario) -> None:
 
     The list is the *intersection* of the catalog and what is registered, which is why this
     asserts against the registered set rather than against `TOOL_CATALOG` — the remaining
-    catalogued names have no implementation yet (T25-T29).
+    catalogued names have no implementation yet.
     """
     sign_in, _ = scenario
     session = sign_in(roles=(ADMIN_ROLE_NAME,))
@@ -299,7 +299,7 @@ def test_an_admin_cannot_call_a_tool_the_catalog_does_not_know(scenario) -> None
 async def test_a_catalogued_tool_this_server_did_not_register_is_refused_in_noas_shape() -> None:
     """V83(c)'s probe: the gate carries the registered set and intersects with it.
 
-    An `admin`'s grant set is the whole *catalog* (V10), so a catalogued name this build did not
+    An `admin`'s grant set is the whole *catalog*, so a catalogued name this build did not
     register would sail past the permission check and reach fastmcp's own `Unknown tool` — a
     different shape, and one that answers which catalogued tools are built yet. The intersection
     in `RbacToolMiddleware._permitted_tools` is what stops that.
@@ -359,14 +359,14 @@ async def test_the_registry_reports_exactly_what_it_registered() -> None:
 
 
 def test_the_registered_surface_is_the_whole_catalog() -> None:
-    """I.mcp's fourteen tools, and the reason this file no longer carries a stand-in (T29).
+    """I.mcp's fourteen tools, and the reason this file no longer carries a stand-in.
 
     An equality, and it is meant to be brittle in one direction: a catalogued name added
     without a registrar puts the gap back, and the thing that goes with a gap is the
     catalogued-but-unregistered assertion this file used to make against production. Failing
     here is how that gets noticed, rather than by an `admin` meeting fastmcp's `Unknown tool`.
 
-    The subset check below stays: `⊆` is the invariant (V10, C22), and this is a fact about
+    The subset check below stays: `⊆` is the invariant, and this is a fact about
     today's surface.
     """
     assert sorted(TOOL_CATALOG) == REGISTERED_TOOLS
