@@ -15,12 +15,9 @@ tool's module, makes the second tool a
 dependent of the first and the aggregate registrar a cycle.
 
 **Its own file rather than `whm_firewall.py`.** The dual-backend firewall read's module is the
-READ tool, and half of what
-is here drives mutations. The file-size cap would have allowed the merge; the cookie/CSRF
-boundary is the reason not to
-take it, and it is the same reason the release-and-allow tool did not append itself to that file
-either
-(see `docs/AS-BUILT.md`).
+READ tool, and half of what is here drives mutations. The file-size cap would have allowed the
+merge; the cookie/CSRF boundary is the reason not to take it, and it is the same reason the
+release-and-allow tool did not append itself to that file either.
 
 **The evidence keys are shared, and that is a narrower claim than it looks.** They are shared
 between the two *firewall* tools, whose evidence genuinely is the same shape — a server, an

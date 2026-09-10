@@ -1,8 +1,8 @@
 # Deployment
 
 Images, the local development stack, domain and cookie layout, and the replica and readiness
-decisions this file records. `SPEC.md` is the source for every invariant cited here; this file
-restates rather than decides, except where a line says a decision was made here.
+decisions this file records. Rules live inline where enforced; this file restates rather than
+decides, except where a line says a decision was made here.
 
 Machine-readable blocks below are marked with a `# noa-…` comment and asserted by
 `apps/api/tests/test_deployment.py`. Editing one without the other fails a test.
