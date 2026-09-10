@@ -170,3 +170,58 @@ describe('AuditAdminPage filters, pagination, and detail', () => {
     expect(controller().reload).toHaveBeenCalled()
   })
 })
+
+// The four fields the API had been returning and the table had not been drawing
+// (§I.admin-api). No new endpoint and no new field: `AuditToolRunListItemResponse`
+// has carried all four since the route shipped, so this is the cheapest half of
+// making the trail legible — and the half that would be easiest to leave undone
+// while calling the vertical finished.
+//
+// Asserted one column at a time, by the value each renders, so a column dropped
+// in a later edit reddens the line that names it. A header-count assertion would
+// go green for five headers and the wrong five.
+describe('AuditAdminPage list columns', () => {
+  it('renders the requester the API already returned', () => {
+    render(<AuditAdminPage />)
+    expect(screen.getByRole('columnheader', { name: 'Requester' })).toBeInTheDocument()
+    expect(screen.getByText('reader@example.com')).toBeInTheDocument()
+  })
+
+  it('renders the conversation ref as a column, not only as a filter', () => {
+    render(<AuditAdminPage />)
+    expect(screen.getByRole('columnheader', { name: 'Conversation' })).toBeInTheDocument()
+    expect(screen.getByText('conv-1')).toBeInTheDocument()
+  })
+
+  it('renders the completed timestamp beside the created one', () => {
+    render(<AuditAdminPage />)
+    expect(screen.getByRole('columnheader', { name: 'Finished' })).toBeInTheDocument()
+    // Both stamps are drawn, so a run that started and never finished is visibly
+    // different from one that did — the pair is what `durationMs` is derived from.
+    expect(screen.getByRole('columnheader', { name: 'Created' })).toBeInTheDocument()
+    // And the header does not collide with the Status column's own vocabulary:
+    // "Completed" appears once on this page, as a status value.
+    expect(screen.getAllByText('Completed')).toHaveLength(1)
+  })
+
+  it('renders the result summary, with the stored string reachable in full', () => {
+    render(<AuditAdminPage />)
+    expect(screen.getByRole('columnheader', { name: 'Result' })).toBeInTheDocument()
+    const cell = screen.getAllByText('ok').find((node) => node.tagName === 'SPAN')
+    expect(cell).toBeDefined()
+    // The cell truncates visually; the whole stored summary stays on the title,
+    // because it was already capped at the write and a second shortening here
+    // must not be mistaken for that cap.
+    expect(cell).toHaveAttribute('title', 'ok')
+  })
+
+  it('renders an em dash rather than nothing for a run that has not finished', () => {
+    // The control for the two nullable columns above: without it, a cell that
+    // rendered empty for a null would pass every assertion that looks for a value.
+    mocks.toolRuns = toolController({
+      items: [{ ...toolRow, completedAt: null, resultSummary: null, conversationRef: null }],
+    })
+    render(<AuditAdminPage />)
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(3)
+  })
+})

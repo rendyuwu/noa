@@ -11,9 +11,18 @@ left for a reader to notice:
   (V8, V73): `error_code` + `message` + `request_id`, with diagnostics in `detail` and out of the
   body. `InvalidRoleNameError` already sets that precedent for a malformed *path* param, so this
   follows it rather than introducing a second envelope on the admin surface.
-- **The JSON field names are fixed.** Upstream parameterised them per surface (`actionRequestId`,
-  `toolRunId`, …) because it paged four lists. One list pages here, so a parameter would be a
-  knob with one setting — and a knob two callers could set differently for one table.
+- **The JSON field names are fixed, and `ID_FIELD` is `toolRunId` for every surface.** Upstream
+  parameterised them per list (`actionRequestId`, `toolRunId`, …) because it paged four. Two lists
+  page through this codec now — `/admin/audit/tool-runs` and `/admin/action-requests` — so the
+  name is no longer accurate for one of them: a token minted on the action-request list carries an
+  `action_requests.id` under the key `toolRunId`. That is a naming defect and not a functional one.
+  The token is opaque base64, both sides read the same constant, and the `id` is only ever compared
+  against the column the same statement orders by. Parameterising the key would be a wire-format
+  change — every token already handed out still has to decode, so a reader would have to accept
+  either spelling and emit the new one — which is more machinery than the defect earns. Two
+  consequences a reader should expect: decoding a token by hand shows `toolRunId` for an
+  action-request position, and a cursor minted on one list decodes cleanly on the other and pages
+  from a meaningless position. Both surfaces are admin-only (V13), so neither is a disclosure.
 
 **Why keyset and not `OFFSET`.** The audit trail is written while it is read: every MCP call
 appends a row, so an offset page re-reads rows that shifted under it — an operator paging back
@@ -39,7 +48,9 @@ from sqlalchemy import ColumnElement, and_, or_
 from core.audit.errors import InvalidAuditCursorError
 
 # The two keys inside the decoded token. Spelled once: an encoder and a decoder that disagreed
-# about a name would make every second page look like the first.
+# about a name would make every second page look like the first. `ID_FIELD` names `tool_runs`
+# because that was the only list when it was written and it is unparameterised by choice — the
+# action-request list pages with the same key over its own ids. See the module docstring.
 TIMESTAMP_FIELD: Final = "createdAt"
 ID_FIELD: Final = "toolRunId"
 

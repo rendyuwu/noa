@@ -30,7 +30,13 @@ from core.audit.tool_run_reads import MAX_PAGE_SIZE
 from core.db.lifecycle import ToolRisk, ToolRunStatus
 from noa_api.api.errors import FALLBACK_STATUS, STATUS_BY_ERROR, status_for
 from noa_api.api.request_context import REQUEST_ID_HEADER
-from support.admin import TOOL_RUNS_PATH, AdminHarness, admin_harness
+from noa_api.api.routes.admin_audit import router as admin_audit_router
+from support.admin import (
+    TOOL_RUNS_PATH,
+    AdminHarness,
+    admin_harness,
+    registered_routes,
+)
 from support.tool_run_audit import RUN_CREATED_AT, FakeToolRunAuditReader, build_list_item
 
 # Every query parameter the list route accepts, with the `ToolRunAuditFilters` field it must reach.
@@ -47,10 +53,22 @@ FILTER_QUERIES: tuple[tuple[str, str, str, Any], ...] = (
     ("to", "2026-08-31T23:59:59Z", "created_to", None),
 )
 
+# The addresses this router registers, with the path parameter renamed so a template can be
+# formatted. Compared against `router.routes` below rather than trusted: a table checked only
+# against its own `len()` is pinned to itself and can never notice an address that was added and
+# never listed. The comparison is `support.admin.registered_routes`, shared with the
+# action-request route test (V66).
+ID_PARAM: str = "tool_run_id"
+
 ROUTE_TABLE: tuple[tuple[str, str], ...] = (
     ("GET", TOOL_RUNS_PATH),
     ("GET", f"{TOOL_RUNS_PATH}/{{id}}"),
 )
+
+
+def mounted() -> set[tuple[str, str]]:
+    """Every `(method, path)` this router mounts, in `ROUTE_TABLE`'s spelling."""
+    return registered_routes(admin_audit_router, id_param=ID_PARAM)
 
 
 @pytest.fixture
@@ -65,13 +83,15 @@ def harness() -> Iterator[AdminHarness]:
 
 
 def test_both_audit_routes_are_admin_only(harness: AdminHarness) -> None:
-    """V13: an operator holding no `admin` role reaches neither the list nor a detail.
+    """V13: an operator holding no `admin` role reaches none of the routes this router mounts.
 
-    Walked from `ROUTE_TABLE` with the count asserted, the shape `test_admin_server_routes.py`
-    established: a third audit route added later without `AdminUserDep` fails here rather than
-    shipping open.
+    `ROUTE_TABLE` is compared against `router.routes` first, so the walk is over what is
+    *registered* rather than over what someone listed. That is what makes "a third audit route
+    added later without `AdminUserDep` fails here rather than shipping open" true: the table used
+    to be asserted against its own length, which pins it to itself and can never see a new
+    address. `test_admin_action_request_routes.py` closes the same gap the same way.
     """
-    assert len(ROUTE_TABLE) == 2
+    assert mounted() == set(ROUTE_TABLE)
 
     harness.sign_in("nonadmin@example.com", roles=())
 

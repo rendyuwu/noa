@@ -60,6 +60,7 @@ from noa_api.api.deps import (
 )
 from noa_api.api.errors import install_error_handling
 from noa_api.api.routes.action_requests import router as action_requests_router
+from noa_api.api.routes.admin_action_requests import router as admin_action_requests_router
 from noa_api.api.routes.admin_audit import router as admin_audit_router
 from noa_api.api.routes.admin_roles import router as admin_roles_router
 from noa_api.api.routes.admin_servers import pmg_router as admin_pmg_servers_router
@@ -335,6 +336,15 @@ def create_app() -> FastAPI:
     # boundary, and the service this router holds has no `commit` to write with. It closes V45's
     # last clause: the rows have existed since T73 and until now nothing could ask about them.
     app.include_router(admin_audit_router)
+    # The authorisation trail beside the execution one (§I.admin-api — V13, V15, V46). Reads
+    # `action_requests` and `action_receipts`; the audit router above reads `tool_runs` and could
+    # never answer "who approved this, and why" because `reason` lives on the other table and had
+    # no reader anywhere. Registered here rather than beside `action_requests_router` at the top
+    # of this function, and the distance is the point: that one holds the single writer of a
+    # terminal status and is reached by a cookie POST from the embed, this one is `require_admin`
+    # and holds a repository with no `commit` and no statement that is not a `SELECT`. Same table,
+    # opposite capabilities, and nothing in the MCP mount below can see either.
+    app.include_router(admin_action_requests_router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:

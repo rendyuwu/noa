@@ -585,7 +585,8 @@ def test_the_audit_rows_whitelist_names_the_same_four_fields_the_evidence_does()
     cannot import them: `core/` is below `apps/api` and the dependency runs one way only. So a
     rename on either side is invisible to every other test — the producer test above keeps
     passing because it uses the constants, and the audit-row test in
-    `test_action_request_decisions_live.py` keeps passing because it builds its own evidence.
+    `test_action_request_decision_records_live.py` keeps passing because it builds its own
+    evidence.
     The row would just quietly carry three fields instead of four, which is the omission §V86
     exists to forbid.
 

@@ -1,4 +1,4 @@
-import type { ToolRunFilters } from './types'
+import type { ActionRequestFilters, ToolRunFilters } from './types'
 import { AUDIT_PAGE_SIZE } from './types'
 
 // Query construction + filter accounting for the audit list (T55). The API is
@@ -62,6 +62,51 @@ export function buildToolRunQuery(filters: ToolRunFilters, cursor: string | null
   if (filters.status.trim()) params.set('status', filters.status.trim())
   if (filters.risk.trim()) params.set('risk', filters.risk.trim())
   if (filters.conversationRef.trim()) params.set('conversationRef', filters.conversationRef.trim())
+  if (filters.requestedByEmail.trim())
+    params.set('requestedByEmail', filters.requestedByEmail.trim())
+  const { from, to } = normalizeDateRange(filters)
+  if (from) params.set('from', from)
+  if (to) params.set('to', to)
+  return params.toString()
+}
+
+// --- The CHANGE authorisation trail ---
+//
+// Five parameters, not seven: this list has no `risk` (every row is a CHANGE, so
+// the filter would scope nothing) and no `conversationRef` (the label is on the
+// row and worth showing, but grouping by it belongs to the tool-run list where
+// READs live too). The set is named for the same reason the one above is — the
+// offered names and the accepted names are each written once, and
+// `apps/api/tests/test_admin_action_request_routes.py::FILTER_QUERIES` walks the
+// accepted half.
+
+export const ACTION_REQUEST_QUERY_KEYS = [
+  'toolName',
+  'status',
+  'requestedByEmail',
+  'from',
+  'to',
+] as const
+
+export function activeActionRequestFilterCount(filters: ActionRequestFilters): number {
+  return [
+    filters.fromDate,
+    filters.toDate,
+    filters.toolName,
+    filters.status,
+    filters.requestedByEmail,
+  ].filter((value) => value.trim()).length
+}
+
+export function buildActionRequestQuery(
+  filters: ActionRequestFilters,
+  cursor: string | null,
+): string {
+  const params = new URLSearchParams()
+  params.set('limit', String(AUDIT_PAGE_SIZE))
+  if (cursor) params.set('cursor', cursor)
+  if (filters.toolName.trim()) params.set('toolName', filters.toolName.trim())
+  if (filters.status.trim()) params.set('status', filters.status.trim())
   if (filters.requestedByEmail.trim())
     params.set('requestedByEmail', filters.requestedByEmail.trim())
   const { from, to } = normalizeDateRange(filters)

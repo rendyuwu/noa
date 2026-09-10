@@ -1,14 +1,22 @@
-"""The decision, against a real Postgres (T37 — V15, V27, V28, V29, V32, V46).
+"""The decision gate against a real Postgres: one answer per request (T37 — V15, V27, V28, V32).
 
 `test_action_request_decision_routes.py` drives the same service over an in-memory
-repository, which proves the ordering and every refusal but cannot prove the two claims that
-are *about the database*:
+repository, which proves the ordering and every refusal but cannot prove the claim that is
+*about the database*:
 
-- **V28's row lock.** "Exactly one `pending → decided` transition" is a statement about what
+- **V28's row lock.** "Exactly one `pending -> decided` transition" is a statement about what
   happens when two transactions race. A double cannot lose that race, so a double cannot
-  demonstrate the invariant — only `SELECT … FOR UPDATE` on real rows can.
-- **One transaction covers the decision and the run.** "Both commit together" is a claim
-  about a transaction boundary, and an in-memory repository has none.
+  demonstrate the invariant — only `SELECT ... FOR UPDATE` on real rows can.
+
+The refusals sit beside it because they are the same question asked without contention: who
+may answer this request, and until when. They are asserted against real rows for their own
+reason — V27's requester match has to survive a `SET NULL` foreign key the metadata only
+describes, and V32's check-on-read has to *commit* the terminal status it discovers.
+
+What an accepted decision then records is `test_action_request_decision_records_live.py`, and
+V31's per-user cap is `test_action_request_change_cap_live.py`. Both were split out of this
+file when it passed the 900-line limit; all three share the row helpers in
+`support.action_decisions` and the scratch-database fixtures in `support.database`.
 
 Skipped, never failed, when Postgres is unreachable — like every other DB-backed test here.
 
@@ -19,36 +27,27 @@ because T38 is what makes it do anything.
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 import sqlalchemy as sa
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from core.approvals.decisions import SQLActionDecisionRepository
 from core.approvals.errors import (
     ActionRequestAlreadyDecidedError,
     ActionRequestExpiredError,
     ActionRequestNotFoundError,
-    ChangeExecutionLimitReachedError,
     ChangeReasonRequiredError,
 )
 from core.approvals.repository import SQLActionRequestRepository
-from core.audit.tool_runs import SQLToolRunRepository
-from core.db.lifecycle import ActionRequestStatus, ToolRisk, ToolRunStatus
+from core.db.lifecycle import ActionRequestStatus
 from core.db.models import ActionRequest, User
 from support.action_decisions import (
-    APPROVAL_CONTEXT,
-    CHANGE_TOOL,
-    CONVERSATION_ID,
     HANDOVER_GRACE_SECONDS,
     REASON,
     ObservedDecisionRepository,
-    UnlockedCountDecisionRepository,
     build_decision_service,
     build_live_decision_service,
     insert_user,
@@ -56,22 +55,12 @@ from support.action_decisions import (
     read_request,
     read_runs,
 )
-from support.database import MUTATED_TABLES, migrated_database, truncate
+from support.database import migrated_database, session_factory
 
 SCRATCH_DB = "noa_action_decisions_test"
 
 OPERATOR_EMAIL = "operator@example.com"
 OTHER_EMAIL = "second-operator@example.com"
-
-# One reseller credential, standing in for §V108's four identity fields (the row's name, its
-# `api_username`, its host and the account's owner). Named after the credential because that is
-# what a reseller row is named after (V109(b)).
-RESELLER = "web08cpnpool01"
-
-# Planted in the evidence under a key `SENSITIVE_KEYS` names, to prove the audit row's reader is
-# a whitelist rather than a copy. Nothing in production puts a token there — the point is that
-# the reader would not carry one if something did (V8).
-PLANTED_TOKEN = "planted-api-token-value"
 
 
 @pytest.fixture(scope="module")
@@ -82,287 +71,17 @@ def database_url() -> Iterator[str]:
 
 @pytest.fixture
 async def factory(database_url: str) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
-    """A session factory over a freshly emptied database.
+    """A session factory over a freshly emptied database (`support.database`).
 
-    A *factory*, not a session: the concurrency case needs two independent connections, and
-    a single shared session would serialise them in Python before Postgres ever saw a lock.
     Function-scoped because an asyncpg connection belongs to the loop that opened it.
     """
-    await truncate(database_url, *MUTATED_TABLES)
-    engine = create_async_engine(database_url)
-    try:
-        yield async_sessionmaker(engine, expire_on_commit=False)
-    finally:
-        await engine.dispose()
+    async with session_factory(database_url) as sessions:
+        yield sessions
 
 
 # The row helpers — `insert_user`, `open_request`, `read_request`, `read_runs` — moved to
 # `support.action_decisions` at T39, when the expiry sweep's live file needed the same four
 # (V66). They still write through the gate's own repository; see their docstrings.
-
-
-# --------------------------------------------------------------------------------------
-# The approval, end to end through real SQL
-# --------------------------------------------------------------------------------------
-
-
-async def test_approval_writes_the_change_tool_run(factory) -> None:
-    """V46, V47: an approved CHANGE produces a `tool_runs` row that describes it.
-
-    `risk=CHANGE` is fixed by the repository rather than passed in — every row in
-    `action_requests` is a change by construction (V16), and a parameter would be somewhere
-    for `READ` to be written into an approved change's audit row.
-
-    The run is `STARTED`, not `COMPLETED`: nothing has executed. T38's executor moves it, and
-    its reaper is what covers a run that never gets there.
-    """
-    user_id = await insert_user(factory, OPERATOR_EMAIL)
-    action_request_id = await open_request(factory, requested_by_user_id=user_id)
-
-    async with factory() as session:
-        service, executor = build_live_decision_service(session)
-        outcome = await service.approve(
-            action_request_id=action_request_id,
-            caller_user_id=user_id,
-            reason=REASON,
-        )
-
-    runs = await read_runs(factory)
-    assert len(runs) == 1
-    run = runs[0]
-
-    assert run.id == outcome.tool_run_id
-    assert run.tool_name == CHANGE_TOOL
-    assert run.risk is ToolRisk.CHANGE
-    assert run.status is ToolRunStatus.STARTED
-    assert run.requested_by_user_id == user_id
-    assert run.conversation_ref == CONVERSATION_ID
-    assert run.args == APPROVAL_CONTEXT["arguments"]
-    assert run.completed_at is None
-    assert executor.only.tool_run_id == run.id
-
-
-async def test_an_approved_change_records_the_credential_it_acted_as_beside_its_arguments(
-    factory,
-) -> None:
-    """§V108: the audit row names the identity, not only the machine.
-
-    A privileged write whose credential is not recorded is not auditable, and `tool_runs` is
-    the table the audit surface reads (`admin_audit.py`) — `action_receipts` carries the same
-    four fields for a different reader, and a fact reachable only through a join nobody
-    performs is recorded rather than reported.
-
-    The four come out of the gate's stored evidence by **whitelist**
-    (`core.approvals.context.AUDIT_IDENTITY_KEYS`), which is the half worth testing: `evidence`
-    is a free-form preflight payload whose shape each CHANGE tool decides, so a passthrough
-    would copy whatever a future tool records into a second table. The evidence below carries
-    two things that must not travel — an account summary that belongs on the card, and a
-    token-shaped value under the very key `SENSITIVE_KEYS` names — and neither may appear in
-    the row.
-
-    The additive half is asserted one test up: `test_approval_writes_the_change_tool_run` uses
-    an `APPROVAL_CONTEXT` whose evidence names none of the four and still expects `args` to
-    equal the arguments exactly.
-    """
-    user_id = await insert_user(factory, OPERATOR_EMAIL)
-    action_request_id = await open_request(
-        factory,
-        requested_by_user_id=user_id,
-        approval_context={
-            "arguments": {"server_ref": RESELLER, "username": "acmeco"},
-            "requester": {"email": OPERATOR_EMAIL, "librechat_user_id": "librechat-user-1"},
-            "evidence": {
-                "server": RESELLER,
-                "api_username": RESELLER,
-                "host": "web08.example.net",
-                "owner": RESELLER,
-                "account": {"user": "acmeco", "suspended": False},
-                "api_token": PLANTED_TOKEN,
-            },
-        },
-    )
-
-    async with factory() as session:
-        service, _ = build_live_decision_service(session)
-        await service.approve(
-            action_request_id=action_request_id, caller_user_id=user_id, reason=REASON
-        )
-
-    runs = await read_runs(factory)
-    assert len(runs) == 1
-    args = runs[0].args
-
-    assert args["credential"] == {
-        "server": RESELLER,
-        "api_username": RESELLER,
-        "host": "web08.example.net",
-        "owner": RESELLER,
-    }
-    # What was asked for is still exactly what was asked for: the identity is beside the
-    # arguments, never merged into them (`ActionResultView` reads that half, V76).
-    assert args["server_ref"] == RESELLER
-    assert args["username"] == "acmeco"
-    assert set(args) == {"server_ref", "username", "credential"}
-    assert PLANTED_TOKEN not in json.dumps(args)
-    assert "account" not in json.dumps(args)
-
-
-async def test_a_change_that_names_a_machine_but_no_credential_records_only_its_arguments(
-    factory,
-) -> None:
-    """The additive half of §V108, against evidence a real tool actually writes.
-
-    This is the test the review found wanting, and the reason it was wanting is worth keeping:
-    `evidence["server"]` is not the WHM account pair's alone. `proxmox_nic`, `proxmox_password`,
-    `pmg_whitelist` and both WHM firewall tools all write it for the machine they act on, so a
-    whitelist keyed on "any of the four" gave every one of those approvals an
-    `args["credential"]` holding a machine name — a block labelled credential with no credential
-    in it, which is the precise misreading the nested key exists to prevent. The old fixture
-    could not see it, because its evidence shape (`{account, suspended, domain}`) is one no tool
-    produces: a control that cannot separate because its fixture does not represent the subject.
-
-    So the evidence below is `proxmox_nic`'s, key for key (`mcp_tools/proxmox_nic.py`), and the
-    claim is that such an approval's audit row is byte-identical to what it was before §V108:
-    the arguments, and no `credential` key at all. `api_username` is what gates the block, and
-    nothing but the account pair records one.
-    """
-    user_id = await insert_user(factory, OPERATOR_EMAIL)
-    arguments = {"server_ref": "pve-01", "node": "pve", "vmid": 120, "action": "disconnect"}
-    action_request_id = await open_request(
-        factory,
-        requested_by_user_id=user_id,
-        approval_context={
-            "arguments": arguments,
-            "requester": {"email": OPERATOR_EMAIL, "librechat_user_id": "librechat-user-1"},
-            "evidence": {
-                "server_id": str(uuid4()),
-                "server": "pve-01",
-                "node": "pve",
-                "vmid": 120,
-                "net": "net0",
-                "action": "disconnect",
-                "nic": {"key": "net0", "auto_selected": True},
-                "vm": {"name": "web-01", "status": "running"},
-            },
-        },
-    )
-
-    async with factory() as session:
-        service, _ = build_live_decision_service(session)
-        await service.approve(
-            action_request_id=action_request_id, caller_user_id=user_id, reason=REASON
-        )
-
-    runs = await read_runs(factory)
-    assert len(runs) == 1
-    assert runs[0].args == arguments
-    assert "credential" not in runs[0].args
-
-
-async def test_the_decision_row_is_the_authorization_after_approval(factory) -> None:
-    """V23: what the row says is the answer, so this is what the row says."""
-    user_id = await insert_user(factory, OPERATOR_EMAIL)
-    action_request_id = await open_request(factory, requested_by_user_id=user_id)
-    before = datetime.now(UTC)
-
-    async with factory() as session:
-        service, _ = build_live_decision_service(session)
-        outcome = await service.approve(
-            action_request_id=action_request_id,
-            caller_user_id=user_id,
-            reason=REASON,
-        )
-
-    stored = await read_request(factory, action_request_id)
-
-    assert stored.status is ActionRequestStatus.APPROVED
-    assert stored.reason == REASON
-    assert stored.tool_run_id == outcome.tool_run_id
-    # Asserted as a bound, not as an equality: `decided_at` is clock-stamped, and an equality
-    # compare against a second `now()` is the flake V87 is about.
-    assert stored.decided_at is not None
-    assert before <= stored.decided_at <= datetime.now(UTC)
-
-
-async def test_decision_and_run_commit_together(factory) -> None:
-    """One transaction, so `APPROVED` with no run cannot exist (V29, V46).
-
-    Driven by making the *commit* impossible rather than by patching the service: the
-    `tool_runs` FK is deferred to nothing, so instead the reason is emptied behind the
-    endpoint's guard, which trips the database CHECK at flush time. Whatever the cause, the
-    property is the same — if the decision does not land, neither does the run.
-    """
-    user_id = await insert_user(factory, OPERATOR_EMAIL)
-    action_request_id = await open_request(factory, requested_by_user_id=user_id)
-
-    async with factory() as session:
-        repository = SQLActionDecisionRepository(session)
-        locked = await repository.lock_for_decision(action_request_id=action_request_id)
-        assert locked is not None
-
-        tool_run_id = await repository.start_change_run(
-            tool_name=locked.tool_name,
-            requested_by_user_id=user_id,
-            conversation_ref=locked.conversation_ref,
-            args=locked.redacted_arguments,
-        )
-        # The CHECK fires on the UPDATE itself here rather than at COMMIT (it is not
-        # deferrable), so both statements sit inside the expectation — which point it
-        # surfaces at is Postgres's business, not this test's.
-        with pytest.raises(IntegrityError):
-            await repository.write_decision(
-                action_request_id=action_request_id,
-                status=ActionRequestStatus.APPROVED,
-                reason="   ",  # what the CHECK refuses (T34(f))
-                decided_at=datetime.now(UTC),
-                tool_run_id=tool_run_id,
-            )
-            await repository.commit()
-        await session.rollback()
-
-    assert (await read_request(factory, action_request_id)).status is ActionRequestStatus.PENDING
-    assert await read_runs(factory) == []
-
-
-async def test_database_refuses_a_decided_row_without_a_reason(factory) -> None:
-    """T34(f) at the mechanism: the CHECK holds against a writer that is not the endpoint.
-
-    The endpoint's 409 is `test_action_request_decision_routes.py`'s. This is the guarantee
-    that survives T38's executor, T39's sweep and anything run by hand against the database.
-    """
-    user_id = await insert_user(factory, OPERATOR_EMAIL)
-    action_request_id = await open_request(factory, requested_by_user_id=user_id)
-
-    async with factory() as session:
-        with pytest.raises(IntegrityError):
-            await session.execute(
-                sa.update(ActionRequest)
-                .where(ActionRequest.id == action_request_id)
-                .values(status=ActionRequestStatus.DENIED, decided_at=datetime.now(UTC))
-            )
-            await session.commit()
-        await session.rollback()
-
-
-async def test_denial_writes_no_run(factory) -> None:
-    """A denied change did not run, so the audit trail must not claim one."""
-    user_id = await insert_user(factory, OPERATOR_EMAIL)
-    action_request_id = await open_request(factory, requested_by_user_id=user_id)
-
-    async with factory() as session:
-        service, executor = build_live_decision_service(session)
-        await service.deny(
-            action_request_id=action_request_id,
-            caller_user_id=user_id,
-            reason="Ticket does not authorise this; asking the customer to confirm first.",
-        )
-
-    stored = await read_request(factory, action_request_id)
-
-    assert stored.status is ActionRequestStatus.DENIED
-    assert stored.tool_run_id is None
-    assert await read_runs(factory) == []
-    assert executor.started == []
 
 
 # --------------------------------------------------------------------------------------
@@ -757,245 +476,3 @@ async def test_the_gates_repository_still_cannot_decide(factory) -> None:
     writable = {name for name in dir(SQLActionRequestRepository) if not name.startswith("_")}
 
     assert writable == {"create_pending", "commit"}
-
-
-# --------------------------------------------------------------------------------------
-# V31 — the per-user cap, and the lock that makes it hold (T38, V89)
-# --------------------------------------------------------------------------------------
-
-
-async def test_the_cap_counts_a_started_change_run(factory) -> None:
-    """V31, sequentially: one change in flight, a limit of one, and the second is refused.
-
-    The count is `tool_runs` rows that are `CHANGE` and `STARTED` — which is what "in flight"
-    means when the executor has not written a terminal status yet (T38). Two requests, because a
-    second approval of the *same* request is V28's 409 and would pass this test for the wrong
-    reason.
-    """
-    user_id = await insert_user(factory, OPERATOR_EMAIL)
-    first_request = await open_request(factory, requested_by_user_id=user_id)
-    second_request = await open_request(factory, requested_by_user_id=user_id)
-
-    async with factory() as session:
-        service, _ = build_live_decision_service(session, max_inflight_per_user=1)
-        await service.approve(
-            action_request_id=first_request,
-            caller_user_id=user_id,
-            reason=REASON,
-        )
-
-    async with factory() as session:
-        service, _ = build_live_decision_service(session, max_inflight_per_user=1)
-        with pytest.raises(ChangeExecutionLimitReachedError):
-            await service.approve(
-                action_request_id=second_request,
-                caller_user_id=user_id,
-                reason=REASON,
-            )
-
-    assert len(await read_runs(factory)) == 1
-    assert (await read_request(factory, second_request)).status is ActionRequestStatus.PENDING
-
-
-async def test_a_finished_change_frees_the_operators_slot(factory) -> None:
-    """The negative control for the cap (V87): it must let go.
-
-    A cap that counted every change an operator ever made would refuse the second approval
-    forever, and this test would be the only thing that noticed.
-    """
-    user_id = await insert_user(factory, OPERATOR_EMAIL)
-    first_request = await open_request(factory, requested_by_user_id=user_id)
-    second_request = await open_request(factory, requested_by_user_id=user_id)
-
-    async with factory() as session:
-        service, _ = build_live_decision_service(session, max_inflight_per_user=1)
-        outcome = await service.approve(
-            action_request_id=first_request,
-            caller_user_id=user_id,
-            reason=REASON,
-        )
-
-    # What the executor does when the change finishes (T38).
-    async with factory() as session:
-        runs = SQLToolRunRepository(session)
-        await runs.finish_run(
-            tool_run_id=outcome.tool_run_id,
-            status=ToolRunStatus.COMPLETED,
-            result_summary='{"ok":true}',
-        )
-        await runs.commit()
-
-    async with factory() as session:
-        service, _ = build_live_decision_service(session, max_inflight_per_user=1)
-        await service.approve(
-            action_request_id=second_request,
-            caller_user_id=user_id,
-            reason=REASON,
-        )
-
-    assert len(await read_runs(factory)) == 2
-
-
-async def test_another_operators_change_does_not_spend_this_ones_allowance(factory) -> None:
-    """The count is scoped by `requested_by_user_id` in the statement.
-
-    Global instead of per-user, the cap would make one operator's slow change stop the team —
-    which is the outage V31's wording ("per-user") exists to avoid.
-    """
-    first_user = await insert_user(factory, OPERATOR_EMAIL)
-    second_user = await insert_user(factory, OTHER_EMAIL)
-    first_request = await open_request(factory, requested_by_user_id=first_user)
-    second_request = await open_request(factory, requested_by_user_id=second_user)
-
-    for request_id, user_id in ((first_request, first_user), (second_request, second_user)):
-        async with factory() as session:
-            service, _ = build_live_decision_service(session, max_inflight_per_user=1)
-            await service.approve(
-                action_request_id=request_id,
-                caller_user_id=user_id,
-                reason=REASON,
-            )
-
-    assert len(await read_runs(factory)) == 2
-
-
-async def test_two_overlapping_approvals_by_one_operator_start_one_run(factory) -> None:
-    """V31 under concurrency, proven overlapped (V89, B5).
-
-    **Why V28's row lock does not cover this.** Two approvals of *different* requests never
-    touch each other's rows, so `SELECT … FOR UPDATE` serializes nothing between them. Both read
-    a count of zero under READ COMMITTED — neither can see the other's uncommitted `tool_runs`
-    insert — and both proceed. What serializes them is V31's per-user advisory lock, taken inside
-    the same transaction as the count it protects.
-
-    **The window is held open on purpose.** The first transaction stops between taking the
-    advisory lock and committing, and the second is started inside that window.
-
-    **The ordering assertion is what carries the invariant**, not the win count: `second:counted`
-    must land *after* `first:committed`, because that is what "the second count waited for the
-    lock" means, and it is false the instant the advisory lock is removed. The
-    `tool_runs` count is the harm this prevents — two rows would mean two production changes
-    running for one operator whose limit is one.
-    """
-    user_id = await insert_user(factory, OPERATOR_EMAIL)
-    first_request = await open_request(factory, requested_by_user_id=user_id)
-    second_request = await open_request(factory, requested_by_user_id=user_id)
-
-    journal: list[str] = []
-    second_counting = asyncio.Event()
-
-    async def hold_the_lock() -> None:
-        """Stay inside the first transaction until the second has reached for the key."""
-        await second_counting.wait()
-        await asyncio.sleep(HANDOVER_GRACE_SECONDS)
-
-    async def announce_count() -> None:
-        second_counting.set()
-
-    async def approve(
-        action_request_id: UUID,
-        *,
-        label: str,
-        before_count=None,  # type: ignore[no-untyped-def]
-        after_count=None,  # type: ignore[no-untyped-def]
-    ) -> Exception | None:
-        async with factory() as session:
-            service = build_decision_service(
-                ObservedDecisionRepository(
-                    session,
-                    label=label,
-                    journal=journal,
-                    before_count=before_count,
-                    after_count=after_count,
-                ),
-                max_inflight_per_user=1,
-            )
-            try:
-                await service.approve(
-                    action_request_id=action_request_id,
-                    caller_user_id=user_id,
-                    reason=f"{REASON} ({label})",
-                )
-            except Exception as exc:
-                return exc
-            return None
-
-    outcomes = await asyncio.gather(
-        approve(first_request, label="first", after_count=hold_the_lock),
-        approve(second_request, label="second", before_count=announce_count),
-    )
-
-    assert journal.index("second:counted") > journal.index("first:committed"), (
-        f"the second count did not wait for the first transaction: {journal}"
-    )
-
-    winners = [outcome for outcome in outcomes if outcome is None]
-    losers = [outcome for outcome in outcomes if outcome is not None]
-
-    assert len(winners) == 1, f"expected exactly one approval to win, got {outcomes}"
-    assert isinstance(losers[0], ChangeExecutionLimitReachedError)
-    assert len(await read_runs(factory)) == 1
-
-
-async def test_an_unlocked_count_does_not_wait_and_the_cap_is_breached(factory) -> None:
-    """The negative control for the ordering assertion above (V87, V89's obligation (b)).
-
-    A "the second count landed after the first commit" assertion is worthless if *every* count
-    would land there — if, say, the harness never actually overlapped the two transactions. This
-    runs the identical handshake with the advisory lock removed and nothing else changed, and
-    shows two things at once: the count returns *while* the first transaction still holds its
-    slot, and both approvals then win. So the ordering the test above forbids is reachable, and
-    the harm it forbids is real.
-    """
-    user_id = await insert_user(factory, OPERATOR_EMAIL)
-    first_request = await open_request(factory, requested_by_user_id=user_id)
-    second_request = await open_request(factory, requested_by_user_id=user_id)
-
-    journal: list[str] = []
-    second_counting = asyncio.Event()
-
-    async def hold_open() -> None:
-        await second_counting.wait()
-        await asyncio.sleep(HANDOVER_GRACE_SECONDS)
-
-    async def announce_count() -> None:
-        second_counting.set()
-
-    async def approve(
-        action_request_id: UUID,
-        *,
-        label: str,
-        before_count=None,  # type: ignore[no-untyped-def]
-        after_count=None,  # type: ignore[no-untyped-def]
-    ) -> Exception | None:
-        async with factory() as session:
-            service = build_decision_service(
-                UnlockedCountDecisionRepository(
-                    session,
-                    label=label,
-                    journal=journal,
-                    before_count=before_count,
-                    after_count=after_count,
-                ),
-                max_inflight_per_user=1,
-            )
-            try:
-                await service.approve(
-                    action_request_id=action_request_id,
-                    caller_user_id=user_id,
-                    reason=f"{REASON} ({label})",
-                )
-            except Exception as exc:
-                return exc
-            return None
-
-    outcomes = await asyncio.gather(
-        approve(first_request, label="first", after_count=hold_open),
-        approve(second_request, label="second", before_count=announce_count),
-    )
-
-    assert journal.index("second:counted") < journal.index("first:committed"), (
-        f"the unlocked count still waited, so the handshake never overlapped: {journal}"
-    )
-    assert outcomes == [None, None], f"expected both approvals to win without the lock: {outcomes}"
-    assert len(await read_runs(factory)) == 2

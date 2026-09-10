@@ -49,6 +49,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from core.approvals.errors import (
     ActionDecisionError,
+    ActionReceiptNotFoundError,
     ActionRequestAlreadyDecidedError,
     ActionRequestExpiredError,
     ActionRequestNotFoundError,
@@ -312,6 +313,12 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # confirm the request exists. `ActionDecisionError` sits at the end of this group, so
     # note the pairing — these two answer with different statuses and must not collapse.
     ActionRequestNotFoundError: status.HTTP_404_NOT_FOUND,
+    # 404 for a request that is real and carries no receipt (§I.admin-api). Its own class rather
+    # than the one above, because the two say different things to an administrator: "no such
+    # request" is a dead link, "that decision started no run" is the answer for every deny and
+    # every expiry. Not a 204 — the panel reaches this address from a `hasReceipt` bit that may
+    # have gone stale, and an empty body would render as a blank page rather than as a fact.
+    ActionReceiptNotFoundError: status.HTTP_404_NOT_FOUND,
     # 409 for both terminal refusals. The caller may decide requests in general; this one is
     # past deciding. Two classes rather than one because the remedies differ — reload and
     # read the outcome (V28) versus ask for the change again (V32).

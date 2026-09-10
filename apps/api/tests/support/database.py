@@ -18,15 +18,15 @@ import asyncio
 import os
 import subprocess
 import sys
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from typing import NoReturn
 from urllib.parse import urlsplit, urlunsplit
 
 import pytest
 import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from core.config import get_settings
 
@@ -186,6 +186,28 @@ async def truncate(url: str, *tables: str) -> None:
         await engine.dispose()
 
 
+@asynccontextmanager
+async def session_factory(database_url: str) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    """A session factory over a freshly emptied database.
+
+    A *factory*, not a session: a concurrency case needs two independent connections, and a
+    single shared session would serialise them in Python before Postgres ever saw a lock.
+
+    This is the body of the `factory` fixture the live files declare, held in one place (V66).
+    The fixture itself stays in each test module rather than being imported from here: it has
+    to bind the name `factory` in that module, and an imported fixture collides with the
+    parameter of every test that requests it. What is worth sharing is this — a second copy is
+    a second place for `MUTATED_TABLES` to go stale, and a file that quietly stopped emptying a
+    table would fail somewhere else entirely.
+    """
+    await truncate(database_url, *MUTATED_TABLES)
+    engine = create_async_engine(database_url)
+    try:
+        yield async_sessionmaker(engine, expire_on_commit=False)
+    finally:
+        await engine.dispose()
+
+
 __all__ = [
     "API_DIR",
     "DEV_URL",
@@ -195,6 +217,7 @@ __all__ = [
     "postgres_required",
     "run_alembic",
     "run_statements",
+    "session_factory",
     "swap_database",
     "truncate",
     "unreachable_postgres",

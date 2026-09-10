@@ -36,6 +36,14 @@ is the **real** `ToolRunAuditService` over `support.tool_run_audit`'s in-memory 
 bound, the cursor minting and the payload shape all run for real. What is *not* modelled there is
 filtering — that lives in the SQL, and `support.tool_run_audit` records why a Python copy of it
 would be a test agreeing with a double.
+
+The action-request admin router (§I.admin-api) joins on the same terms, and on a fourth: "every
+admin route is admin-only" is a claim about the whole surface, and a router mounted in its own
+harness would be walked by its own copy of that test rather than by the one that already counts
+the routes. Its service is the **real** `ActionRequestAdminService` over
+`support.action_request_admin`'s in-memory reader. Nothing in this harness can write an
+`action_requests` row — the writers are `core.approvals.decisions` and the expiry sweep, both on
+the far side of V22's boundary — which is exactly the shape the surface is supposed to have.
 """
 
 from __future__ import annotations
@@ -45,9 +53,11 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from uuid import UUID
 
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
+from core.approvals.admin_reads import ActionRequestAdminService
 from core.audit.tool_run_reads import ToolRunAuditService
 from core.auth.authorization_service import AuthorizationService
 from core.auth.jwt_service import JWTService
@@ -71,6 +81,7 @@ from noa_api.api.deps import (
     STATE_LDAP_SERVICE,
     STATE_SESSION_FACTORY,
     STATE_SETTINGS,
+    get_action_request_admin_service,
     get_auth_service,
     get_authorization_service,
     get_mcp_token_service,
@@ -83,6 +94,7 @@ from noa_api.api.deps import (
     get_whm_server_validation_service,
 )
 from noa_api.api.errors import install_error_handling
+from noa_api.api.routes.admin_action_requests import router as admin_action_requests_router
 from noa_api.api.routes.admin_audit import router as admin_audit_router
 from noa_api.api.routes.admin_roles import router as admin_roles_router
 from noa_api.api.routes.admin_servers import pmg_router as admin_pmg_servers_router
@@ -91,6 +103,7 @@ from noa_api.api.routes.admin_servers import whm_router as admin_whm_servers_rou
 from noa_api.api.routes.admin_users import router as admin_users_router
 from noa_api.api.routes.mcp_tokens import admin_router as admin_tokens_router
 from noa_api.api.routes.mcp_tokens import me_router as me_tokens_router
+from support.action_request_admin import FakeActionRequestAdminReader
 from support.auth import (
     COOKIE_NAME,
     FakeAuthRepository,
@@ -125,11 +138,39 @@ WHM_SERVERS_PATH = "/admin/whm/servers"
 PROXMOX_SERVERS_PATH = "/admin/proxmox/servers"
 PMG_SERVERS_PATH = "/admin/pmg/servers"
 TOOL_RUNS_PATH = "/admin/audit/tool-runs"
+ACTION_REQUESTS_PATH = "/admin/action-requests"
 
 
 def admin_tokens_path(user_id: UUID) -> str:
     """`/admin/users/{user_id}/tokens` — spelled once so a route rename lands in one place."""
     return f"{USERS_PATH}/{user_id}/tokens"
+
+
+def registered_routes(router: APIRouter, *, id_param: str) -> set[tuple[str, str]]:
+    """Every `(method, path)` a router mounts, with its id segment renamed to `{id}`.
+
+    For the admin-gate walks, which assert that *every* route on a router refuses a caller
+    holding no `admin` role. Those walks read a hand-written table, and a table checked only
+    against its own `len()` is pinned to itself: it cannot notice an address that was added and
+    never listed, which is exactly the route that would ship without `AdminUserDep`. Comparing
+    the table against this closes that, and it is the whole reason the walk can claim to cover a
+    route nobody has written yet.
+
+    Shared by both admin route tests rather than copied into each (V66) — one rule about how a
+    route table is proved complete, in one place. The id segment is normalised so a table can
+    carry one formattable template per address; `id_param` is the path parameter's real name,
+    which differs per router.
+
+    Every route is asserted to be an `APIRoute` rather than filtered down to one: skipping what
+    does not match would let a mount or a websocket added later drop out of the set silently,
+    which is the same blindness this helper exists to remove.
+    """
+    found: set[tuple[str, str]] = set()
+    for route in router.routes:
+        assert isinstance(route, APIRoute), f"not an APIRoute: {route!r}"
+        for method in route.methods:
+            found.add((method, route.path.replace(f"{{{id_param}}}", "{id}")))
+    return found
 
 
 @dataclass
@@ -170,6 +211,10 @@ class AdminHarness:
     # T55. The audit trail this harness serves; a test appends items to it directly, because the
     # writers that fill the real table are on the MCP side of V22's boundary.
     tool_runs: FakeToolRunAuditReader
+    # The CHANGE authorisation trail (§I.admin-api). Appended to directly, like `tool_runs` above
+    # and for a stronger version of the same reason: the writers are the decision path and the
+    # expiry sweep, and neither is reachable from a read-only admin surface.
+    action_requests: FakeActionRequestAdminReader
 
     def sign_in(
         self,
@@ -273,6 +318,7 @@ def admin_harness(
     settings: Settings | None = None,
     known_tools: frozenset[str] = TOOL_CATALOG,
     tool_runs: FakeToolRunAuditReader | None = None,
+    action_requests: FakeActionRequestAdminReader | None = None,
     whm_rows: Sequence[WHMServer] | None = None,
     proxmox_rows: Sequence[ProxmoxServer] | None = None,
     pmg_rows: Sequence[PMGServer] | None = None,
@@ -316,6 +362,7 @@ def admin_harness(
         known_ids=[row.id for row in pmg_servers.servers],
     )
     audit_reader = tool_runs or FakeToolRunAuditReader()
+    action_request_reader = action_requests or FakeActionRequestAdminReader()
 
     app = FastAPI()
     install_error_handling(app)
@@ -327,6 +374,7 @@ def admin_harness(
     app.include_router(admin_proxmox_servers_router)
     app.include_router(admin_pmg_servers_router)
     app.include_router(admin_audit_router)
+    app.include_router(admin_action_requests_router)
 
     # The same attributes `noa_api.main.lifespan` writes, minus the engine no test here needs.
     setattr(app.state, STATE_SETTINGS, resolved_settings)
@@ -372,6 +420,10 @@ def admin_harness(
     app.dependency_overrides[get_tool_run_audit_service] = lambda: ToolRunAuditService(
         repository=audit_reader
     )
+    # Same split for the authorisation trail: the **real** service, only the SQL doubled.
+    app.dependency_overrides[get_action_request_admin_service] = lambda: ActionRequestAdminService(
+        repository=action_request_reader
+    )
 
     with TestClient(app) as client:
         yield AdminHarness(
@@ -391,10 +443,12 @@ def admin_harness(
             proxmox_validation=proxmox_validation,
             pmg_validation=pmg_validation,
             tool_runs=audit_reader,
+            action_requests=action_request_reader,
         )
 
 
 __all__ = [
+    "ACTION_REQUESTS_PATH",
     "ADMIN_EMAIL",
     "ME_TOKENS_PATH",
     "OPERATOR_EMAIL",
@@ -409,4 +463,5 @@ __all__ = [
     "SignedInUser",
     "admin_harness",
     "admin_tokens_path",
+    "registered_routes",
 ]

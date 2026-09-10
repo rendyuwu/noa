@@ -63,7 +63,14 @@ MAX_PAGE_SIZE: Final = 200
 # LIKE metacharacters in a caller-supplied `requestedByEmail`. Escaped rather than passed through:
 # a bare `%` widens the filter to *every* row while the response still says it was filtered, which
 # is a wrong answer wearing a right one's clothes. `noa-old` did not escape these.
-_LIKE_ESCAPE: Final = "\\"
+#
+# `LIKE_ESCAPE` is exported because `escape_like` only inserts it — the `ESCAPE '…'` clause that
+# tells Postgres what it means is written by the caller, so the two halves live in two modules and
+# they have to name the same character (V66). A second private copy next to the second caller was
+# the shape this replaced: change one to `!` for a driver quirk and the other still declares `\`,
+# so `!%` arrives as a literal `!` beside a live `%` and every address matches while the response
+# still reads as filtered.
+LIKE_ESCAPE: Final = "\\"
 _LIKE_SPECIALS: Final = re.compile(r"([\\%_])")
 
 
@@ -75,7 +82,7 @@ def escape_like(value: str) -> str:
     result still *looks* like a pattern, which is why the escaping is asserted on the value and not
     only on the presence of the `ESCAPE` clause (`test_tool_run_audit_read.py`).
     """
-    return _LIKE_SPECIALS.sub(lambda match: _LIKE_ESCAPE + match.group(1), value)
+    return _LIKE_SPECIALS.sub(lambda match: LIKE_ESCAPE + match.group(1), value)
 
 
 @dataclass(frozen=True)
@@ -208,7 +215,7 @@ def _apply_filters(statement: Select[Any], filters: ToolRunAuditFilters) -> Sele
         statement = statement.where(ToolRun.conversation_ref == filters.conversation_ref)
     if filters.requested_by_email:
         statement = statement.where(
-            User.email.ilike(f"%{escape_like(filters.requested_by_email)}%", escape=_LIKE_ESCAPE)
+            User.email.ilike(f"%{escape_like(filters.requested_by_email)}%", escape=LIKE_ESCAPE)
         )
     if filters.created_from is not None:
         statement = statement.where(ToolRun.created_at >= filters.created_from)
@@ -390,6 +397,7 @@ class ToolRunAuditService:
 
 __all__ = [
     "DEFAULT_PAGE_SIZE",
+    "LIKE_ESCAPE",
     "MAX_PAGE_SIZE",
     "SQLToolRunAuditReader",
     "ToolRunAuditFilters",

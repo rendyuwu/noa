@@ -10,8 +10,10 @@ import type { BadgeVariant, StatusChipStatus } from '@gio/bigsu-ui'
 //     or an invented chip.
 //
 // `resolveActionStatus` lived here for the ported action-requests tab, which
-// read a `terminalPhase` off a receipt route NOA does not serve. It went with
-// that tab (T55).
+// read a `terminalPhase` off a receipt route NOA did not serve. It went with
+// that tab (T55). `resolveActionRequestStatus` below is not that function
+// returning: it maps `action_requests.status`, a real column, reached through a
+// route §I.admin-api names.
 
 export type AuditStatusView =
   | { kind: 'status'; status: StatusChipStatus }
@@ -27,6 +29,22 @@ export function resolveToolRunStatus(status: string): AuditStatusView {
   if (normalized === 'COMPLETED') return asStatus('Completed')
   if (normalized === 'FAILED') return asStatus('Failed')
   if (normalized === 'STARTED') return asStatus('Active')
+  return { kind: 'badge', label: normalized || 'Unknown', variant: 'neutral' }
+}
+
+// Resolve an `action_requests.status` to its chip. Three of the four map onto
+// BIGSU's standard vocabulary; EXPIRED does not, and rule 2 above says what
+// happens then — a neutral Badge rather than an invented chip. That is also the
+// honest rendering: an expiry is a decision the clock made and no operator
+// rejected anything, so borrowing "Rejected" for it would put words in someone's
+// mouth. DENIED does map to "Rejected", which is the same event under BIGSU's
+// spelling.
+export function resolveActionRequestStatus(status: string): AuditStatusView {
+  const normalized = (status ?? '').trim().toUpperCase()
+  if (normalized === 'PENDING') return asStatus('Pending')
+  if (normalized === 'APPROVED') return asStatus('Approved')
+  if (normalized === 'DENIED') return asStatus('Rejected')
+  if (normalized === 'EXPIRED') return { kind: 'badge', label: 'Expired', variant: 'neutral' }
   return { kind: 'badge', label: normalized || 'Unknown', variant: 'neutral' }
 }
 

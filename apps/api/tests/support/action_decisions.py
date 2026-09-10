@@ -27,11 +27,14 @@ what the caller asked for.
 
 **The live helpers at the bottom are not doubles.** `insert_user`, `open_request`,
 `read_request`, `read_runs` and `ObservedDecisionRepository` run against a real Postgres and
-live here because two files need them (V66): `test_action_request_decisions_live.py` (T37)
-and `test_action_request_expiry_live.py` (T39). The second one races a sweep against an
-approval, which needs the same "hold the transaction open between its locked read and its
-commit" instrument the first one uses — and a second copy of that instrument is a second
-thing that can silently stop overlapping, which is exactly the failure V89 exists to name.
+live here because several files need them (V66): the three the decision's live coverage is
+split across — `test_action_request_decisions_live.py` (T37, the row lock and the refusals),
+`test_action_request_decision_records_live.py` (what a decision writes) and
+`test_action_request_change_cap_live.py` (V31) — plus `test_action_request_expiry_live.py`
+(T39). That last one races a sweep against an approval, which needs the same "hold the
+transaction open between its locked read and its commit" instrument the others use — and a
+second copy of that instrument is a second thing that can silently stop overlapping, which is
+exactly the failure V89 exists to name.
 """
 
 from __future__ import annotations

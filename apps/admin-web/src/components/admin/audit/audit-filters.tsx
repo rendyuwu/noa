@@ -4,7 +4,7 @@ import type { Dispatch, SetStateAction } from 'react'
 
 import { DatePicker, FilterBar, FormField, Input, Select } from '@gio/bigsu-ui'
 
-import type { ToolRunFilters } from '@/lib/admin/audit/types'
+import type { ActionRequestFilters, ToolRunFilters } from '@/lib/admin/audit/types'
 
 // Server-driven filter bar for the audit list (T55). FilterBar owns only layout;
 // the page owns the draft filter state and applies it against the server query.
@@ -138,6 +138,81 @@ export function ToolRunFilterBar({
           placeholder="conversation label"
           value={draft.conversationRef}
           onChange={(event) => setDraft((prev) => ({ ...prev, conversationRef: event.target.value }))}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') onApply()
+          }}
+        />
+      </FormField>
+    </FilterBar>
+  )
+}
+
+// The same bar over the authorisation trail's five parameters
+// (`ACTION_REQUEST_QUERY_KEYS`). Two of the tool-run controls are absent and
+// their absence is the point: `risk` would scope nothing, because every row here
+// is a CHANGE by construction; `conversationRef` is a grouping label worth
+// filtering on where READs live too, and this list is not that. The date fields
+// are the same component, not a second copy of the day-to-instant conversion.
+//
+// The four decision values below mirror `ActionRequestStatus` in
+// `core/db/lifecycle.py`, and that mirror is hand-kept and unbound across the
+// language boundary: nothing reads the Python enum against this list, and
+// nothing in this package can. Said out loud rather than left silent, because a
+// fifth member added there would leave this dropdown quietly offering four and
+// those rows unfilterable (V119 takes a stated gap; it does not take a silent
+// one). The test beside this file pins the TypeScript half only, so a careless
+// edit here goes red and a deliberate one has to be made against the enum on
+// purpose. Contrast `ACTION_REQUEST_QUERY_KEYS`, which is asserted on both sides
+// of the boundary and is what a bound mirror looks like.
+export const ACTION_REQUEST_STATUS_OPTIONS = [
+  { value: '', label: 'Any status' },
+  { value: 'PENDING', label: 'Pending' },
+  { value: 'APPROVED', label: 'Approved' },
+  { value: 'DENIED', label: 'Denied' },
+  { value: 'EXPIRED', label: 'Expired' },
+]
+
+export function ActionRequestFilterBar({
+  draft,
+  setDraft,
+  onApply,
+  onClear,
+}: {
+  draft: ActionRequestFilters
+  setDraft: Dispatch<SetStateAction<ActionRequestFilters>>
+  onApply: () => void
+  onClear: () => void
+}) {
+  return (
+    <FilterBar
+      search={{
+        value: draft.toolName,
+        onChange: (value) => setDraft((prev) => ({ ...prev, toolName: value })),
+        placeholder: 'Search by tool name',
+      }}
+      onClear={onClear}
+    >
+      <DateRangeFields
+        fromDate={draft.fromDate}
+        toDate={draft.toDate}
+        onFrom={(value) => setDraft((prev) => ({ ...prev, fromDate: value }))}
+        onTo={(value) => setDraft((prev) => ({ ...prev, toDate: value }))}
+      />
+      <Select
+        aria-label="Status"
+        className="w-40"
+        options={ACTION_REQUEST_STATUS_OPTIONS}
+        value={draft.status}
+        onValueChange={(value) => setDraft((prev) => ({ ...prev, status: value }))}
+      />
+      <FormField label="Requested by" htmlFor="action-request-requested-by" className="w-52">
+        <Input
+          id="action-request-requested-by"
+          placeholder="email contains…"
+          value={draft.requestedByEmail}
+          onChange={(event) =>
+            setDraft((prev) => ({ ...prev, requestedByEmail: event.target.value }))
+          }
           onKeyDown={(event) => {
             if (event.key === 'Enter') onApply()
           }}

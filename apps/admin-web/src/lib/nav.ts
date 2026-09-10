@@ -25,6 +25,7 @@ export const NAV_ITEMS: NavItem[] = [
       { label: 'WHM servers', href: '/admin/whm', roles: ['admin'] },
       { label: 'Proxmox servers', href: '/admin/proxmox', roles: ['admin'] },
       { label: 'PMG servers', href: '/admin/pmg', roles: ['admin'] },
+      { label: 'Approvals', href: '/admin/approvals', roles: ['admin'] },
       { label: 'Audit', href: '/admin/audit', roles: ['admin'] },
     ],
   },

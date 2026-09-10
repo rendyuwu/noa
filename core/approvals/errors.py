@@ -148,10 +148,35 @@ class ActionRequestNotFoundError(ActionDecisionError):
 
     The requester FK is `SET NULL` (T34), so a deleted operator's request matches nobody and
     lands here too. That is the fail-closed direction.
+
+    **A third cause joined these two on the admin side** (§I.admin-api's `/admin/action-requests`
+    rows): an id that is not a UUID at all. That surface is behind `require_admin` and does no
+    requester-match, so nothing there is being hidden — the shared 404 is there because a 422
+    would describe what the path validator accepts rather than what exists, which is the call
+    T63(e) made for `noa_get_action_result`. Same class rather than a second code, because "no
+    such approval request" is one fact and two spellings of it would be one that can drift (V66).
     """
 
     error_code: str = "action_request_not_found"
     message: str = "That approval request does not exist, or it is not yours to decide."
+
+
+class ActionReceiptNotFoundError(ActionDecisionError):
+    """The request is real and carries no receipt (§I.admin-api, V46).
+
+    Distinct from `ActionRequestNotFoundError` above, and the distinction is the whole point:
+    "there is no such request" and "that decision produced no run" are two different things to
+    tell an administrator, and only one of them is a dead link. Denied, expired and still-pending
+    requests all land here by design — a receipt exists only where an approval started a run
+    (T36's `UNIQUE`, T38's writer).
+
+    404 rather than 204 or an empty body, because the panel navigates to this address from a
+    `hasReceipt` bit that may have been true when the list was drawn: an explicit refusal with its
+    own code is what lets that stale link say what happened instead of rendering blank.
+    """
+
+    error_code: str = "action_receipt_not_found"
+    message: str = "That approval request has no receipt: no run was started for it."
 
 
 class ActionRequestAlreadyDecidedError(ActionDecisionError):
@@ -240,6 +265,7 @@ class DecisionCsrfInvalidError(ActionDecisionError):
 
 __all__ = [
     "ActionDecisionError",
+    "ActionReceiptNotFoundError",
     "ActionRequestAlreadyDecidedError",
     "ActionRequestExpiredError",
     "ActionRequestNotFoundError",

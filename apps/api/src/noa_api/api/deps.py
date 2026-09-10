@@ -27,6 +27,10 @@ from typing import Annotated, Final, TypeVar, cast
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from core.approvals.admin_reads import (
+    ActionRequestAdminService,
+    SQLActionRequestAdminReader,
+)
 from core.approvals.card import ApprovalCardService, SQLApprovalCardRepository
 from core.approvals.decisions import (
     ActionDecisionService,
@@ -329,6 +333,27 @@ def get_tool_run_audit_service(session: SessionDep) -> ToolRunAuditService:
 ToolRunAuditServiceDep = Annotated[ToolRunAuditService, Depends(get_tool_run_audit_service)]
 
 
+def get_action_request_admin_service(session: SessionDep) -> ActionRequestAdminService:
+    """What the admin panel reads the CHANGE authorisation trail through (§I.admin-api, V13, V15).
+
+    The fourth reader on this session dependency, and the same argument holds:
+    `SQLActionRequestAdminReader` has no `commit` and issues no statement that is not a `SELECT`.
+    The three writers of what it reads all sit elsewhere — `core.approvals.decisions` owns the one
+    terminal-status transition (V22, V28), `ActionRequestExpiryService` owns the other, and
+    `core.audit.receipts` writes the receipt — and none of them is reachable from this object.
+
+    No expiry service and no clock, unlike `get_approval_card_service`. V32's check-on-read is a
+    *write*, and this dependency exists to be unable to make one: an admin opening a stale PENDING
+    row reads it as PENDING with a past deadline, which is what the database says.
+    """
+    return ActionRequestAdminService(repository=SQLActionRequestAdminReader(session))
+
+
+ActionRequestAdminServiceDep = Annotated[
+    ActionRequestAdminService, Depends(get_action_request_admin_service)
+]
+
+
 def get_tool_list_notifier(request: Request) -> ToolListChangedNotifier:
     """T66's emitter, holding the MCP session register the mount writes (V74).
 
@@ -561,6 +586,7 @@ AdminUserDep = Annotated[SessionUser, Depends(require_admin)]
 
 __all__ = [
     "ActionDecisionServiceDep",
+    "ActionRequestAdminServiceDep",
     "ActionRequestExpiryServiceDep",
     "AdminUserDep",
     "ApprovalCardServiceDep",

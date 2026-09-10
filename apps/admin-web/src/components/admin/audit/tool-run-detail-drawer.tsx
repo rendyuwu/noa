@@ -11,7 +11,6 @@ import {
 import {
   formatCreated,
   formatDuration,
-  formatJson,
   humanizeToolName,
   resolveRiskBadge,
   resolveToolRunStatus,
@@ -19,7 +18,7 @@ import {
 import type { AuditToolRunDetail, AuditToolRunListItem } from '@/lib/admin/audit/types'
 
 import { AuditStatusCell } from './audit-status-cell'
-import { AuditIdRow, DetailRow } from './audit-detail-rows'
+import { AuditIdRow, DetailRow, JsonBlock } from './audit-detail-rows'
 
 // Contextual detail for one tool run (T55). A Drawer inspects a run alongside
 // the list without losing it — the audit trail is append-only and its writers
@@ -124,9 +123,7 @@ function ToolRunDetailContent({
               {error}
             </p>
           ) : detail ? (
-            <pre className="max-h-72 overflow-auto rounded-md border border-border-default bg-surface p-3 font-mono text-xs text-text-primary">
-              {formatJson(detail.args)}
-            </pre>
+            <JsonBlock value={detail.args} />
           ) : (
             <p className="text-sm text-text-secondary">No arguments recorded.</p>
           )}

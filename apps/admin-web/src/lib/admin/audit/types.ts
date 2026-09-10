@@ -58,3 +58,72 @@ export const DEFAULT_TOOL_FILTERS: ToolRunFilters = {
 }
 
 export const AUDIT_PAGE_SIZE = 50
+
+// --- The CHANGE authorisation trail (§I.admin-api) ---
+//
+// The other half of the audit surface: `tool_runs` above says what ran, these
+// say who authorised it and why. `reason` is the field that made this vertical
+// worth building — it is the operator's own words, written at decision time,
+// and until the `/admin/action-requests` routes shipped nothing anywhere could
+// read it back.
+//
+// `reason` and `approvalContext` are on the detail and deliberately not on the
+// list item: a fifty-row page would carry fifty JSONB payloads to draw six
+// columns. `approvalContext` is `unknown`-valued rather than a named shape
+// because the keys under `evidence` are whichever tool's own preflight
+// vocabulary — a typed model here would have to be widened by every tool ever
+// added, which is the same call `args` makes above.
+
+export type AuditActionRequestListItem = {
+  actionRequestId: string
+  toolName: string
+  status: string
+  requestedByEmail?: string | null
+  conversationRef?: string | null
+  createdAt: string
+  expiresAt: string
+  decidedAt?: string | null
+  toolRunId?: string | null
+  hasReceipt: boolean
+}
+
+export type AuditActionRequestDetail = AuditActionRequestListItem & {
+  reason?: string | null
+  approvalContext: Record<string, unknown>
+}
+
+// Both halves as the executor wrote them, plus the runner's own delta. `delta`
+// is `null` when the runner stated none, and that absence is the only thing
+// separating an executor refusal from a runner failure — both are `ok: false` —
+// so it is a nullable field here and never defaulted to an empty object.
+export type AuditActionReceipt = {
+  actionRequestId: string
+  toolRunId?: string | null
+  createdAt: string
+  ok: boolean
+  before: Record<string, unknown>
+  after: Record<string, unknown>
+  errorCode?: string | null
+  delta?: Record<string, unknown> | null
+}
+
+export type ListAuditActionRequestsResponse = {
+  items: AuditActionRequestListItem[]
+  nextCursor?: string | null
+}
+
+export type ActionRequestFilters = {
+  fromDate: string
+  toDate: string
+  toolName: string
+  status: string
+  requestedByEmail: string
+}
+
+export const DEFAULT_ACTION_REQUEST_FILTERS: ActionRequestFilters = {
+  fromDate: '',
+  toDate: '',
+  toolName: '',
+  status: '',
+  requestedByEmail: '',
+}

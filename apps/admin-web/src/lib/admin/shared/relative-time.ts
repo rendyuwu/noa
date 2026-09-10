@@ -3,8 +3,12 @@
 // contract for `last_used_at` as Users has for `last_login_at`: a never-used row
 // must read `Never` in both tables, not `Never` in one and `—` in the other.
 //
-// A SECOND relative-time formatter exists at `admin/audit/audit-format.ts:76`
-// and is deliberately NOT merged here. It is a different contract, not a
+// A SECOND relative-time formatter exists — `formatRelativeTime`, module-private
+// inside `admin/audit/audit-format.ts` — and is deliberately NOT merged here.
+// Named rather than cited by line: the line number this note first carried went
+// stale the next time that file gained a function above it, and a note whose
+// whole job is to stop a third formatter is worth nothing pointing at the wrong
+// line. It is a different contract, not a
 // duplicate: it takes a `Date` rather than an unknown wire value, returns `''`
 // (not `Never`) for a missing or future timestamp, uses compact units (`5m ago`,
 // `3h ago`, `12d ago`), and gives up past 30 days where this one falls back to
