@@ -202,16 +202,54 @@ def test_the_description_names_the_verification_pair_and_every_state_it_can_hold
     later.
 
     The state words are deliberately not asserted against the payload keys: they are values,
-    and asserting them as keys is how a check starts passing for the wrong reason.
+    and asserting them as keys is how a check starts passing for the wrong reason. What the
+    instruction built on that vocabulary obliges, and how far it reaches, is the test below.
     """
     payload_keys = set(result_view().as_payload())
     named = set(re.findall(r"`([a-z_]+)`", DESCRIPTION_NOA_GET_ACTION_RESULT))
 
     assert {"change_verification", "change_verification_cause"} <= named & payload_keys
     assert VERIFICATION_STATES <= named
-    # The instruction itself, not only the vocabulary: `unavailable` is the state whose wrong
-    # reading produced the incident, and the sentence that forbids it is the point of the clause.
-    assert "never report the change as not having happened" in DESCRIPTION_NOA_GET_ACTION_RESULT
+
+
+def hedging_sentence() -> str:
+    """The one sentence of the tool's description that tells a model to hedge."""
+    sentences = re.split(r"(?<=\.) ", DESCRIPTION_NOA_GET_ACTION_RESULT)
+    hedging = [sentence for sentence in sentences if "unconfirmed" in sentence]
+    assert len(hedging) == 1, hedging
+    return hedging[0]
+
+
+def test_the_hedging_instruction_never_reaches_a_request_that_did_not_run() -> None:
+    """A denied change did not run, and a model has to stay free to say so.
+
+    The hedge is what the incident bought: `unavailable` means NOA holds no reading, and a
+    model that reports such a change as one that did not happen repeats the incident. But
+    `change_verification` is null on three statuses as well — a denial writes no `tool_runs`
+    row (`core.approvals.decisions`, and neither does an expiry), so DENIED, EXPIRED and
+    PENDING each render `run: null` beside a null pair. A hedge keyed on nullness alone
+    therefore reaches those three and forbids the model from stating the approval gate's own
+    guarantee.
+
+    So this asserts the *scope* rather than the wording: rephrasing the hedge keeps it green,
+    and widening it back to bare nullness reddens it. The bound it looks for is the `run` key
+    named in the same sentence — a marker, not the semantics, because nothing in the system
+    reads this string but a model, and there is no structural binding to be had. A rewrite that
+    dropped the bound while also dropping the word `null` would pass; that gap is why the
+    payload shape below is asserted here rather than left to the reader's memory.
+    """
+    denied = result_view(status=ActionRequestStatus.DENIED, decided_at=NOW).as_payload()
+    assert denied["run"] is None
+    assert denied["change_verification"] is None
+
+    hedge = hedging_sentence()
+    # The instruction the incident demands, kept whole: `unavailable` is the state whose wrong
+    # reading told an operator a live suspension had not happened.
+    assert "`unavailable`" in hedge
+    assert "never report the change as not having happened" in hedge
+    # And bounded: where the hedge speaks of the field being null, `run` bounds it in the same
+    # sentence, so the null the payload above carries is not one the model must hedge on.
+    assert "null" not in hedge or "`run`" in hedge
 
 
 async def test_a_request_that_never_ran_says_so_rather_than_omitting_the_field() -> None:

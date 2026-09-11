@@ -60,6 +60,14 @@ MESSAGE_ACTION_REQUEST_NOT_FOUND = (
 # was suspended, so the two keys are worth nothing unless the text that reaches a model says what
 # `unavailable` obliges it to say — the same voice every CHANGE tool's own description uses
 # ("never report the account as suspended without it").
+#
+# **The hedge is bounded to a change that ran, and the bound is the `run` key.**
+# `change_verification` is null on three statuses beside a receipt that predates deltas: a denial
+# writes no `tool_runs` row at all and neither do EXPIRED or PENDING, so each of those renders
+# `run: null` beside a null pair. Telling a model to hedge on nullness alone therefore reaches
+# those three and forbids it from stating the one thing the approval gate guarantees — that a
+# change the operator denied did not run. The clause's own justification says as much: a change
+# that landed late looks like one that never ran, which is only true of a change that was executed.
 DESCRIPTION_NOA_GET_ACTION_RESULT = (
     "Look up what happened to a change that was submitted for approval: whether the operator "
     "approved, denied or let it expire, and how far its execution got. Use it when the "
@@ -69,10 +77,13 @@ DESCRIPTION_NOA_GET_ACTION_RESULT = (
     "system afterwards and it holds the change, `mismatch` means NOA read it and the change is "
     "not there, `not_in_force` means it was written but the step that puts it into effect did "
     "not run, and `unavailable` means NOA holds no reading at all — `change_verification_cause` "
-    "names why. On `unavailable`, and whenever the field is null, report the outcome as "
-    "unconfirmed and say it has to be checked on the system; never report the change as not "
-    "having happened, because a change that landed after NOA stopped waiting looks exactly like "
-    "one that never ran. "
+    "names why. On `unavailable`, and on a null `change_verification` beside a `run` that is "
+    "present — a change that ran and stated no reading — report the outcome as unconfirmed and "
+    "say it has to be checked on the system; never report the change as not having happened, "
+    "because a change that landed after NOA stopped waiting looks exactly like one that never "
+    "ran. A null `run` is the other answer and it is not a hedge: nothing was executed, so a "
+    "denied or expired request is one that did not happen, and a pending one has not happened "
+    "yet. "
     "Read-only: it changes nothing and it does not approve anything."
 )
 
