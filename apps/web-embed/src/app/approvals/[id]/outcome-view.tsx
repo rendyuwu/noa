@@ -354,8 +354,14 @@ function Delta({ delta }: { delta: ChangeDelta }): JSX.Element {
  * sentence explaining that the step which applies the change never ran. An operator told
  * "completed" does not go and run it.
  *
- * `mismatch` is left alone deliberately — a contradicted reading arrives with `ok: false` and
- * "did not complete" is what the delta says too, so there is nothing here to reconcile.
+ * **`mismatch` is named here rather than left to fall through**, and naming it changes nothing for
+ * the way it arrives today: a contradicted reading comes with `ok: false`, and "did not complete"
+ * is what the envelope said anyway. It changes the other direction. The same delta over a payload
+ * reporting success headlined "completed" above a sentence saying NOA read the target back and it
+ * disagrees — the same self-contradiction the two states above are here to remove, and the rule is
+ * one rule: the headline reads the verification state, not the call's return. A mapping with a
+ * hole in it is worse than the mapping, because the next state added gets its shape copied from
+ * this one.
  *
  * No delta at all falls through to the envelope, which is the only thing there is to report.
  */
@@ -365,6 +371,8 @@ function outcomeText(receipt: ApprovalReceipt): string {
       return 'Outcome unknown'
     case VERIFICATION_NOT_IN_FORCE:
       return 'Not in force'
+    case VERIFICATION_MISMATCH:
+      return 'Did not complete'
     default:
       return receipt.ok ? 'Completed' : 'Did not complete'
   }

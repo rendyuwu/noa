@@ -370,21 +370,39 @@ describe('Outcome', () => {
     expect(outcomeLine(container)).toBe('Not in force')
   })
 
-  it('leaves the two states the envelope already agrees with alone', () => {
-    // The negative control, and it is what keeps the two specs above from passing against a
-    // headline that stopped reading the envelope at all. A contradicted reading arrives with
-    // `ok: false` and "did not complete" is what the delta says too, so there is nothing to
-    // reconcile; a verified one is the ordinary success.
-    const { container: verified } = renderOutcome()
-    expect(outcomeLine(verified)).toBe('Completed')
-    cleanup()
+  it('leaves a verified receipt reading as the success it is', () => {
+    // The negative control, and it is what keeps every spec around it from passing against a
+    // headline that stopped reading the receipt at all and simply printed one word.
+    const { container } = renderOutcome()
 
-    const { container: contradicted } = renderOutcome({
+    expect(outcomeLine(container)).toBe('Completed')
+  })
+
+  it('headlines a contradicted reading the same way whichever way the call returned', () => {
+    // A contradicted reading arrives with `ok: false` today, where the envelope agrees and there
+    // is nothing to reconcile. The pair is the point: the same delta over a payload reporting
+    // success headlined "completed" above a sentence saying NOA read the target back and it
+    // disagrees, which is the same self-contradiction the unmeasured and never-applied cases were
+    // fixed for. A headline that disagrees with the verification block printed beneath it is the
+    // defect, so the headline reads the verification state rather than the call's return.
+    const { container: refused } = renderOutcome({
       ok: false,
       errorCode: 'postflight_mismatch',
       delta: delta({ verification: VERIFICATION_MISMATCH }),
     })
-    expect(outcomeLine(contradicted)).toBe('Did not complete')
+    expect(outcomeLine(refused)).toBe('Did not complete')
+    cleanup()
+
+    const { container: reportedOk } = renderOutcome({
+      ok: true,
+      delta: delta({ verification: VERIFICATION_MISMATCH }),
+    })
+    expect(outcomeLine(reportedOk)).not.toBe('Completed')
+    expect(outcomeLine(reportedOk)).toBe('Did not complete')
+    // Asserted on the same render as the headline: the word above and the sentence below have to
+    // be answers to one receipt.
+    expect(verificationState(reportedOk)).toBe(VERIFICATION_MISMATCH)
+    expect(verificationLine(reportedOk)).toContain('disagrees')
   })
 
   it('falls back to the envelope when there is no delta to read', () => {
