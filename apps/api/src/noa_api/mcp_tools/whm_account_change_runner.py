@@ -61,6 +61,7 @@ from noa_api.mcp_tools.change_target import (
     VERIFICATION_UNAVAILABLE,
     WriteFailure,
     confirmed_verification,
+    confirmed_verification_sentence,
     uuid_or_none,
     write_failure_or_none,
 )
@@ -565,22 +566,17 @@ async def _verify_account_state(
             ),
         )
 
-    spoken = write_failure.sentence(direction.failure_message)
-    if verification == VERIFICATION_MISMATCH:
-        message = f"{opener}. {spoken} A fresh read agrees: {reading}."
-    elif matched:
-        message = (
-            f"{opener}. {spoken} A fresh read says {reading}, so something other than this "
-            "change left it that way."
-        )
-    else:
-        message = (
-            f"{opener}, and a fresh read says {reading}. The change may still land, so NOA "
-            "cannot report it as one that did not happen."
-        )
-
     return ChangeOutcome(
-        payload=tool_failure(write_failure.code, message),
+        payload=tool_failure(
+            write_failure.code,
+            confirmed_verification_sentence(
+                opener=opener,
+                reading=reading,
+                matched=matched,
+                failure=write_failure,
+                fallback=direction.failure_message,
+            ),
+        ),
         delta=_account_delta(
             target,
             verification=verification,

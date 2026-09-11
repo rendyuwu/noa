@@ -211,10 +211,11 @@ LOG_UNSUSPEND_LOCKED = "whm_unsuspend_account_suspension_locked"
 # rather than an exception, so the error sanitiser — which logs only what raised — never sees it;
 # the audit middleware writes no `tool_runs` row for a CHANGE tool by design; and a refusal opens
 # no `action_requests` row. Without this line an operator who read "Request timed out" in chat has
-# nothing to grep. The request id is not passed: `RequestContextMiddleware` binds it into
-# structlog's contextvars for every HTTP request, the mounted MCP app included, and structlog's
-# default processor chain merges it onto every event — so the id on this line is the same one the
-# response carries in `x-request-id`.
+# nothing to grep. The request id is not passed, and the binding it arrives on is not
+# `RequestContextMiddleware`'s: a Streamable HTTP tool call runs in the task the session was opened
+# in, so that per-request binding names the session here. `ToolRunAuditMiddleware` rebinds the live
+# request's id around the whole call, which is what makes the id on this line the one the response
+# carries in `x-request-id` — see `_refused_preflight`.
 LOG_PREFLIGHT_FAILED = "whm_account_preflight_failed"
 
 # The change ran and could not be confirmed. Warning, because an operator may want to look.

@@ -46,13 +46,12 @@ postflight could not answer" instead of two.
 
 **A failed write is not an answer yet.** Every runner here re-reads its target after it writes.
 When the write itself fails, that reading is still available and is the better witness of what
-the remote holds, so a runner consults it once and then reports — which is why the last two
-things in this module are shared: one predicate that says whether a failure was the remote
-refusing or the remote never answering, and one resolver that turns that plus the reading into a
-verification state. They are shared and the rest is not, deliberately: what each runner does
-with the verdict is its own payload, its own sentence and its own facets, and a helper taking a
-confirm callable for all seven would be abstracting four call sites with three different confirm
-semantics.
+the remote holds, so a runner consults it once and then reports — which is why three things here
+are shared: one predicate that says whether a failure was the remote refusing or the remote never
+answering, one resolver that turns that plus the reading into a verification state, and one
+sentence builder that says the same thing to an operator. What stays per runner is the *payload*
+— its keys, its facets, the noun it calls its target by — and a helper taking a confirm callable
+for all seven would be abstracting four call sites with three different confirm semantics.
 """
 
 from __future__ import annotations
@@ -232,6 +231,47 @@ def confirmed_verification(*, matched: bool, failure: WriteFailure) -> tuple[str
     return VERIFICATION_UNAVAILABLE, failure.code
 
 
+def confirmed_verification_sentence(
+    *, opener: str, reading: str, matched: bool, failure: WriteFailure, fallback: str
+) -> str:
+    """What a failed write plus a confirming read say to an operator, as one sentence.
+
+    Three runners spoke these three sentences in identical words — the account pair, the VM
+    interface and the PMG whitelist — because the fact being reported is the same fact and only
+    the noun differs. `reading` is that noun already worded by the caller ("`acme` is suspended",
+    "`net0` on VM 108 reads as up"), which is the only thing a runner still owns here.
+
+    **Same two inputs as `confirmed_verification`, deliberately.** The sentence and the verdict
+    are two functions of one `(matched, failure.refused)` pair rather than two derivations a
+    caller could get out of step, so a payload cannot say "a fresh read agrees" over a delta
+    stating `unavailable`. The branches line up one for one with that function's:
+
+    - **the write went unanswered** — no hedge about what the remote said, because it said
+      nothing; the read may simply be earlier than the change, so the sentence refuses to report
+      it as one that did not happen. `unavailable` there.
+    - **the remote refused and the reading matches anyway** — the refusal is quoted and the
+      reading is named as something this change did not cause. `unavailable` there.
+    - **the remote refused and the reading agrees** — the refusal is quoted and the reading is
+      what turns it into a measurement. `mismatch` there.
+
+    The `verified` case has no sentence here: it is the one branch where each runner has
+    something of its own to say, and all three say it above this call.
+    """
+    if not failure.refused:
+        return (
+            f"{opener}, and a fresh read says {reading}. The change may still land, so NOA "
+            "cannot report it as one that did not happen."
+        )
+
+    spoken = failure.sentence(fallback)
+    if matched:
+        return (
+            f"{opener}. {spoken} A fresh read says {reading}, so something other than this "
+            "change left it that way."
+        )
+    return f"{opener}. {spoken} A fresh read agrees: {reading}."
+
+
 def uuid_or_none(value: Any) -> UUID | None:
     """One evidence value as a `UUID`, or `None` when it is not one.
 
@@ -259,6 +299,7 @@ __all__ = [
     "VERIFICATION_UNAVAILABLE",
     "WriteFailure",
     "confirmed_verification",
+    "confirmed_verification_sentence",
     "uuid_or_none",
     "write_failure_or_none",
 ]

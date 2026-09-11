@@ -82,6 +82,7 @@ from noa_api.mcp_tools.change_target import (
     VERIFICATION_UNAVAILABLE,
     WriteFailure,
     confirmed_verification,
+    confirmed_verification_sentence,
     uuid_or_none,
     write_failure_or_none,
 )
@@ -617,25 +618,18 @@ async def _verify_link_state(
             ),
         )
 
-    spoken = write_failure.sentence("Proxmox VM config update failed.")
-    if verification == VERIFICATION_MISMATCH:
-        message = (
-            f"{opener}. {spoken} A fresh read agrees: {where} reads as {fresh.nic.link_state}."
-        )
-    elif matched:
-        message = (
-            f"{opener}. {spoken} A fresh read says {where} reads as {fresh.nic.link_state}, so "
-            "something other than this change left it that way."
-        )
-    else:
-        message = (
-            f"{opener}, and a fresh read says {where} reads as {fresh.nic.link_state}. The "
-            "change may still land, so NOA cannot report it as one that did not happen."
-        )
-
     return ChangeOutcome(
         payload={
-            **tool_failure(write_failure.code, message),
+            **tool_failure(
+                write_failure.code,
+                confirmed_verification_sentence(
+                    opener=opener,
+                    reading=f"{where} reads as {fresh.nic.link_state}",
+                    matched=matched,
+                    failure=write_failure,
+                    fallback="Proxmox VM config update failed.",
+                ),
+            ),
             **_common(target),
             # The reading rides beside the verdict on every one of these branches, because it is
             # what a refusal was missing: a code with no state behind it.

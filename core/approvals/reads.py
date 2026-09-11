@@ -98,7 +98,9 @@ def run_view(run: ToolRun) -> ActionRunView:
     )
 
 
-def _requester_matched(statement: Select[Any], *, action_request_id: UUID, requester_user_id: UUID):
+def _requester_matched(
+    statement: Select[Any], *, action_request_id: UUID, requester_user_id: UUID
+) -> Select[Any]:
     """The join and the access control, added to whatever projection a caller asked for.
 
     One function rather than one clause per statement: the requester-match is the control, and

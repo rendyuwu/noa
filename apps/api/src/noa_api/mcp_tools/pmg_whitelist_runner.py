@@ -108,6 +108,7 @@ from noa_api.mcp_tools.change_target import (
     VERIFICATION_UNAVAILABLE,
     WriteFailure,
     confirmed_verification,
+    confirmed_verification_sentence,
     uuid_or_none,
     write_failure_or_none,
 )
@@ -628,23 +629,18 @@ async def _verify_membership(
             delta=_whitelist_delta(target, verification=VERIFICATION_VERIFIED, list_delta=moved),
         )
 
-    spoken = write_failure.sentence("The PMG command failed.")
-    if verification == VERIFICATION_MISMATCH:
-        message = f"{opener}. {spoken} A fresh read agrees: {membership}."
-    elif matched:
-        message = (
-            f"{opener}. {spoken} A fresh read says {membership}, so something other than this "
-            "change left it that way."
-        )
-    else:
-        message = (
-            f"{opener}, and a fresh read says {membership}. The change may still land, so NOA "
-            "cannot report it as one that did not happen."
-        )
-
     return ChangeOutcome(
         payload={
-            **tool_failure(write_failure.code, message),
+            **tool_failure(
+                write_failure.code,
+                confirmed_verification_sentence(
+                    opener=opener,
+                    reading=membership,
+                    matched=matched,
+                    failure=write_failure,
+                    fallback="The PMG command failed.",
+                ),
+            ),
             **_common(target),
             "applied": False,
             # The reading rides beside the verdict, because it is what a refusal was missing.
