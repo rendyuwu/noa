@@ -7,11 +7,15 @@ approval card answers the operator in front of it (`core.approvals.card`). They 
 things — the model may not be shown the preflight evidence and the card exists to show
 it — but they must **guard the row identically**, and that is what lives here.
 
-That difference is why the receipt join is a parameter and not the default. `action_receipts`
+That difference is why the receipt *row* is a parameter and not the default. `action_receipts`
 carries the same before-state one table over, so fetching it on the model's path
 would put the in-process preflight's evidence in that process holding nothing but a projection
 between it and the
-transcript. The card asks for it; `core.approvals.results` does not.
+transcript. The card asks for the row (`select_requester_matched`'s `include_receipt`) and
+`core.approvals.results` never does: it reads through
+`select_requester_matched_with_change_verification` below, which joins the same table
+unconditionally and names two of the delta's values in the select list. Two columns, never
+the row.
 
 **The access control is one statement.** `select_requester_matched` carries
 `requested_by_user_id = :caller` in the `WHERE`, so a row that is not the caller's is never

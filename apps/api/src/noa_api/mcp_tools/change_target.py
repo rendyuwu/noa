@@ -191,9 +191,11 @@ class WriteFailure:
         **Whitespace is "gave none".** A message of `"  "` is truthy, so choosing the fallback on
         truthiness and stripping afterwards yields a bare `"."` — a sentence with no claim in it,
         spliced in front of a reading that does carry one. `write_failure_or_none` already blanks
-        such a message, and the two constructions that do not go through it (the firewall pair's
-        `backend_write_failure` and the password runner's) reach here directly, so the guard sits
-        at the one point all three pass through rather than at each caller.
+        such a message, and the constructions that do not go through it are hand-built — the
+        firewall pair's `backend_write_failure`, the VM interface runner's two task failures, and
+        the password runner's — so the guard sits at the one point a spoken sentence passes
+        through rather than at each constructor. The first two reach here; the password runner's
+        reads `verb` and `code` and never calls this, and the guard covers it for the day it does.
         """
         spoken = (self.message or "").strip() or fallback.strip()
         return spoken if spoken.endswith((".", "!", "?")) else f"{spoken}."
