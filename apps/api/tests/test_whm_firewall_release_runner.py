@@ -46,6 +46,7 @@ from core.approvals.execution import build_receipt
 from core.audit.summaries import result_summary
 from core.errors import NoaError
 from core.integrations.whm.firewall_gate import ERROR_NO_FIREWALL_BACKEND
+from core.remote_exec.errors import SSHExecutionError
 from core.remote_exec.sudo import SSH_SUDO_REQUIRED_CODE
 from noa_api.mcp_tools.whm_firewall import NOA_COMMENT_MARKER
 from noa_api.mcp_tools.whm_firewall_change import (
@@ -60,7 +61,7 @@ from noa_api.mcp_tools.whm_firewall_change import (
     build_whm_firewall_release_runner,
 )
 from support.action_decisions import REASON
-from support.change_delta import payload_runner
+from support.change_delta import outcome_of, payload_runner
 from support.remote_exec import SUDO_DENIED_STDERR, command_result
 from support.secrets import build_cipher
 from support.whm_firewall import (
@@ -316,6 +317,55 @@ async def test_a_refused_backend_beside_a_silent_one_still_names_the_silent_one(
     assert "imunify" in str(payload["message"])
     assert "released" not in payload
     assert "allowlisted" not in payload
+
+
+class _SilentAllow(FakeFirewallBox):
+    """A box whose temporary-allow command never comes back, and says nothing when it goes.
+
+    Raised out of the SSH seam rather than scripted as a non-zero exit, because that is the
+    difference being staged: an exit code is the backend answering, and `ssh_timeout` is the
+    backend not answering at all. The message is whitespace because that is what survives a
+    refusal whose only text was NOA's own comment — `without_noa_comment_text` cuts the comment
+    and leaves what surrounded it.
+    """
+
+    def __call__(self, command: str) -> Any:
+        if csf_step(command) == CSF_TEMP_ALLOW:
+            raise SSHExecutionError(code="ssh_timeout", message="   ")
+        return super().__call__(command)
+
+
+async def test_a_backend_that_never_answered_is_not_reported_as_a_command_that_did_not_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The one claim this branch refuses to make, in the words that reach the operator.
+
+    CSF's allow never answered and carried no sentence of its own. The delta says `unavailable`
+    precisely because nothing is known — the command may still land — so an envelope stating
+    that the firewall command did not run would contradict the delta beside it, in the same
+    answer. The single-target runners word their openers off `WriteFailure.verb` for this
+    reason; the firewall pair reaches the same fact through its own fallback.
+    """
+    fixture, _ = release_context(
+        monkeypatch,
+        box=_SilentAllow(
+            csf=csf_backend(csf_answer(CSF_DENY_LINE)),
+            imunify=imunify_backend(imunify_answer(IMUNIFY_WHITE)),
+        ),
+    )
+    runner = build_whm_firewall_release_runner(context=fixture.context)
+
+    outcome = await outcome_of(runner, execution_request(server_id=fixture.servers.servers[0].id))
+
+    message = str(outcome.payload["message"])
+    assert outcome.payload["error_code"] == "ssh_timeout"
+    assert "did not answer" in message
+    assert "did not run" not in message
+    # A whitespace-only remote message is no message: the fallback speaks, and the sentence does
+    # not collapse to a bare full stop in front of the reading that follows it.
+    assert not message.startswith(".")
+    assert outcome.delta is not None
+    assert outcome.delta.verification == VERIFICATION_UNAVAILABLE
 
 
 async def test_a_backend_that_answered_alone_is_still_verified(

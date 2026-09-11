@@ -106,14 +106,25 @@ STATUS_CHANGED = "changed"
 # parse, or a task the write handed off never reached a terminal state. Every other code a
 # runner can see was minted by an integration to name something a remote *said*, so a code
 # absent from this set reads as an explicit refusal.
+#
+# **Four of the five are bound to a producer, one is not, and the difference is stated rather
+# than left to read as coverage.** `timeout` and `request_failed` are driven out of the
+# real `WHMClient` by `test_confirm_after_failed_write.py`, `ssh_timeout` out of the real
+# `ssh_exec` by `test_remote_exec_ssh.py`, and both `task_timeout` constants are asserted into
+# this set by their owners. Nothing binds `invalid_response` to any of the three places that mint
+# it, and nothing binds Proxmox's own `timeout`/`request_failed`/`invalid_response` — that client
+# spells its codes in its own module (`core.integrations.proxmox.client`), so a rename there
+# reclassifies a non-answer as a refusal and no test in this repo goes red.
 NON_ANSWER_ERROR_CODES: Final[frozenset[str]] = frozenset(
     {
         ERROR_TIMEOUT,
-        # `httpx.RequestError`, from both HTTP clients (`core.integrations.whm.client`,
-        # `core.integrations.proxmox.client`): the connection broke before an answer arrived.
+        # `httpx.RequestError` — the connection broke before an answer arrived. Both HTTP clients
+        # mint this literal (`core.integrations.whm.client`, `core.integrations.proxmox.client`);
+        # only WHM's is exercised against this set.
         "request_failed",
         # The remote answered and NOA could not read the answer, which says nothing about what
-        # the remote did.
+        # the remote did. Three producers, none of them bound here: both HTTP clients, and the
+        # VM-interface runner for a config that came back with no digest.
         "invalid_response",
         # `core.remote_exec.ssh` raises this for a **command** that timed out as well as for a
         # connection that did — the command it belongs to may have run to completion on the far
@@ -176,8 +187,15 @@ class WriteFailure:
         Punctuated here because a remote's message frequently is not a sentence: WHM answers
         `Account suspension is locked` and csf answers bare clauses, and a runner splicing one
         into a longer sentence would run two claims together with a space between them.
+
+        **Whitespace is "gave none".** A message of `"  "` is truthy, so choosing the fallback on
+        truthiness and stripping afterwards yields a bare `"."` — a sentence with no claim in it,
+        spliced in front of a reading that does carry one. `write_failure_or_none` already blanks
+        such a message, and the two constructions that do not go through it (the firewall pair's
+        `backend_write_failure` and the password runner's) reach here directly, so the guard sits
+        at the one point all three pass through rather than at each caller.
         """
-        spoken = (self.message or fallback).strip()
+        spoken = (self.message or "").strip() or fallback.strip()
         return spoken if spoken.endswith((".", "!", "?")) else f"{spoken}."
 
 

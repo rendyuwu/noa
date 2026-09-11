@@ -152,13 +152,13 @@ from noa_api.mcp_tools.whm_firewall_change_common import (
     EVIDENCE_SERVER_ID,
     EVIDENCE_SERVER_NAME,
     EVIDENCE_TARGET,
-    MESSAGE_BACKEND_REFUSED,
     MESSAGE_EVIDENCE_UNUSABLE,
     STATUS_CHANGED,
     VERIFICATION_UNAVAILABLE,
     BackendChange,
     FirewallChangeTarget,
     backend_change_failure,
+    backend_failure_sentence,
     backend_outcomes,
     backend_write_failure,
     confirming_read_sentence,
@@ -776,7 +776,7 @@ def _release_outcome(
             payload={
                 **tool_failure(
                     failure.code,
-                    f"{failure.sentence(MESSAGE_BACKEND_REFUSED)} "
+                    f"{backend_failure_sentence(failure)} "
                     + confirming_read_sentence(
                         target=target.target,
                         answer=None if measured is None else f"`{target.target}` is `{measured}`",

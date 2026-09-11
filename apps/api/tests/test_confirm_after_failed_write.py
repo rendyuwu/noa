@@ -371,6 +371,34 @@ def test_a_verified_delta_can_never_be_built_with_a_cause() -> None:
         )
 
 
+@pytest.mark.parametrize("message", [None, "", "   ", "\n\t "])
+def test_a_remote_that_said_nothing_usable_gets_the_fallback_sentence(message: str | None) -> None:
+    """Blank is blank, whitespace included — the guard sits where all three constructions pass.
+
+    `"  "` is truthy, so choosing the fallback on truthiness and stripping afterwards leaves a
+    bare `"."`: a sentence carrying no claim, spliced in front of a reading that carries one.
+    `write_failure_or_none` blanks such a message on the way in, but the firewall pair's
+    `backend_write_failure` and the password runner's construction build a `WriteFailure`
+    directly, so a guard at that one reader would leave two callers holding the defect.
+    """
+    assert WriteFailure(code=ERROR_TIMEOUT, message=message).sentence("WHM said nothing.") == (
+        "WHM said nothing."
+    )
+
+
+def test_the_fallback_never_displaces_words_the_remote_actually_said() -> None:
+    """The separating case: a guard that always took the fallback would pass the test above.
+
+    WHM's own refusal is the sentence an operator needs — it names the remedy — so the blank
+    check has to distinguish "nothing was said" from "something short was said", and punctuation
+    is still added where the remote's words end without any.
+    """
+    assert WriteFailure(code="whm_api_error", message=LOCKED).sentence("unused") == f"{LOCKED}."
+    assert WriteFailure(code="whm_api_error", message=f"  {LOCKED}  ").sentence("unused") == (
+        f"{LOCKED}."
+    )
+
+
 def test_every_task_deadline_the_runners_own_reads_as_a_non_answer() -> None:
     """The two literals in the shared set, bound to the constants that produce them.
 

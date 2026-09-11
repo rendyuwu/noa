@@ -380,9 +380,27 @@ async def resolve_firewall_change_target(
     return FirewallChangeTarget(config=config, server_name=server_name, target=target.strip())
 
 
-# What a backend refusal says when it carried no sentence of its own. Shared so the two tools
-# do not answer one blank message two ways.
+# What a backend failure says when it carried no sentence of its own. Two of them, because the
+# blank case still has to answer the one question this whole path turns on: a backend that
+# refused said what it did, and a backend that never answered said nothing at all. Shared so the
+# two tools do not answer one blank message two ways.
 MESSAGE_BACKEND_REFUSED = "The firewall command did not run."
+MESSAGE_BACKEND_UNANSWERED = "The firewall command did not answer."
+
+
+def backend_failure_sentence(failure: WriteFailure) -> str:
+    """A backend failure as a sentence, with the right fallback behind a blank message.
+
+    **A fixed "did not run" is a claim, and on half this branch it is the one claim this path
+    refuses to make.** A backend whose message came back blank with `ssh_timeout` never told NOA
+    what it did, so an envelope saying the command did not run would contradict the delta beside
+    it, which says `unavailable` precisely because nothing is known. The four single-target
+    runners word their openers off `WriteFailure.verb` for the same reason; this is that one
+    fact, in the two words the firewall pair's sentence is built from.
+    """
+    return failure.sentence(
+        MESSAGE_BACKEND_REFUSED if failure.refused else MESSAGE_BACKEND_UNANSWERED
+    )
 
 
 def backend_write_failure(broken: BackendChange) -> WriteFailure:
@@ -461,6 +479,7 @@ __all__ = [
     "EVIDENCE_SERVER_NAME",
     "EVIDENCE_TARGET",
     "MESSAGE_BACKEND_REFUSED",
+    "MESSAGE_BACKEND_UNANSWERED",
     "MESSAGE_EVIDENCE_UNUSABLE",
     "MESSAGE_SERVER_UNAVAILABLE",
     "STATUS_CHANGED",
@@ -470,6 +489,7 @@ __all__ = [
     "FirewallChangeTarget",
     "WriteFailure",
     "backend_change_failure",
+    "backend_failure_sentence",
     "backend_outcomes",
     "backend_write_failure",
     "confirming_read_sentence",
