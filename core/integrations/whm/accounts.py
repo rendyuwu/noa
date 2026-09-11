@@ -100,6 +100,28 @@ def normalize_whm_account_list(accounts: object) -> list[WHMAccount]:
     return normalized
 
 
+def account_suspension_state(account: WHMAccount) -> bool | None:
+    """A normalised row's suspension state, or `None` when WHM's value was unreadable.
+
+    **The tri-state exists because `normalize_whm_account_summary` drops what it cannot read.**
+    A row whose `suspended` is absent, JSON `null`, or a spelling `_optional_bool` does not know
+    arrives here with no `suspended` key at all, and `dict.get` answers that with the same `None`
+    it answers a live account's `false` with only if a caller folds it. Every caller of this
+    function is deciding something an operator reads — whether there is anything to approve,
+    whether a change that WHM accepted actually took — and folding an unread field into `false`
+    answers those from silence: it reports a suspension that landed as a failed one, and reports
+    an unsuspension nobody confirmed as a confirmed success. There is no benign direction.
+
+    `isinstance(..., bool)` rather than `_optional_bool` a second time, deliberately. This reads
+    a row the normaliser already produced, where WHM's `0`/`"1"`/`"yes"` spellings were resolved
+    once; accepting them again here would put a second normalisation boundary behind the first,
+    and a summary that reached a runner through JSONB having been written by something other than
+    `listaccts` could then make a string read as a state.
+    """
+    value = account.get("suspended")
+    return value if isinstance(value, bool) else None
+
+
 def account_matches(account: WHMAccount, *, query: str) -> bool:
     """True when `query` is a case-insensitive substring of the username or the domain.
 
@@ -165,6 +187,7 @@ def _optional_epoch(value: object) -> int | None:
 __all__ = [
     "WHMAccount",
     "account_matches",
+    "account_suspension_state",
     "normalize_whm_account_list",
     "normalize_whm_account_summary",
 ]

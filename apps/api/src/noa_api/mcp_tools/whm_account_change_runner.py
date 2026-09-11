@@ -52,7 +52,7 @@ from core.approvals.delta import (
     FieldChange,
 )
 from core.approvals.execution import ChangeExecutionRequest, ChangeRunner
-from core.integrations.whm.accounts import normalize_whm_account_list
+from core.integrations.whm.accounts import account_suspension_state, normalize_whm_account_list
 from core.integrations.whm.client import WHMClient
 from noa_api.mcp_tools.change_target import (
     ERROR_SERVER_UNAVAILABLE,
@@ -65,6 +65,7 @@ from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.results import ERROR_UNKNOWN, ToolPayload, tool_failure, tool_ok
 from noa_api.mcp_tools.whm_account_change import (
     ERROR_POSTFLIGHT_FAILED,
+    ERROR_SUSPENSION_STATE_UNREADABLE,
     EVIDENCE_ACCOUNT,
     EVIDENCE_OWNER,
     EVIDENCE_SERVER_ID,
@@ -145,9 +146,10 @@ class _ChangeTarget:
 
     `suspended_before` is the gate-time reading of the one field this change moves, carried here
     so the postflight can state a delta without re-reading the evidence it was resolved from.
-    `None` means the evidence did not say — a row opened before the key existed, or one whose
-    account summary did not survive its JSONB round trip as an object — and a caller states no
-    field change at all in that case rather than substituting a value.
+    `None` means the evidence did not say — a row opened before the key existed, one whose account
+    summary did not survive its JSONB round trip as an object, or one whose `suspended` is not a
+    boolean — and a caller states no field change at all in that case rather than substituting a
+    value.
     """
 
     client: WHMClient
@@ -265,9 +267,11 @@ async def _resolve_change_target(
     authorisation forward.
 
     The gate-time `suspended` reading is lifted off the same summary the username came from, and
-    it is read as a strict `True` rather than for truthiness: this becomes the `old` side of a
-    delta an operator reads, and a summary written by something other than WHM's own `listaccts`
-    must not be able to make a non-boolean read as a state.
+    it goes through the one reader that answers `None` for anything WHM did not spell readably
+    (`account_suspension_state`). This becomes the `old` side of a delta an operator reads, so a
+    summary written by something other than WHM's own `listaccts` must not be able to make a
+    non-boolean read as a state — and a field nobody could read is not an `old` side of `false`
+    either, which is the `None` `_suspension_change` then states no field change for.
 
     The database session closes before the caller's WHM round trips, the account search's rule — and
     here it matters twice over, because the executor's own session is open for the whole of the
@@ -279,7 +283,7 @@ async def _resolve_change_target(
     if server_id is None or not isinstance(username, str) or not username:
         return tool_failure(ERROR_SERVER_UNAVAILABLE, MESSAGE_SERVER_UNAVAILABLE)
 
-    suspended_raw = account.get(DELTA_FIELD_SUSPENDED) if isinstance(account, dict) else None
+    suspended_before = account_suspension_state(account) if isinstance(account, dict) else None
     owner = request.evidence.get(EVIDENCE_OWNER)
     async with context.session_factory() as session:
         repository = context.whm_server_repository_factory(session)
@@ -313,7 +317,7 @@ async def _resolve_change_target(
         client=client,
         username=username,
         server_name=server_name,
-        suspended_before=None if suspended_raw is None else suspended_raw is True,
+        suspended_before=suspended_before,
     )
 
 
@@ -340,9 +344,10 @@ def _account_delta(
     - `()` — the account was re-read and the field did not move. WHM accepted a call that did not
       take, which is a measurement and a failure.
     - `None` — nothing was compared. WHM refused the mutation, so a timeout could be hiding a
-      change that landed; or the confirming read did not answer at all; or the postflight
-      answered and the *evidence* carried no before-value to answer against, which is
-      `_suspension_change`'s own `None` and reaches here on the confirmed branch.
+      change that landed; or the confirming read did not answer at all, or answered without a
+      suspension state NOA can read; or the postflight answered and the *evidence* carried no
+      before-value to answer against, which is `_suspension_change`'s own `None` and reaches here
+      on the confirmed branch.
     """
     return ChangeDelta(
         identity={"server": target.server_name, "username": target.username},
@@ -391,12 +396,21 @@ async def _verify_account_state(
 
     - the account reads the way the change asked for → done, and verified;
     - it reads the other way → WHM accepted a call that did not take, which is a failure;
-    - the read itself did not answer → the change happened and is **unverified**. Reporting that
+    - the read did not produce a state → the change happened and is **unverified**. Reporting that
       as a failure would send an operator to repeat a change that may already have taken;
       reporting it as a plain success would claim a confirmation nobody has.
 
+    **Two ways to reach the third answer, and they are named apart in the cause.** WHM may refuse
+    the read outright, or it may answer with a row whose `suspended` is a spelling the normaliser
+    does not read, which arrives here as a row with no such key. Both are "NOA holds no reading",
+    and neither may be folded into a boolean: `(row.get("suspended") is True)` turns an unread
+    field into `false`, which reports a landed suspension as `postflight_failed` and — worse,
+    because it is a claim rather than a complaint — reports an unsuspension nobody confirmed as a
+    verified success. `account_suspension_state` is where absence stays distinguishable from a
+    read `false`, and it is the same reader the preflight and the delta's `old` side go through.
+
     One function for both directions: `direction.target_suspended` is the only thing that
-    differs, and a second copy of these three branches is a second place the third one can be
+    differs, and a second copy of these branches is a second place the third answer can be
     dropped.
 
     The re-read goes through the credential that performed the write, which is why the summary it
@@ -409,9 +423,15 @@ async def _verify_account_state(
         if result.get("ok") is True
         else None
     )
+    state = account_suspension_state(verified) if verified is not None else None
 
-    if verified is None:
-        cause = str(result.get("error_code") or MESSAGE_LIST_ACCOUNTS_FAILED)
+    if state is None:
+        if verified is None:
+            cause = str(result.get("error_code") or MESSAGE_LIST_ACCOUNTS_FAILED)
+            detail = "the confirming read did not answer"
+        else:
+            cause = ERROR_SUSPENSION_STATE_UNREADABLE
+            detail = "the confirming read did not report a suspension state NOA can read"
         logger.warning(
             direction.unverified_log_event,
             tool=direction.tool_name,
@@ -427,8 +447,8 @@ async def _verify_account_state(
                 verified=False,
                 verification=VERIFICATION_UNAVAILABLE,
                 message=(
-                    f"WHM accepted the {direction.noun} of `{target.username}`, but the "
-                    "confirming read did not answer. Check the account on the server."
+                    f"WHM accepted the {direction.noun} of `{target.username}`, but {detail}. "
+                    "Check the account on the server."
                 ),
             ),
             delta=_account_delta(
@@ -439,7 +459,7 @@ async def _verify_account_state(
             ),
         )
 
-    if (verified.get(DELTA_FIELD_SUSPENDED) is True) is not direction.target_suspended:
+    if state is not direction.target_suspended:
         return ChangeOutcome(
             payload=tool_failure(ERROR_POSTFLIGHT_FAILED, direction.postflight_message),
             # Measured and disagreeing: the account was re-read and the field did not move.

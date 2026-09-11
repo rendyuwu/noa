@@ -777,3 +777,72 @@ Preserved because they were paid for in production incidents, not theory.
 - `core/workflows/` (7,913 LOC) is the biggest simplification candidate — much of its weight
   serves chat presentation that is being dropped.
 - Hygiene limits from the old repo still apply: `.ts` ≤ 300, `.tsx` ≤ 450, `.py` ≤ 900.
+
+---
+
+## 12. DECIDED — a change made outside NOA between the gate and the run is not detectable (2026-09-11)
+
+**Not built. Recorded so the next reader does not rediscover it as a bug and then build the one
+thing this design forbids.**
+
+The case: an operator opens an approval card to suspend an account, and before that approval is
+executed somebody suspends the same account another way — the WHM UI, another tool, a script. NOA
+then runs its own `suspendacct`, WHM accepts it, and the confirming read finds the account
+suspended. The receipt reports an ordinary confirmed suspension, and there is no honest way for it
+to report anything else.
+
+**There is no signal.** What the runner holds at the moment it states the outcome is three
+readings:
+
+- the before-value, `suspended: false`, taken at gate time off the evidence the operator
+  authorised against;
+- the post-write read, `suspended: true`;
+- WHM's own answer to the mutation, which said it acted.
+
+A NOA suspension of a live account yields `false, true, accepted`. An out-of-band suspension
+followed by a NOA suspension yields `false, true, accepted`. Identical. Nor is the disagreement
+hiding in the diff: the field change is computed from the gate-time value against the value the
+change was asking for, so the post-write read never enters it — that read decides only whether the
+outcome is reported as verified.
+
+Getting a signal needs one of two things, and neither is available:
+
+- **A read taken immediately before the write.** Refused, and refused for a reason older than this
+  case: the before-state means *the state the operator authorised*, read from the gate-time
+  evidence and never re-derived from a second read. A card saying the account was live and a
+  receipt whose before-state says it was already suspended describe two different decisions, and
+  the one the operator actually made is the first. Adding a pre-write read to catch this would
+  silently redefine the before-state for every CHANGE tool in order to address a case none of them
+  can observe.
+- **Something in WHM's own response separating "suspended" from "re-suspended".** Nothing has
+  measured one, and `suspendacct` answers a bare success carrying no data of its own.
+
+The one variant that *is* detectable is already handled, at both ends: a preflight that finds the
+account already in the state the change would produce answers instead of opening a card at all,
+and where the gate-time value already equals the value the change asks for, the delta states no
+field change rather than a fabricated one. Neither reaches into the window between the decision and
+the run, which is where this case lives.
+
+### 12.1 Why this does not contradict the rule beside it
+
+The rule beside it, decided the same day: **when the remote explicitly refuses a write — WHM
+answering `result: 0`, an HTTP 4xx, a named integration error — and the confirming read nonetheless
+finds the state matching the target, the outcome is reported as the refusal, with the reading named
+beside it.** Read together the two look like a contradiction. One says a matching state after a
+successful write is an ordinary success; the other says a matching state after a failed write is
+worth reporting as something else.
+
+They are two different branches, and what separates them is what the remote said about itself:
+
+- **The write succeeded.** The remote acted, so a state matching the target is exactly what its own
+  act predicts. There is nothing to attribute elsewhere, and as above no reading that could.
+- **The write was refused.** The remote stated what it did, which was nothing. A state matching the
+  target therefore came from somewhere other than this change — and that is the signal. It is not
+  inferred from a comparison; it is stated by the remote. So the refusal is what gets reported, and
+  the reading is named in the message rather than dropped, because NOA holds no measurement that
+  *its own* change took.
+
+The dividing line is the same one that decides what a timeout means: a timeout says NOA does not
+know what the remote did, so the state is the better witness and NOA believes it; an explicit
+refusal says the remote knows what it did, so the refusal is the better witness. A successful write
+is the case where both witnesses agree, and neither is being weighed against the other.

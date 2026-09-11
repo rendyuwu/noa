@@ -55,6 +55,13 @@ refusing every unsuspend on those servers would cost more than the failure it pr
 refusal at execute time stays the authoritative one — it arrives as `whm_api_error` carrying
 WHM's `reason`, which names the remedy — and this guard is the cheap early half of it.
 
+**An account whose suspension state WHM did not spell readably is refused too**, and that refusal
+is the no-op argument's other edge: both tools decide whether there is anything to approve by
+reading one boolean, so a value the normaliser could not read makes both answers wrong in opposite
+directions — a second card for an account already suspended, or "nothing to approve" about an
+account nobody read. The guard sits in `collect_account_state`, the shared preflight, because the
+field is read once there and the wrong answers are two.
+
 **A credential that does not own the account is refused before a card exists**, the same argument
 one step harder, and `whm_account_owner_gate` holds all of it: cPanel gates an account write on
 *ownership* rather than on the token's ACL (measured), so the preflight compares the account's
@@ -115,10 +122,12 @@ from typing import Annotated, Final
 
 import structlog
 from fastmcp import FastMCP
+from fastmcp.server.dependencies import get_http_request
 from pydantic import Field
 
 from core.db.lifecycle import ToolRisk
-from core.integrations.whm.accounts import WHMAccount
+from core.integrations.whm.accounts import WHMAccount, account_suspension_state
+from noa_api.api.request_context import LOG_REQUEST_ID, SCOPE_STATE_REQUEST_ID
 from noa_api.mcp_tools.change_gate import build_change_gate_response, open_change_request
 from noa_api.mcp_tools.change_target import (
     # Hoisted to `change_target` with the release-and-allow tool, when the firewall runner became
@@ -177,6 +186,11 @@ ERROR_POSTFLIGHT_FAILED = "postflight_failed"
 # The account's suspension is locked, and `unsuspendacct` refuses a locked account. A
 # refusal rather than an approval request: the card would buy a decision and a failed run.
 ERROR_SUSPENSION_LOCKED = "account_suspension_locked"
+# WHM answered, and its `suspended` value was none of the spellings NOA reads. One code for both
+# sites that meet it, because it is one fact: the preflight refuses with it rather than opening a
+# card it cannot say is needed, and the postflight carries it as the cause of an unavailable
+# verification rather than as a verdict. Absence is not `false` in either direction.
+ERROR_SUSPENSION_STATE_UNREADABLE = "suspension_state_unreadable"
 
 MESSAGE_USERNAME_REQUIRED = "A cPanel account username is required."
 MESSAGE_SUSPEND_FAILED = "WHM did not suspend the account."
@@ -193,6 +207,17 @@ LOG_UNSUSPEND_NO_OP = "whm_unsuspend_account_no_op"
 
 # The same question with a different answer: there was something to do and WHM would refuse it.
 LOG_UNSUSPEND_LOCKED = "whm_unsuspend_account_suspension_locked"
+
+# One structured event per preflight that refused, and it is the only trace a refused CHANGE call
+# leaves at all. Nothing else on this path writes one: `WHMClient` reports a timeout as a payload
+# rather than an exception, so the error sanitiser — which logs only what raised — never sees it;
+# the audit middleware writes no `tool_runs` row for a CHANGE tool by design; and a refusal opens
+# no `action_requests` row. Without this line an operator who read "Request timed out" in chat has
+# nothing to grep. The request id is not passed: `RequestContextMiddleware` binds it into
+# structlog's contextvars for every HTTP request, the mounted MCP app included, and structlog's
+# default processor chain merges it onto every event — so the id on this line is the same one the
+# response carries in `x-request-id`.
+LOG_PREFLIGHT_FAILED = "whm_account_preflight_failed"
 
 # The change ran and could not be confirmed. Warning, because an operator may want to look.
 LOG_SUSPEND_UNVERIFIED = "whm_suspend_account_unverified"
@@ -246,6 +271,7 @@ logger = structlog.get_logger(__name__)
 
 async def collect_account_state(
     *,
+    tool_name: str,
     server_ref: str,
     username: str,
     context: McpToolContext,
@@ -271,6 +297,20 @@ async def collect_account_state(
     refusing to guess exists to prevent, and `whm_search_accounts` is the discovery step in front of
     it.
 
+    **An account whose suspension state WHM did not spell readably is refused here**, and here is
+    the reason it is one guard rather than two: both callers branch on that field immediately and
+    in opposite directions, so an unread value becomes a wrong answer on both sides — the suspend
+    tool would open a second card for an account already suspended, and the unsuspend tool would
+    answer "not suspended; nothing to approve" about an account nobody read. That is the benign
+    value standing in for a non-answer, which is refused everywhere else in this system. A third
+    account CHANGE tool inherits the guard by calling this function at all, the argument
+    `_open_account_change` makes for the ownership compare.
+
+    **Every refusal leaves one log line**, because this is the only place a refused CHANGE call
+    can leave one — see `LOG_PREFLIGHT_FAILED` for what else is silent on this path, and for why
+    the request id needs no argument. `tool_name` is a parameter for that line alone: the failures
+    travel back unchanged and neither caller renames them.
+
     **The credential comes back beside the account.** `api_username` and the host are the row's,
     captured by `fetch_whm_accounts` off the row that won resolution rather than read again here;
     `owner` is the account's, lifted out of the summary onto the payload because the ownership
@@ -283,13 +323,28 @@ async def collect_account_state(
     listed = await fetch_whm_accounts(server_ref=server_ref, context=context)
     if listed.get("ok") is not True:
         # Already a structured failure with its own code and `choices`. Re-wrapping renames it.
-        return listed
+        return _refused_preflight(listed, tool_name=tool_name, server_ref=server_ref)
 
     account = match_account(listed.get("accounts"), username=username)
     if account is None:
-        return tool_failure(
-            ERROR_ACCOUNT_NOT_FOUND,
-            f"No cPanel account named `{username}` exists on this WHM server.",
+        return _refused_preflight(
+            tool_failure(
+                ERROR_ACCOUNT_NOT_FOUND,
+                f"No cPanel account named `{username}` exists on this WHM server.",
+            ),
+            tool_name=tool_name,
+            server_ref=server_ref,
+        )
+
+    if account_suspension_state(account) is None:
+        return _refused_preflight(
+            tool_failure(
+                ERROR_SUSPENSION_STATE_UNREADABLE,
+                f"WHM did not report whether `{username}` is suspended, so NOA cannot say what "
+                "this change would do. Check the account on the server.",
+            ),
+            tool_name=tool_name,
+            server_ref=server_ref,
         )
 
     return tool_ok(
@@ -352,7 +407,10 @@ async def whm_suspend_account(
         return tool_failure(ERROR_USERNAME_REQUIRED, MESSAGE_USERNAME_REQUIRED)
 
     state = await collect_account_state(
-        server_ref=server_ref, username=normalized_username, context=context
+        tool_name=TOOL_WHM_SUSPEND_ACCOUNT,
+        server_ref=server_ref,
+        username=normalized_username,
+        context=context,
     )
     if state.get("ok") is not True:
         return state
@@ -423,7 +481,10 @@ async def whm_unsuspend_account(
         return tool_failure(ERROR_USERNAME_REQUIRED, MESSAGE_USERNAME_REQUIRED)
 
     state = await collect_account_state(
-        server_ref=server_ref, username=normalized_username, context=context
+        tool_name=TOOL_WHM_UNSUSPEND_ACCOUNT,
+        server_ref=server_ref,
+        username=normalized_username,
+        context=context,
     )
     if state.get("ok") is not True:
         return state
@@ -541,6 +602,49 @@ def register_whm_account_change_tools(
 # --- Internals ---
 
 
+def _refused_preflight(payload: ToolPayload, *, tool_name: str, server_ref: str) -> ToolPayload:
+    """Log one refused preflight and hand the refusal back unchanged.
+
+    Identifiers and the code only, never the account payload — the same bound the no-op events
+    keep, and for the same reason: `suspendreason` is the operator's own words.
+
+    **The id is read off the live request rather than taken from the ambient binding, and that is
+    not belt-and-braces.** `RequestContextMiddleware` binds one into structlog's contextvars per
+    HTTP request, but a Streamable HTTP tool call does not run in the task that served it: the
+    session manager runs the session in a task created during `initialize`, and a task copies
+    contextvars at creation. So the id riding along here is the id of the request that *opened the
+    MCP session* — one value for every call in that session, and not the one the tool call's own
+    response carried. Measured: `apps/api/tests/test_whm_account_non_answers.py` asserts this line
+    against the `x-request-id` of the very response it belongs to, and that assertion fails on the
+    inherited value. An id that reads like a correlation and resolves to a different request is
+    worse than no id, because it is the thing an operator would grep with.
+    """
+    logger.warning(
+        LOG_PREFLIGHT_FAILED,
+        tool=tool_name,
+        server_ref=server_ref,
+        error_code=payload.get("error_code"),
+        **({} if (request_id := _calling_request_id()) is None else {LOG_REQUEST_ID: request_id}),
+    )
+    return payload
+
+
+def _calling_request_id() -> str | None:
+    """The id of the HTTP request this tool call arrived on, or `None` off-request.
+
+    `get_http_request` is the same production seam `remember_mcp_auth_error` uses, and it raises
+    off-request rather than answering — a direct call, a non-HTTP transport, a test driving the
+    function alone. `None` then, never a minted id: a fresh uuid on a line nobody can correlate is
+    the silence this event exists to end, dressed as an answer.
+    """
+    try:
+        scope = get_http_request().scope
+    except RuntimeError:
+        return None
+    stored = scope.get("state", {}).get(SCOPE_STATE_REQUEST_ID)
+    return stored if isinstance(stored, str) and stored else None
+
+
 async def _open_account_change(
     *,
     tool_name: str,
@@ -613,6 +717,7 @@ __all__ = [
     "ERROR_POSTFLIGHT_FAILED",
     "ERROR_SERVER_UNAVAILABLE",
     "ERROR_SUSPENSION_LOCKED",
+    "ERROR_SUSPENSION_STATE_UNREADABLE",
     "ERROR_USERNAME_REQUIRED",
     "ERROR_WRONG_CREDENTIAL_FOR_OWNER",
     "EVIDENCE_ACCOUNT",
@@ -623,6 +728,7 @@ __all__ = [
     "EVIDENCE_SERVER_NAME",
     "EVIDENCE_UNRECORDED",
     "LOG_OWNERSHIP_REFUSED",
+    "LOG_PREFLIGHT_FAILED",
     "LOG_SUSPEND_NO_OP",
     "LOG_SUSPEND_UNVERIFIED",
     "LOG_UNSUSPEND_LOCKED",
