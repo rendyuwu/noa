@@ -210,25 +210,53 @@ function Run({ card, stalled }: { card: ApprovalCard; stalled: boolean }) {
 }
 
 /**
- * The keys the before-state block does not print.
+ * The paths the before-state block does not print. Full paths, not leaf names.
  *
- * Two identifiers NOA needs and the operator does not (`server_id` is the machine's row, and
- * `api_username` the credential the preflight was read with), and the raw account record a WHM
- * preflight carries whole — which is the biggest single value on the card and the least readable
- * one.
+ * Two identifiers NOA needs and the operator does not — `server_id` is the machine's row, and
+ * `api_username` the credential the preflight was read with — plus the identity fields of the
+ * account record a WHM preflight carries.
  *
- * **These three are admin-only by design, and the copy summary does not carry them.** That is the
+ * **What is hidden is identity, not the record.** This set used to name `account` whole, which
+ * dropped the fields a suspend actually moves along with the six that name the account. The
+ * panel then answered "who is this" under a heading promising the state the change is about, and on
+ * a PENDING card — where the execution and outcome blocks do not exist yet — that left no mutable
+ * state anywhere at the moment the operator decides. `suspended`, `suspendtime` and `is_locked`
+ * stay; `is_locked` in particular is what blocks an unsuspend, so it is the answer to "will this
+ * work" rather than a detail.
+ *
+ * `account.suspendreason` is hidden even though it moves with the change. WHM echoes the operator's
+ * own typed NOA reason back into that field verbatim — measured against a live account read — so it
+ * carries nothing a decision rests on, and it is a reason-bearing key on the API side
+ * (`core/approvals/delta.py`).
+ *
+ * **Matching is on the full dotted path, and that is a correctness requirement rather than a
+ * style.** `owner` exists twice in a WHM preflight: at the top level, where it is the reseller the
+ * machine answers to and is shown, and as `account.owner`, which is the same identity repeated on
+ * the record and is hidden. A leaf-name filter would kill both. Hence the flatten below happens
+ * *before* the filter rather than at the call site, so the order cannot be got wrong by an edit
+ * somewhere else.
+ *
+ * **These are admin-only by design, and the copy summary does not carry them.** That is the
  * difference between this block and the identifiers that left the provenance and execution
  * blocks: those are what an operator quotes into a ticket, so they ride in the copied summary,
- * while these three answer an administrator's question and are reached through `/admin` (held by
+ * while these answer an administrator's question and are reached through `/admin` (held by
  * `apps/api/tests/test_admin_action_request_routes.py`). They stay in the database and in the
  * API's body either way; what changes here is only which of the two surfaces prints them.
  */
-const BEFORE_STATE_HIDDEN = new Set(['server_id', 'api_username', 'account'])
+const BEFORE_STATE_HIDDEN = new Set([
+  'server_id',
+  'api_username',
+  'account.user',
+  'account.domain',
+  'account.email',
+  'account.contactemail',
+  'account.owner',
+  'account.suspendreason',
+])
 
 function shown(values: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(
-    Object.entries(values).filter(([key]) => !BEFORE_STATE_HIDDEN.has(key)),
+    Object.entries(flattenValues(values)).filter(([path]) => !BEFORE_STATE_HIDDEN.has(path)),
   )
 }
 
