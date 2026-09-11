@@ -41,6 +41,7 @@ from core.remote_exec.ssh import (
 )
 from core.remote_exec.types import SSHConnectionConfig
 from noa_api.api.errors import FALLBACK_STATUS, error_body, status_for
+from noa_api.mcp_tools.change_target import NON_ANSWER_ERROR_CODES
 from support.remote_exec import loopback_ssh_config, loopback_ssh_server
 
 _LVE_BANNER = (
@@ -369,6 +370,13 @@ async def test_ssh_exec_command_timeout_is_a_timeout(monkeypatch: pytest.MonkeyP
     assert excinfo.value.error_code == "ssh_timeout"
     # Still closed: the deadline must not leak a connection.
     assert connection.closed is True
+    # **A command that timed out is a command that may have run**, which is why the CHANGE
+    # runners read this code as a non-answer rather than as a remote refusal. Asserted here,
+    # where production mints the code, because the set is a claim about what this layer emits
+    # and a literal typed into that module would be a copy of this value rather than a check on
+    # it. Classified the other way, a `pmgsh create` that timed out would make a confirming read
+    # that disagrees conclusive — and the read cannot tell "did not happen" from "not yet".
+    assert excinfo.value.error_code in NON_ANSWER_ERROR_CODES
 
 
 async def test_ssh_exec_blank_command_rejected(monkeypatch: pytest.MonkeyPatch) -> None:

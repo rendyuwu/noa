@@ -82,6 +82,7 @@ from core.secrets.password import _generate_password
 from noa_api.mcp_tools.change_target import (
     STATUS_CHANGED,
     VERIFICATION_UNAVAILABLE,
+    WriteFailure,
     uuid_or_none,
 )
 from noa_api.mcp_tools.context import McpToolContext
@@ -242,15 +243,31 @@ def build_proxmox_reset_vm_password_runner(
 
         async with target.client:
             failure = await _apply_password(target, password=password)
-            if failure is not None:
+            if failure is not None and not failure.password_may_be_live:
+                # **Proxmox took nothing**, so there is nothing to confirm. The write was refused
+                # or its task came back rejected; the old credentials still work and this
+                # password is live nowhere, which is what `password_may_be_live` is saying. A
+                # crypt compare here could only agree, and ten seconds of polling for that
+                # answer is ten seconds an operator waits for one already known.
                 return _failure_payload(target, failure, yopass_url=yopass_url)
 
+            # The write *was* accepted — its task never finished, or the drive rewrite failed —
+            # so what the VM carries is an open question and the verify below is the only thing
+            # that can answer it. It runs on the ordinary path and on this one alike.
             verification = await _verify_password(
                 target, password=password, crypt_loader=crypt_loader
             )
 
         return _reset_outcome(
-            target, request=request, verification=verification, yopass_url=yopass_url
+            target,
+            request=request,
+            verification=verification,
+            yopass_url=yopass_url,
+            write_failure=(
+                None
+                if failure is None
+                else WriteFailure(code=failure.error_code, message=failure.message)
+            ),
         )
 
     return run
@@ -487,6 +504,7 @@ def _reset_outcome(
     request: ChangeExecutionRequest,
     verification: CloudInitPasswordVerification,
     yopass_url: str,
+    write_failure: WriteFailure | None = None,
 ) -> ChangeOutcome:
     """What the change did, read off the crypt compare.
 
@@ -501,11 +519,30 @@ def _reset_outcome(
     3. **mismatch** — the VM carries a *different* password. That is a failure, and the link still
        goes out because Proxmox accepted the write and the password may be live anyway.
 
+    **`write_failure` is how a step that failed after the write landed reaches here.** It is
+    `None` on the ordinary path and every branch reads as it did before. When it is set, the
+    password write was accepted and something after it was not — the task never finished, or the
+    drive rewrite was refused — so the crypt compare is the only thing that can say what the VM
+    now carries, and the failure shapes the sentence so a confirmation is never read as a call
+    that answered.
+
+    **A match needs no hedge on any branch here, and this tool is the only one that can say
+    that.** The comparison is against a password generated in this frame and never written down,
+    so a VM carrying it is a VM that took NOA's write — nobody else could have set that exact
+    value. Where a tool comparing a shared field would have to report "the state matches but the
+    remote said it did nothing", this one reports a plain confirmation.
+
+    A **mismatch** does not get the same treatment, and that is the asymmetry rather than an
+    oversight: a rendered document that has not caught up yet reads exactly like one that never
+    will, so a disagreeing compare after a step that never answered is `unavailable` with that
+    step's own cause, and only a step the remote explicitly refused makes it a measurement.
+
     The `yopass_url` is the only thing here derived from the secret. Nothing read out
     of the cloud-init dump reaches this payload: it becomes `result_summary`, and
     `noa_get_action_result` hands that to a model.
     """
     common = _common(target)
+    where = f"`{target.username}` on VM {target.vmid} ({target.server_name})"
     if verification.verdict is CryptVerdict.MATCH:
         return ChangeOutcome(
             payload=tool_ok(
@@ -514,10 +551,15 @@ def _reset_outcome(
                 verified=True,
                 yopass_url=yopass_url,
                 message=(
-                    f"The cloud-init password for `{target.username}` on VM {target.vmid} "
-                    f"({target.server_name}) was changed and confirmed. Give the operator the "
-                    "link; it opens once. The guest reads the new password when its cloud-init "
-                    "drive is next read."
+                    (
+                        f"The cloud-init password for {where} was changed and confirmed. "
+                        if write_failure is None
+                        else f"Proxmox {write_failure.verb} a step of the cloud-init password "
+                        f"change for {where} (`{write_failure.code}`), so NOA compared the "
+                        "password it generated against the VM: the VM carries it. "
+                    )
+                    + "Give the operator the link; it opens once. The guest reads the new "
+                    "password when its cloud-init drive is next read."
                 ),
             ),
             delta=_reset_delta(
@@ -535,25 +577,68 @@ def _reset_outcome(
             node=target.node,
             vmid=target.vmid,
             cause=verification.cause,
+            write_failure=None if write_failure is None else write_failure.code,
         )
+        # The cause names the **compare** on both paths: it answers why NOA holds no
+        # measurement, while the failed step's own code sits on the envelope beside it.
         return ChangeOutcome(
-            payload=tool_ok(
-                **common,
-                status=STATUS_CHANGED,
-                verified=False,
-                verification=VERIFICATION_UNAVAILABLE,
-                verification_cause=verification.cause,
-                yopass_url=yopass_url,
-                message=(
-                    f"Proxmox accepted the new cloud-init password for `{target.username}` on VM "
-                    f"{target.vmid} ({target.server_name}), but NOA could not confirm it took. "
-                    "Give the operator the link and check the VM before relying on it."
-                ),
+            payload=(
+                tool_ok(
+                    **common,
+                    status=STATUS_CHANGED,
+                    verified=False,
+                    verification=VERIFICATION_UNAVAILABLE,
+                    verification_cause=verification.cause,
+                    yopass_url=yopass_url,
+                    message=(
+                        f"Proxmox accepted the new cloud-init password for {where}, but NOA "
+                        "could not confirm it took. Give the operator the link and check the VM "
+                        "before relying on it."
+                    ),
+                )
+                if write_failure is None
+                else {
+                    **tool_failure(
+                        write_failure.code,
+                        f"Proxmox {write_failure.verb} a step of the cloud-init password change "
+                        f"for {where} (`{write_failure.code}`), and NOA could not compare the "
+                        "password against the VM either. Give the operator the link and check "
+                        "the VM before relying on it.",
+                    ),
+                    **common,
+                    "verified": False,
+                    "yopass_url": yopass_url,
+                }
             ),
             delta=_reset_delta(
                 target,
                 verification=VERIFICATION_UNAVAILABLE,
                 verification_cause=verification.cause,
+                delivered_credential=yopass_url,
+            ),
+        )
+
+    if write_failure is not None and not write_failure.refused:
+        # The compare disagrees and the step it follows never answered. A cloud-init document
+        # that has not been re-rendered yet reads exactly like one that never will, so this is
+        # `unavailable` with that step's own cause rather than a measurement.
+        return ChangeOutcome(
+            payload={
+                **tool_failure(
+                    write_failure.code,
+                    f"Proxmox did not answer a step of the cloud-init password change for "
+                    f"{where} (`{write_failure.code}`), and the VM does not carry the new "
+                    "password yet. Give the operator the link and check the VM before relying "
+                    "on it.",
+                ),
+                **common,
+                "verified": False,
+                "yopass_url": yopass_url,
+            },
+            delta=_reset_delta(
+                target,
+                verification=VERIFICATION_UNAVAILABLE,
+                verification_cause=write_failure.code,
                 delivered_credential=yopass_url,
             ),
         )

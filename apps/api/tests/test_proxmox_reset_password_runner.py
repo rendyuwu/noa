@@ -300,9 +300,13 @@ async def test_a_task_that_never_finishes_ships_the_link(
 
     Proxmox accepted the write; NOA simply stopped waiting for its task. The password may be
     live, and the link is the only copy of it — withholding it here is a lockout NOA created.
+
+    The VM here is the one that did *not* take the password, because a write Proxmox accepted is
+    now compared against the VM before anything is reported. The VM that took it is the case
+    below, and it is the one that stops being a failure at all.
     """
     no_polling_delay(monkeypatch)
-    vm = FakeProxmoxVM(task_never_finishes=True)
+    vm = FakeProxmoxVM(task_never_finishes=True, ignore_password_write=True)
     fixture, _ = reset_context(vm=vm)
 
     payload = await build_runner(fixture)(execution_request(server_id=server_id(fixture)))
@@ -313,9 +317,40 @@ async def test_a_task_that_never_finishes_ships_the_link(
     assert len([path for _m, path in vm.requests if "/tasks/" in path]) == TASK_POLL_ATTEMPTS
 
 
+async def test_a_task_that_never_finishes_on_a_vm_that_took_it_reports_the_reset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The crypt compare is the strongest confirm NOA has, and a failed step does not waste it.
+
+    The password compared against was generated in the runner's own frame and written down
+    nowhere, so a VM carrying it is a VM that took this write — nobody else could have set that
+    exact value. That is why this reports a plain confirmation with no qualifier about
+    attribution, where a tool comparing a shared field could not.
+    """
+    no_polling_delay(monkeypatch)
+    fixture, _ = reset_context(vm=FakeProxmoxVM(task_never_finishes=True))
+
+    payload = await build_runner(fixture)(execution_request(server_id=server_id(fixture)))
+
+    assert payload["ok"] is True
+    assert payload["verified"] is True
+    assert payload["yopass_url"] == YOPASS_URL
+    # The step that failed is still named, so a confirmation is never read as a call that
+    # answered.
+    assert ERROR_TASK_TIMEOUT in str(payload["message"])
+
+
 async def test_a_failed_regeneration_ships_the_link() -> None:
-    """Same rule: the `cipassword` write already landed, only the drive rewrite did not."""
-    fixture, _ = reset_context(vm=FakeProxmoxVM(regenerate_error={"status": 500}))
+    """Same rule: the `cipassword` write already landed, only the drive rewrite did not.
+
+    The VM is the one whose rendered document still shows somebody else's password — the drive
+    was never rewritten, which is exactly what this failure is — so the compare disagrees. A
+    step Proxmox *refused* makes that disagreement a measurement, which is why this is a failure
+    and not an unknown.
+    """
+    fixture, _ = reset_context(
+        vm=FakeProxmoxVM(regenerate_error={"status": 500}, ignore_password_write=True)
+    )
 
     payload = await build_runner(fixture)(execution_request(server_id=server_id(fixture)))
 

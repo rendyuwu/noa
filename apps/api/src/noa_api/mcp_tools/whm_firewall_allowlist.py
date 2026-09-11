@@ -112,6 +112,7 @@ from noa_api.mcp_tools.whm_firewall_change_common import (
     EVIDENCE_SERVER_ID,
     EVIDENCE_SERVER_NAME,
     EVIDENCE_TARGET,
+    MESSAGE_BACKEND_REFUSED,
     STATUS_CHANGED,
     STATUS_NO_OP,
     VERIFICATION_UNAVAILABLE,
@@ -119,9 +120,12 @@ from noa_api.mcp_tools.whm_firewall_change_common import (
     FirewallChangeTarget,
     backend_change_failure,
     backend_outcomes,
+    backend_write_failure,
+    confirming_read_sentence,
     evidence_bound,
     firewall_state,
     holds_allow_entry,
+    refused_backend_verdict,
     resolve_firewall_change_target,
     tolerated_csf_step,
     tolerated_imunify_step,
@@ -537,16 +541,38 @@ def _removal_outcome(
 
     broken = next((changes[name] for name in sorted(changes) if not changes[name].ok), None)
     if broken is not None:
+        # The verdict is consulted here now, and it used not to be — see
+        # `refused_backend_verdict`, which holds why, and why `verified` stays unreachable on a
+        # tool whose answer is per backend. The reading was already taken above.
+        #
+        # What contradicts a removal is `holds_allow_entry` and not the combined verdict, for
+        # the reason `_removal_delta` gives: both backends resolve a conflict block-first, so an
+        # address that is also denied reads `blocked` whether its allow entry survived or not.
+        failure = backend_write_failure(broken)
+        survives = None if unanswered else holds_allow_entry(lookups)
+        verification, cause = refused_backend_verdict(
+            failure=failure, contradicted=survives is True
+        )
         return ChangeOutcome(
             payload={
-                **tool_failure(broken.error_code or ERROR_UNKNOWN, broken.message or ""),
+                **tool_failure(
+                    failure.code,
+                    f"{failure.sentence(MESSAGE_BACKEND_REFUSED)} "
+                    + confirming_read_sentence(
+                        target=target.target,
+                        answer=(
+                            None
+                            if survives is None
+                            else f"`{target.target}` is "
+                            f"{'still on an allow list' if survives else 'on no allow list'}"
+                        ),
+                        unanswered=unanswered,
+                    ),
+                ),
                 **common,
                 "unanswered_backends": unanswered,
             },
-            delta=delta(
-                verification=VERIFICATION_UNAVAILABLE,
-                verification_cause=broken.error_code or ERROR_UNKNOWN,
-            ),
+            delta=delta(verification=verification, verification_cause=cause),
         )
 
     if unanswered:

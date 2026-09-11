@@ -213,14 +213,23 @@ async def test_an_allow_that_did_not_take_renders_the_half_that_did(
     assert "new_values" not in payload
 
 
-async def test_a_backend_that_could_not_be_driven_states_no_verdict(
+async def test_a_backend_that_could_not_be_driven_states_the_verdict_it_read_back(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """No verdict was consulted on this branch, so none is claimed.
+    """The verdict *is* consulted on this branch now, and it used not to be.
 
-    What *was* measured rides in the backend's own row — it was not driven, and the code that
-    names the remedy is beside it. `changed_fields` is absent rather than empty: NOA did not
-    compare, and an empty diff here would read as "we checked and nothing moved".
+    The confirming read runs before anything is reported, so a backend that refused its command
+    is answered with a measurement beside the refusal rather than with the refusal alone: sudo
+    was denied, the address still reads `blocked`, and the two together say the release did not
+    happen. That earns `mismatch` and an empty diff — NOA compared and nothing moved — where a
+    refusal with no reading behind it could only say `unavailable`.
+
+    `verified` stays unreachable here whatever the read says, because this tool's answer is per
+    backend: one of them named a refusal, and a combined verdict cannot say the other one did
+    the work. `new_values` stays absent for the same reason — the resolved expiry is a window
+    the refused command never wrote.
+
+    What was measured still rides in the backend's own row, with the code that names the remedy.
     """
     fixture, _ = release_context(
         monkeypatch,
@@ -238,9 +247,9 @@ async def test_a_backend_that_could_not_be_driven_states_no_verdict(
 
     assert delta is not None
     payload = delta.as_payload()
-    assert payload["verification"] == VERIFICATION_UNAVAILABLE
-    assert payload["verification_cause"] == "ssh_sudo_required"
-    assert "changed_fields" not in payload
+    assert payload["verification"] == VERIFICATION_MISMATCH
+    assert "verification_cause" not in payload
+    assert payload["changed_fields"] == []
     assert "new_values" not in payload
     assert payload["backends"] == [
         {
@@ -577,10 +586,15 @@ async def test_a_task_that_never_finished_claims_no_diff(
     """Proxmox accepted the write and its outcome was never read, so nothing is claimed.
 
     The one branch on this tool where `changed_fields` is absent rather than empty: the link may
-    already have moved, and an empty diff would read as a measurement that it had not.
+    still move, and an empty diff would read as a measurement that it had not.
+
+    The interface is read back before any of this is reported — a write that went unanswered is
+    not an answer about the VM — so the case has to be the one where that read *also* says the
+    link has not moved. The read agreeing with the timeout is not the same claim as Proxmox
+    saying it did not apply: a task NOA stopped waiting on can still finish.
     """
     no_polling_delay(monkeypatch)
-    fixture, _ = nic_context(vm=FakeProxmoxNICVM(task_never_finishes=True))
+    fixture, _ = nic_context(vm=FakeProxmoxNICVM(task_never_finishes=True, ignore_write=True))
     runner = build_proxmox_vm_nic_runner(context=fixture.context)
 
     delta = await delta_of(runner, nic_request(server_id=fixture.proxmox_servers.servers[0].id))
@@ -598,8 +612,14 @@ NIC_REFUSAL = {"ok": False, "error_code": "digest_mismatch"}
 # verification each earns. The no-op is the fifth, asserted above where its identity claim is.
 NIC_MEASURED_EMPTY: dict[str, tuple[FakeProxmoxNICVM, str]] = {
     "config_unreadable": (FakeProxmoxNICVM(config_error=NIC_REFUSAL), VERIFICATION_UNAVAILABLE),
-    "write_refused": (FakeProxmoxNICVM(write_error=NIC_REFUSAL), VERIFICATION_UNAVAILABLE),
-    "task_failed": (FakeProxmoxNICVM(task_exit_status="failed"), VERIFICATION_UNAVAILABLE),
+    "write_refused": (FakeProxmoxNICVM(write_error=NIC_REFUSAL), VERIFICATION_MISMATCH),
+    # `ignore_write` rides with the rejected task on purpose: Proxmox saying it did not apply,
+    # on a VM whose line agrees, is what an empty diff is. A rejected task on a VM whose line
+    # moved anyway is a different answer entirely, and it has its own test.
+    "task_failed": (
+        FakeProxmoxNICVM(task_exit_status="failed", ignore_write=True),
+        VERIFICATION_MISMATCH,
+    ),
     "postflight_disagrees": (FakeProxmoxNICVM(ignore_write=True), VERIFICATION_MISMATCH),
 }
 
@@ -614,6 +634,12 @@ async def test_every_nic_branch_that_knows_nothing_moved_says_so(
     it one step later, a postflight reading the old line is the interface saying it, and a config
     that could not be read comes *before* any write — nothing moved because nothing was sent. All
     four answer an empty diff where the timeout above answers an absent one.
+
+    **Three of the four now say `mismatch` rather than `unavailable`**, and the change is the
+    reading behind them: Proxmox refusing a write is Proxmox saying what it did, so the interface
+    is read back and, where it agrees, the refusal has a measurement behind it instead of only a
+    code. The one that stays `unavailable` is the config read that failed *before* any write —
+    there is no interface reading to be had there, because nothing was sent and nothing was read.
 
     Enumerated in one test because the grounds differ — three having taken a reading and one
     knowing no command went out — and `core.approvals.delta` treats them as one spelling on
@@ -700,9 +726,16 @@ async def test_a_reset_that_may_be_live_delivers_the_credential_with_its_failure
     and withholding the only copy of a live credential is a lockout NOA created. Without this
     case, "no link on a failure" would pass as a blanket rule and take the link off the branches
     that need it most.
+
+    The VM is the one whose rendered document does not carry the new password, because a write
+    Proxmox accepted is compared against the VM before this is reported: a crypt match there is
+    proof the reset took — the value compared was generated in the runner's own frame — and the
+    branch under test here is the one where NOA still holds no reading.
     """
     no_password_polling_delay(monkeypatch)
-    fixture, _ = reset_context(vm=FakeProxmoxVM(task_never_finishes=True))
+    fixture, _ = reset_context(
+        vm=FakeProxmoxVM(task_never_finishes=True, ignore_password_write=True)
+    )
     runner = build_proxmox_reset_vm_password_runner(context=fixture.context)
 
     delta = await delta_of(runner, reset_request(server_id=fixture.proxmox_servers.servers[0].id))
@@ -776,6 +809,12 @@ async def test_a_refused_write_states_the_empty_list_move_it_measured(
 
     A refused `create` moved nothing, and that is a measurement — the write was attempted and
     PMG said no — so the facet is present and empty rather than absent.
+
+    The verdict is `mismatch` and not `unavailable`, because the list is read back before any of
+    this is reported and it agrees with the refusal. Nothing reached the config, so the read is
+    the one thing that can say what `mynetworks` holds after a `delete` that stopped mid-loop —
+    and where it agrees with PMG, the refusal has a measurement behind it rather than only a
+    code. The list move survives that either way, which is what this test is for.
     """
     fixture, _ = whitelist_change_context(
         monkeypatch,
@@ -787,7 +826,7 @@ async def test_a_refused_write_states_the_empty_list_move_it_measured(
 
     assert delta is not None
     payload = delta.as_payload()
-    assert payload["verification"] == VERIFICATION_UNAVAILABLE
+    assert payload["verification"] == VERIFICATION_MISMATCH
     assert payload["list_delta"] == {"added": [], "removed": [], "total_entries": 1}
 
 

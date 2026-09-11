@@ -254,6 +254,43 @@ async def test_a_backend_that_did_not_answer_leaves_the_change_unverified(
     assert "removed" not in payload
 
 
+async def test_a_refused_backend_beside_a_silent_one_still_names_the_silent_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The branch that now consults the read is still not allowed to collapse the sources.
+
+    csf refused its removal and Imunify answered the confirming read with nothing readable. The
+    refusal is what the envelope reports, and the silent backend is *still named* beside it —
+    a source that cannot answer gets named, and a code from the other backend is not a
+    substitute for saying which one went quiet.
+
+    Nothing is claimed about the entry either: with one source silent there is no reading to
+    hold the refusal up against, so this stays an unknown outcome rather than a measurement.
+    """
+    fixture, _ = release_context(
+        monkeypatch,
+        box=FakeFirewallBox(
+            csf=csf_backend(
+                csf_answer(CSF_ALLOW_LINE),
+                mutations={
+                    CSF_ALLOW_REMOVE: command_result(exit_code=1, stderr=SUDO_DENIED_STDERR)
+                },
+            ),
+            imunify=imunify_backend(imunify_answer("not json at all")),
+        ),
+        ssh_username="operator",
+    )
+    runner = payload_runner(build_whm_firewall_allowlist_remove_runner(context=fixture.context))
+
+    payload = await runner(removal_request(server_id=fixture.servers.servers[0].id))
+
+    assert payload["ok"] is False
+    assert payload["error_code"] == SSH_SUDO_REQUIRED_CODE
+    assert payload["unanswered_backends"] == ["imunify"]
+    assert "imunify" in str(payload["message"])
+    assert "removed" not in payload
+
+
 async def test_a_backend_that_answered_alone_is_still_verified(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

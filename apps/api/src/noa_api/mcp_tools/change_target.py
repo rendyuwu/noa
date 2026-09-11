@@ -43,11 +43,23 @@ firewall runner is the second speaker.
 verification can hold. Same value, same name, re-exported from here — the move is that a
 runner's payload and the delta it publishes beside that payload read one definition of "the
 postflight could not answer" instead of two.
+
+**A failed write is not an answer yet.** Every runner here re-reads its target after it writes.
+When the write itself fails, that reading is still available and is the better witness of what
+the remote holds, so a runner consults it once and then reports — which is why the last two
+things in this module are shared: one predicate that says whether a failure was the remote
+refusing or the remote never answering, and one resolver that turns that plus the reading into a
+verification state. They are shared and the rest is not, deliberately: what each runner does
+with the verdict is its own payload, its own sentence and its own facets, and a helper taking a
+confirm callable for all seven would be abstracting four call sites with three different confirm
+semantics.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Any, Final
 from uuid import UUID
 
 from core.approvals.delta import (
@@ -56,8 +68,11 @@ from core.approvals.delta import (
     # test that reads it from here keeps one import path — but there is now exactly one
     # definition of "the postflight could not answer", shared by the payload a runner returns
     # and the delta it states beside it, and the two cannot drift into two spellings.
+    VERIFICATION_MISMATCH,
     VERIFICATION_UNAVAILABLE,
+    VERIFICATION_VERIFIED,
 )
+from noa_api.mcp_tools.results import ERROR_TIMEOUT, ERROR_UNKNOWN
 
 # The approved change names a server that is no longer resolvable — deleted, or the evidence no
 # longer parses. Distinct from the tool-time resolution failures, which the model can fix by
@@ -84,6 +99,139 @@ STATUS_NO_OP = "no_op"
 STATUS_CHANGED = "changed"
 
 
+# The error codes that mean NOA never learned what the remote did, as against the remote
+# answering that it did nothing.
+#
+# Closed and small on purpose: these four are the whole vocabulary a transport has for a
+# non-answer — the deadline passed, the connection never carried a reply, the reply did not
+# parse, or a task the write handed off never reached a terminal state. Every other code a
+# runner can see was minted by an integration to name something a remote *said*, so a code
+# absent from this set reads as an explicit refusal.
+NON_ANSWER_ERROR_CODES: Final[frozenset[str]] = frozenset(
+    {
+        ERROR_TIMEOUT,
+        # `httpx.RequestError`, from both HTTP clients (`core.integrations.whm.client`,
+        # `core.integrations.proxmox.client`): the connection broke before an answer arrived.
+        "request_failed",
+        # The remote answered and NOA could not read the answer, which says nothing about what
+        # the remote did.
+        "invalid_response",
+        # `core.remote_exec.ssh` raises this for a **command** that timed out as well as for a
+        # connection that did — the command it belongs to may have run to completion on the far
+        # side, which is precisely a non-answer. The connect-phase failures keep their own codes
+        # (`ssh_connection_failed`, `ssh_auth_failed`, the host-key three) and are refusals in
+        # the sense that matters here: nothing was sent.
+        "ssh_timeout",
+        # A write the remote accepted, whose task NOA stopped waiting on. Spelled here rather
+        # than imported, because the two runners that own the constant import this module and
+        # the import cannot run both ways; a test asserts both of their constants are in this
+        # set, so the literal is bound rather than hand-kept.
+        "task_timeout",
+    }
+)
+
+
+@dataclass(frozen=True)
+class WriteFailure:
+    """A CHANGE's write step after it failed, in the two facts a confirming read needs beside it.
+
+    Carried into a runner's postflight rather than returned instead of one. A `_verify_*` that
+    runs after a failed write and knows nothing about it emits a clean success and erases the
+    failure entirely — no cause, no trace anything went wrong — so the failure travels with the
+    reading and shapes the sentence the reading is reported in.
+
+    `code` is the write's own error code, kept because it names the remedy: WHM's on a locked
+    suspension, csf's on a refused command. `message` is the remote's sentence where there is
+    one, already cut of anything that must not travel back (the firewall pair's is cut at its
+    marker before it ever reaches here).
+    """
+
+    code: str
+    message: str | None = None
+
+    @property
+    def refused(self) -> bool:
+        """Did the remote answer that it did not act, or did it never answer at all?
+
+        The one decision every CHANGE tool shares here, and the asymmetry below rests entirely
+        on it. A remote that refused has told NOA what it did, so a confirming read that agrees
+        with the refusal is conclusive. A remote that never answered has told NOA nothing: a
+        change that lands a second after NOA stopped waiting reads exactly like one that never
+        landed, and reporting the second as "confirmed did not happen" replaces an honest
+        unknown with a confident falsehood.
+
+        An unrecognised code reads as a refusal, because that is what an unrecognised code
+        almost always is. The non-answers are the transport's, enumerated above and stable,
+        while a new code is minted whenever an integration gains a new thing a remote can say.
+        """
+        return self.code not in NON_ANSWER_ERROR_CODES
+
+    @property
+    def verb(self) -> str:
+        """How a sentence names this failure, so six runners do not spell one fact six ways."""
+        return "refused" if self.refused else "did not answer"
+
+    def sentence(self, fallback: str) -> str:
+        """The remote's own words as a sentence, or `fallback` where it gave none.
+
+        Punctuated here because a remote's message frequently is not a sentence: WHM answers
+        `Account suspension is locked` and csf answers bare clauses, and a runner splicing one
+        into a longer sentence would run two claims together with a space between them.
+        """
+        spoken = (self.message or fallback).strip()
+        return spoken if spoken.endswith((".", "!", "?")) else f"{spoken}."
+
+
+def write_failure_or_none(result: Mapping[str, Any]) -> WriteFailure | None:
+    """One integration client's answer as a write failure, or `None` when the write took.
+
+    The envelope is the same in every client (`ok`, `error_code`, `message`), so the `unknown`
+    default and the refusal of a blank message live here instead of at each mutation site. Named
+    apart from the `write_failure` keyword every postflight takes, so a call site reads as a
+    question rather than as the answer it is about to pass on.
+    """
+    if result.get("ok") is True:
+        return None
+    message = result.get("message")
+    return WriteFailure(
+        code=str(result.get("error_code") or ERROR_UNKNOWN),
+        message=message if isinstance(message, str) and message.strip() else None,
+    )
+
+
+def confirmed_verification(*, matched: bool, failure: WriteFailure) -> tuple[str, str | None]:
+    """The verification state and cause a confirming read earns after a write that failed.
+
+    **A positive reading is conclusive; a negative one after a non-answer is not.** That
+    asymmetry is the whole of this function, and it is not symmetric by accident:
+
+    - **the state matches and the write merely went unanswered** — `verified`, and no cause at
+      all. NOA sent the write, the remote took the connection, and the state is what was asked
+      for; hedging every timeout with "NOA cannot prove it caused this" teaches an operator to
+      skip the qualifier, and a hedge nobody reads degrades the surface it sits on. A cause
+      here would also be refused at construction, since a verified delta carries none.
+    - **the state matches and the remote refused** — `unavailable`, cause the refusal code. Not
+      `mismatch`, because the postflight *agrees* with the target; not `verified`, because the
+      remote said it did nothing, so something other than this change put the state there and
+      claiming it would be false. `unavailable` is the honest one: NOA holds no measurement that
+      its **own** change took, and the reading itself is named in the payload instead.
+    - **the state does not match and the remote refused** — `mismatch`. The refusal now has a
+      reading behind it, which is strictly more than a refusal carried before.
+    - **the state does not match and the write went unanswered** — `unavailable`, cause the
+      write's code. Never "did not happen": the read may simply be earlier than the change.
+
+    The pair is returned together so a `verified` state and a cause cannot be assembled apart
+    and then fail at construction.
+    """
+    if matched:
+        if failure.refused:
+            return VERIFICATION_UNAVAILABLE, failure.code
+        return VERIFICATION_VERIFIED, None
+    if failure.refused:
+        return VERIFICATION_MISMATCH, None
+    return VERIFICATION_UNAVAILABLE, failure.code
+
+
 def uuid_or_none(value: Any) -> UUID | None:
     """One evidence value as a `UUID`, or `None` when it is not one.
 
@@ -105,8 +253,12 @@ __all__ = [
     "ERROR_SERVER_UNAVAILABLE",
     "MESSAGE_EVIDENCE_UNUSABLE",
     "MESSAGE_SERVER_UNAVAILABLE",
+    "NON_ANSWER_ERROR_CODES",
     "STATUS_CHANGED",
     "STATUS_NO_OP",
     "VERIFICATION_UNAVAILABLE",
+    "WriteFailure",
+    "confirmed_verification",
     "uuid_or_none",
+    "write_failure_or_none",
 ]

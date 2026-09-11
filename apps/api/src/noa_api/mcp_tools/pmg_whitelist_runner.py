@@ -106,7 +106,10 @@ from noa_api.mcp_tools.change_target import (
     STATUS_CHANGED,
     STATUS_NO_OP,
     VERIFICATION_UNAVAILABLE,
+    WriteFailure,
+    confirmed_verification,
     uuid_or_none,
+    write_failure_or_none,
 )
 from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.pmg_whitelist import (
@@ -243,25 +246,38 @@ def build_pmg_whitelist_runner(*, context: McpToolContext) -> ChangeRunner:
 
         applied = await _apply_change(target, matches=before)
         moved = ListDelta(added=applied.added, removed=applied.removed, total_entries=entries)
-        if applied.failure is not None:
+        if applied.failure is not None and applied.written:
+            # **The one failure that keeps its own answer.** `pmgsh` took every line and
+            # `pmgconfig sync` did not run: the config moved and Postfix did not. That is
+            # already a measurement and a fresh read cannot add to it — `mynetworks` will read
+            # back exactly as written, and calling that verified would report a change as in
+            # force when the step that puts it in force is the one that failed.
             return ChangeOutcome(
                 payload=applied.failure,
-                # The list move rides **beside** the failure rather than instead of it: a
-                # refused `delete` stops mid-loop with the lines it already took gone from the
-                # config, and a sync that failed leaves every line written and none in force.
-                # Both are measurements, and dropping them would report a half-done change as
-                # one that did nothing.
+                # The list move rides **beside** the failure rather than instead of it: a sync
+                # that failed leaves every line written and none in force, which is a
+                # measurement, and dropping it would report a half-done change as one that did
+                # nothing.
                 delta=_whitelist_delta(
                     target,
-                    verification=(
-                        VERIFICATION_NOT_IN_FORCE if applied.written else VERIFICATION_UNAVAILABLE
-                    ),
+                    verification=VERIFICATION_NOT_IN_FORCE,
                     verification_cause=applied.cause,
                     list_delta=moved,
                 ),
             )
 
-        return await _verify_membership(target, request=request, moved=moved)
+        # Nothing reached the config, so what `mynetworks` holds now is an open question and not
+        # this frame's to answer — a refused `delete` stops mid-loop with the lines it already
+        # took gone from the box. The partial move goes to the postflight beside the failure,
+        # and both survive whatever the read says.
+        return await _verify_membership(
+            target,
+            request=request,
+            moved=moved,
+            write_failure=(
+                None if applied.failure is None else write_failure_or_none(applied.failure)
+            ),
+        )
 
     return run
 
@@ -476,6 +492,7 @@ async def _verify_membership(
     *,
     request: ChangeExecutionRequest,
     moved: ListDelta,
+    write_failure: WriteFailure | None = None,
 ) -> ChangeOutcome:
     """Is the address on the list now? Read off `mynetworks`, never off the exit code.
 
@@ -495,8 +512,16 @@ async def _verify_membership(
     All three carry the list move that already happened, beside the verdict rather than instead
     of it: the writes were accepted on every one of these paths, so what they moved is a fact
     even where the confirming read disagrees with it or could not answer at all.
+
+    **`write_failure` is how a `pmgsh` refusal reaches here without being erased by it.** It is
+    `None` on the ordinary path and every branch above reads as it did before. When it is set,
+    nothing reached the config as a whole — a refused `delete` may still have taken the lines it
+    got to before it stopped — and what `mynetworks` holds now is the fact worth reporting. The
+    list move survives either way, because it is the record of what the mid-loop failure already
+    moved and is the property of neither branch.
     """
     after = await _read_matches(target)
+    where = f"`{target.normalized}` on {target.server_name}"
     if not isinstance(after, list):
         cause = str(after.get("error_code") or ERROR_UNKNOWN)
         logger.warning(
@@ -506,19 +531,35 @@ async def _verify_membership(
             server=target.server_name,
             action=target.action,
             cause=cause,
+            write_failure=None if write_failure is None else write_failure.code,
         )
+        # The cause names the **confirming read** on both paths: it answers why NOA holds no
+        # measurement, while the write's own code sits on the envelope where a reader looks for
+        # what failed.
         return ChangeOutcome(
-            payload=tool_ok(
-                **_common(target),
-                status=STATUS_CHANGED,
-                verified=False,
-                verification=VERIFICATION_UNAVAILABLE,
-                verification_cause=cause,
-                message=(
-                    f"PMG accepted the whitelist change for `{target.normalized}` on "
-                    f"{target.server_name}, but NOA could not read the list back to confirm it. "
-                    "Check the server before relying on it."
-                ),
+            payload=(
+                tool_ok(
+                    **_common(target),
+                    status=STATUS_CHANGED,
+                    verified=False,
+                    verification=VERIFICATION_UNAVAILABLE,
+                    verification_cause=cause,
+                    message=(
+                        f"PMG accepted the whitelist change for {where}, but NOA could not read "
+                        "the list back to confirm it. Check the server before relying on it."
+                    ),
+                )
+                if write_failure is None
+                else {
+                    **tool_failure(
+                        write_failure.code,
+                        f"PMG {write_failure.verb} the whitelist change for {where} "
+                        f"(`{write_failure.code}`), and NOA could not read the list back "
+                        "either. Check the server before relying on it.",
+                    ),
+                    **_common(target),
+                    "applied": False,
+                }
             ),
             delta=_whitelist_delta(
                 target,
@@ -529,40 +570,90 @@ async def _verify_membership(
         )
 
     exists = bool(after)
-    if exists != target.adding:
-        return ChangeOutcome(
-            payload={
-                **tool_failure(
-                    ERROR_POSTFLIGHT_FAILED,
-                    f"PMG accepted the change, but `{target.normalized}` on "
-                    f"{target.server_name} is still "
-                    f"{'absent from' if target.adding else 'on'} the mynetworks whitelist. "
-                    "Check the server.",
+    matched = exists == target.adding
+    membership = f"{where} is {'on' if exists else 'absent from'} the mynetworks whitelist"
+
+    if write_failure is None:
+        if not matched:
+            return ChangeOutcome(
+                payload={
+                    **tool_failure(
+                        ERROR_POSTFLIGHT_FAILED,
+                        f"PMG accepted the change, but `{target.normalized}` on "
+                        f"{target.server_name} is still "
+                        f"{'absent from' if target.adding else 'on'} the mynetworks whitelist. "
+                        "Check the server.",
+                    ),
+                    **_common(target),
+                    "exists": exists,
+                    "verified": False,
+                },
+                delta=_whitelist_delta(
+                    target, verification=VERIFICATION_MISMATCH, list_delta=moved
                 ),
+            )
+
+        return ChangeOutcome(
+            payload=tool_ok(
                 **_common(target),
-                "exists": exists,
-                "verified": False,
-            },
-            delta=_whitelist_delta(target, verification=VERIFICATION_MISMATCH, list_delta=moved),
+                status=STATUS_CHANGED,
+                exists=exists,
+                verified=True,
+                # PMG's own spelling of each line a removal took. An entry stored as a bare host
+                # and its `/32` twin are two lines, and a receipt saying "removed" without saying
+                # how many is a receipt that cannot be checked against the box.
+                removed=list(moved.removed),
+                message=(
+                    f"`{target.normalized}` was "
+                    f"{'added to' if target.adding else 'removed from'} the mynetworks "
+                    f"whitelist on {target.server_name} and confirmed by a fresh read."
+                ),
+            ),
+            delta=_whitelist_delta(target, verification=VERIFICATION_VERIFIED, list_delta=moved),
+        )
+
+    verification, cause = confirmed_verification(matched=matched, failure=write_failure)
+    opener = f"PMG {write_failure.verb} the whitelist change for {where} (`{write_failure.code}`)"
+
+    if verification == VERIFICATION_VERIFIED:
+        return ChangeOutcome(
+            payload=tool_ok(
+                **_common(target),
+                status=STATUS_CHANGED,
+                exists=exists,
+                verified=True,
+                removed=list(moved.removed),
+                message=f"{opener}, so NOA re-read the list: {membership}.",
+            ),
+            delta=_whitelist_delta(target, verification=VERIFICATION_VERIFIED, list_delta=moved),
+        )
+
+    spoken = write_failure.sentence("The PMG command failed.")
+    if verification == VERIFICATION_MISMATCH:
+        message = f"{opener}. {spoken} A fresh read agrees: {membership}."
+    elif matched:
+        message = (
+            f"{opener}. {spoken} A fresh read says {membership}, so something other than this "
+            "change left it that way."
+        )
+    else:
+        message = (
+            f"{opener}, and a fresh read says {membership}. The change may still land, so NOA "
+            "cannot report it as one that did not happen."
         )
 
     return ChangeOutcome(
-        payload=tool_ok(
+        payload={
+            **tool_failure(write_failure.code, message),
             **_common(target),
-            status=STATUS_CHANGED,
-            exists=exists,
-            verified=True,
-            # PMG's own spelling of each line a removal took. An entry stored as a bare host and
-            # its `/32` twin are two lines, and a receipt saying "removed" without saying how
-            # many is a receipt that cannot be checked against the box.
-            removed=list(moved.removed),
-            message=(
-                f"`{target.normalized}` was "
-                f"{'added to' if target.adding else 'removed from'} the mynetworks whitelist on "
-                f"{target.server_name} and confirmed by a fresh read."
-            ),
+            "applied": False,
+            # The reading rides beside the verdict, because it is what a refusal was missing.
+            "exists": exists,
+            "verified": False,
+        },
+        delta=_whitelist_delta(
+            target, verification=verification, verification_cause=cause, list_delta=moved
         ),
-        delta=_whitelist_delta(target, verification=VERIFICATION_VERIFIED, list_delta=moved),
     )
 
 

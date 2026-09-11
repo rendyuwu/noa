@@ -34,12 +34,12 @@ hand-roll an `asyncio.gather` past the zero-backend error's door without failing
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 import structlog
 
-from core.approvals.delta import BackendOutcome, Bound
+from core.approvals.delta import VERIFICATION_MISMATCH, BackendOutcome, Bound
 from core.errors import NoaError
 from core.integrations.whm.availability import FirewallAvailability
 from core.integrations.whm.csf_cli import require_csf_success, run_csf_command
@@ -59,10 +59,11 @@ from noa_api.mcp_tools.change_target import (
     STATUS_CHANGED,
     STATUS_NO_OP,
     VERIFICATION_UNAVAILABLE,
+    WriteFailure,
     uuid_or_none,
 )
 from noa_api.mcp_tools.context import McpToolContext
-from noa_api.mcp_tools.results import ToolPayload, tool_failure
+from noa_api.mcp_tools.results import ERROR_UNKNOWN, ToolPayload, tool_failure
 from noa_api.mcp_tools.whm_firewall import (
     BackendLookup,
     combine_firewall_verdict,
@@ -377,6 +378,79 @@ async def resolve_firewall_change_target(
     return FirewallChangeTarget(config=config, server_name=server_name, target=target.strip())
 
 
+# What a backend refusal says when it carried no sentence of its own. Shared so the two tools
+# do not answer one blank message two ways.
+MESSAGE_BACKEND_REFUSED = "The firewall command did not run."
+
+
+def backend_write_failure(broken: BackendChange) -> WriteFailure:
+    """One backend's refusal as the failure a confirming read is reported beside.
+
+    The code is already the remedy-naming one and the message is already cut of NOA's own
+    comment text (`backend_change_failure`), so nothing is re-derived here — what this adds is
+    the one question both tools ask of it: did the backend answer that it did not act, or did
+    it never answer at all? Only the first makes a disagreeing read conclusive.
+    """
+    return WriteFailure(code=broken.error_code or ERROR_UNKNOWN, message=broken.message)
+
+
+def refused_backend_verdict(*, failure: WriteFailure, contradicted: bool) -> tuple[str, str | None]:
+    """The verification state and cause a backend's refusal earns once the read is consulted.
+
+    **The read is consulted on this branch now, and it used not to be.** Both tools take their
+    confirming read before deciding anything, so by the time a refusal is reported the reading
+    already exists — and a refusal reported with nothing behind it is strictly less than the
+    same refusal with a measurement beside it. An operator told only that csf refused cannot
+    tell a release that did not happen from one that happened anyway. The backend's own row
+    still names the remedy, which is what the earlier decision was protecting, and nothing is
+    taken off it.
+
+    **`verified` is not reachable here, and that is these two tools being vectors rather than
+    scalars.** The change asked for every usable backend; one of them named a refusal; and a
+    combined verdict cannot say "and the other one did it too". So a positive reading does not
+    make the change whole the way it does on a tool with a single target, and the honest state
+    stays `unavailable` — NOA holds no measurement that its **own** change took.
+
+    What the reading does earn is the line between:
+
+    - `mismatch` — every usable backend answered, the address is not where the change asked for
+      it, and the backend told NOA it did not act. All three, which is what makes it a
+      measurement rather than an absence.
+    - `unavailable` — every other case, including a command that never answered at all, because
+      that command may still land and a read taken now cannot say it did not.
+
+    `contradicted` is each tool's own question, because the fact differs: the release asks
+    whether the combined verdict is `allowlisted`, and the removal asks whether any backend that
+    answered still holds an allow entry — a combined verdict would lose the second, since both
+    backends resolve a conflict block-first.
+    """
+    if failure.refused and contradicted:
+        # A contradicted reading needs no cause: the backend's code is on the envelope and on
+        # its own row, and a cause answers why there is no measurement.
+        return VERIFICATION_MISMATCH, None
+    return VERIFICATION_UNAVAILABLE, failure.code
+
+
+def confirming_read_sentence(*, target: str, answer: str | None, unanswered: Sequence[str]) -> str:
+    """What the confirming read said, as a sentence to put beside a backend's refusal.
+
+    `answer` is `None` where the read itself could not answer, and that branch is the shared
+    part: the silent backends are **named** rather than counted, because a source that cannot
+    answer gets named beside the verdict and "one backend was silent" does not say which server
+    to go and look at.
+
+    Each tool supplies its own `answer`, because the fact each one confirms is different — a
+    release asks what the combined verdict is, and a removal asks whether any backend that
+    answered still holds an allow entry, which the combined verdict cannot say.
+    """
+    if answer is None:
+        return (
+            f"NOA could not confirm what the firewall holds for `{target}` either: "
+            f"{' and '.join(unanswered)} did not answer the confirming read."
+        )
+    return f"A fresh read of the firewall says {answer}."
+
+
 __all__ = [
     "ERROR_EVIDENCE_UNUSABLE",
     "ERROR_SERVER_UNAVAILABLE",
@@ -384,6 +458,7 @@ __all__ = [
     "EVIDENCE_SERVER_ID",
     "EVIDENCE_SERVER_NAME",
     "EVIDENCE_TARGET",
+    "MESSAGE_BACKEND_REFUSED",
     "MESSAGE_EVIDENCE_UNUSABLE",
     "MESSAGE_SERVER_UNAVAILABLE",
     "STATUS_CHANGED",
@@ -391,12 +466,16 @@ __all__ = [
     "VERIFICATION_UNAVAILABLE",
     "BackendChange",
     "FirewallChangeTarget",
+    "WriteFailure",
     "backend_change_failure",
     "backend_outcomes",
+    "backend_write_failure",
+    "confirming_read_sentence",
     "evidence_bound",
     "evidence_verdict",
     "firewall_state",
     "holds_allow_entry",
+    "refused_backend_verdict",
     "resolve_firewall_change_target",
     "tolerated_csf_step",
     "tolerated_imunify_step",

@@ -80,7 +80,10 @@ from noa_api.mcp_tools.change_target import (
     STATUS_CHANGED,
     STATUS_NO_OP,
     VERIFICATION_UNAVAILABLE,
+    WriteFailure,
+    confirmed_verification,
     uuid_or_none,
+    write_failure_or_none,
 )
 from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.proxmox_nic import (
@@ -253,11 +256,10 @@ def build_proxmox_vm_nic_runner(*, context: McpToolContext) -> ChangeRunner:
                     delta=_nic_delta(target, verification=VERIFICATION_VERIFIED, changed_fields=()),
                 )
 
+            # A failed write is not an answer about the interface yet, so there is no early
+            # return here: the postflight runs either way and the failure travels into it.
             failure = await _write_link_state(target, fresh=fresh)
-            if failure is not None:
-                return failure
-
-            return await _verify_link_state(target, request=request)
+            return await _verify_link_state(target, request=request, write_failure=failure)
 
     return run
 
@@ -403,7 +405,7 @@ def _evidence_link_state(evidence: Mapping[str, Any]) -> str | None:
     return link_state if isinstance(link_state, str) and link_state else None
 
 
-async def _write_link_state(target: NICChangeTarget, *, fresh: FreshNIC) -> ChangeOutcome | None:
+async def _write_link_state(target: NICChangeTarget, *, fresh: FreshNIC) -> WriteFailure | None:
     """Write the toggled `netN` line under `fresh.digest`. `None` when it took.
 
     The line written is `fresh.nic.value` with `link_down` edited — the value as it is *now*, not
@@ -413,6 +415,10 @@ async def _write_link_state(target: NICChangeTarget, *, fresh: FreshNIC) -> Chan
     Proxmox's `digest_mismatch` passes through with its own code: it means the config moved between
     this runner's read and its write, and the remedy is to ask for the change again rather than to
     retry (`docs/integrations/proxmox.md`).
+
+    **The failure travels rather than being answered here**, because this frame knows what
+    Proxmox said and not what the interface now holds. The postflight reads that, and a refusal
+    with a reading behind it says more than a refusal alone.
     """
     after_value = set_link_down(fresh.nic.value, disabled=target.disabled)
     write_result = await target.client.update_qemu_config(
@@ -423,20 +429,8 @@ async def _write_link_state(target: NICChangeTarget, *, fresh: FreshNIC) -> Chan
         net_value=after_value,
     )
     if write_result.get("ok") is not True:
-        failure: ToolPayload = {
-            **upstream_failure(write_result, fallback="Proxmox VM config update failed"),
-            **_common(target),
-        }
-        return ChangeOutcome(
-            payload=failure,
-            # Proxmox refused, so nothing moved and the delta says so with a measured empty
-            # diff rather than with an absence.
-            delta=_nic_delta(
-                target,
-                verification=VERIFICATION_UNAVAILABLE,
-                verification_cause=str(failure.get("error_code") or ERROR_UNKNOWN),
-                changed_fields=(),
-            ),
+        return write_failure_or_none(
+            upstream_failure(write_result, fallback="Proxmox VM config update failed")
         )
 
     upid = text_or_none(write_result.get("upid"))
@@ -445,7 +439,7 @@ async def _write_link_state(target: NICChangeTarget, *, fresh: FreshNIC) -> Chan
     return await _wait_for_terminal_task(target, upid=upid)
 
 
-async def _wait_for_terminal_task(target: NICChangeTarget, *, upid: str) -> ChangeOutcome | None:
+async def _wait_for_terminal_task(target: NICChangeTarget, *, upid: str) -> WriteFailure | None:
     """Poll one UPID to a terminal state. `None` when it finished successfully.
 
     Terminality is `status == "stopped"`, or an exit status present while the task is no longer
@@ -455,6 +449,10 @@ async def _wait_for_terminal_task(target: NICChangeTarget, *, upid: str) -> Chan
     A poll that cannot *read* the status is treated as a timeout rather than as a task failure:
     not knowing what a task did is not evidence that it failed, and the write it belongs to has
     already been accepted.
+
+    The two failures keep separate codes, and the postflight reads them apart: a terminal non-`OK`
+    task is Proxmox saying it did not apply the write, while `task_timeout` is NOA having stopped
+    waiting on a write Proxmox accepted. Only the first makes a disagreeing read conclusive.
     """
     for attempt in range(TASK_POLL_ATTEMPTS):
         status_result = await target.client.get_task_status(target.node, upid)
@@ -466,47 +464,25 @@ async def _wait_for_terminal_task(target: NICChangeTarget, *, upid: str) -> Chan
         if task_status == "stopped" or (task_exit_status is not None and task_status != "running"):
             if task_exit_status in (None, "OK"):
                 return None
-            return ChangeOutcome(
-                payload={
-                    **tool_failure(
-                        ERROR_TASK_FAILED,
-                        f"Proxmox rejected the change: its task finished with exit status "
-                        f"'{task_exit_status}'.",
-                    ),
-                    **_common(target),
-                },
-                # A terminal non-`OK` task is Proxmox saying it did not apply the write, which
-                # is a measurement: nothing moved.
-                delta=_nic_delta(
-                    target,
-                    verification=VERIFICATION_UNAVAILABLE,
-                    verification_cause=ERROR_TASK_FAILED,
-                    changed_fields=(),
+            return WriteFailure(
+                code=ERROR_TASK_FAILED,
+                message=(
+                    f"Proxmox rejected the change: its task finished with exit status "
+                    f"'{task_exit_status}'."
                 ),
             )
 
         if attempt < TASK_POLL_ATTEMPTS - 1:
             await asyncio.sleep(TASK_POLL_DELAY_SECONDS)
 
-    return ChangeOutcome(
-        payload={
-            **tool_failure(ERROR_TASK_TIMEOUT, MESSAGE_TASK_TIMEOUT),
-            **_common(target),
-        },
-        # The write was accepted and the task's outcome was never read, so the link may already
-        # have moved. `None` rather than an empty diff: this is the one branch here that measured
-        # nothing at all.
-        delta=_nic_delta(
-            target,
-            verification=VERIFICATION_UNAVAILABLE,
-            verification_cause=ERROR_TASK_TIMEOUT,
-            changed_fields=None,
-        ),
-    )
+    return WriteFailure(code=ERROR_TASK_TIMEOUT, message=MESSAGE_TASK_TIMEOUT)
 
 
 async def _verify_link_state(
-    target: NICChangeTarget, *, request: ChangeExecutionRequest
+    target: NICChangeTarget,
+    *,
+    request: ChangeExecutionRequest,
+    write_failure: WriteFailure | None = None,
 ) -> ChangeOutcome:
     """Did the link actually move? Read off the `netN` line, never off the task.
 
@@ -523,9 +499,17 @@ async def _verify_link_state(
        operator to repeat a change that has probably already happened.
     3. **mismatch** — the line is readable and the link is not where it was asked to be. That is a
        measurement, and it is a failure.
+
+    **`write_failure` is how a failed write reaches here without being erased by it.** It is
+    `None` on the ordinary path and every branch above reads as it did before. When it is set,
+    Proxmox refused the write or never said what it did with it, and the interface is still the
+    better witness of where the link now sits — but a postflight that did not know would emit a
+    clean confirmed flip and leave no trace anything went wrong.
     """
     fresh = await _read_current_nic(target)
+    where = f"`{target.net}` on VM {target.vmid} ({target.server_name})"
     if not isinstance(fresh, FreshNIC):
+        cause = str(fresh.get("error_code") or ERROR_UNKNOWN)
         logger.warning(
             LOG_NIC_RUN_UNVERIFIED,
             tool=TOOL_PROXMOX_VM_NIC,
@@ -533,61 +517,140 @@ async def _verify_link_state(
             node=target.node,
             vmid=target.vmid,
             net=target.net,
-            cause=str(fresh.get("error_code") or ERROR_UNKNOWN),
+            cause=cause,
+            write_failure=None if write_failure is None else write_failure.code,
         )
+        # The cause names the **confirming read** on both paths: it answers why NOA holds no
+        # measurement, while the write's own code sits on the envelope where a reader looks for
+        # what failed.
         return ChangeOutcome(
-            payload=tool_ok(
-                **_common(target),
-                status=STATUS_CHANGED,
-                verified=False,
-                verification=VERIFICATION_UNAVAILABLE,
-                verification_cause=str(fresh.get("error_code") or ERROR_UNKNOWN),
-                message=(
-                    f"Proxmox accepted the change to `{target.net}` on VM {target.vmid} "
-                    f"({target.server_name}), but NOA could not read the interface back to "
-                    "confirm it. Check the VM before relying on it."
-                ),
+            payload=(
+                tool_ok(
+                    **_common(target),
+                    status=STATUS_CHANGED,
+                    verified=False,
+                    verification=VERIFICATION_UNAVAILABLE,
+                    verification_cause=cause,
+                    message=(
+                        f"Proxmox accepted the change to {where}, but NOA could not read the "
+                        "interface back to confirm it. Check the VM before relying on it."
+                    ),
+                )
+                if write_failure is None
+                else {
+                    **tool_failure(
+                        write_failure.code,
+                        f"Proxmox {write_failure.verb} the change to {where} "
+                        f"(`{write_failure.code}`), and NOA could not read the interface back "
+                        "either. Check the VM before relying on it.",
+                    ),
+                    **_common(target),
+                }
             ),
             delta=_nic_delta(
                 target,
                 verification=VERIFICATION_UNAVAILABLE,
-                verification_cause=str(fresh.get("error_code") or ERROR_UNKNOWN),
+                verification_cause=cause,
                 changed_fields=None,
             ),
         )
 
-    if fresh.nic.link_state != target.desired_link_state:
+    matched = fresh.nic.link_state == target.desired_link_state
+
+    if write_failure is None:
+        if not matched:
+            return ChangeOutcome(
+                payload={
+                    **tool_failure(
+                        ERROR_POSTFLIGHT_FAILED,
+                        f"Proxmox accepted the change, but {where} still reads as "
+                        f"{fresh.nic.link_state}. Check the VM.",
+                    ),
+                    **_common(target),
+                    "link_state": fresh.nic.link_state,
+                    "verified": False,
+                },
+                # Measured and disagreeing, which is what earns the `verified: false` beside it.
+                delta=_nic_delta(target, verification=VERIFICATION_MISMATCH, changed_fields=()),
+            )
+
         return ChangeOutcome(
-            payload={
-                **tool_failure(
-                    ERROR_POSTFLIGHT_FAILED,
-                    f"Proxmox accepted the change, but `{target.net}` on VM {target.vmid} "
-                    f"({target.server_name}) still reads as {fresh.nic.link_state}. Check the VM.",
-                ),
+            payload=tool_ok(
                 **_common(target),
-                "link_state": fresh.nic.link_state,
-                "verified": False,
-            },
-            # Measured and disagreeing, which is what earns the `verified: false` beside it.
-            delta=_nic_delta(target, verification=VERIFICATION_MISMATCH, changed_fields=()),
+                status=STATUS_CHANGED,
+                link_state=fresh.nic.link_state,
+                verified=True,
+                message=(
+                    f"{where} was {'disabled' if target.disabled else 'enabled'} and confirmed: "
+                    f"its link is now {fresh.nic.link_state}."
+                ),
+            ),
+            delta=_nic_delta(
+                target,
+                verification=VERIFICATION_VERIFIED,
+                changed_fields=_link_state_change(request, measured=fresh.nic.link_state),
+            ),
+        )
+
+    verification, cause = confirmed_verification(matched=matched, failure=write_failure)
+    opener = f"Proxmox {write_failure.verb} the change to {where} (`{write_failure.code}`)"
+
+    if verification == VERIFICATION_VERIFIED:
+        # Proxmox never said what it did and the link is where the change asked for it. No
+        # hedge: NOA sent the write, Proxmox took it, and qualifying every unanswered call with
+        # "NOA cannot prove it caused this" teaches an operator to skip the qualifier.
+        return ChangeOutcome(
+            payload=tool_ok(
+                **_common(target),
+                status=STATUS_CHANGED,
+                link_state=fresh.nic.link_state,
+                verified=True,
+                message=(
+                    f"{opener}, so NOA re-read the interface: its link is now "
+                    f"{fresh.nic.link_state}."
+                ),
+            ),
+            delta=_nic_delta(
+                target,
+                verification=VERIFICATION_VERIFIED,
+                changed_fields=_link_state_change(request, measured=fresh.nic.link_state),
+            ),
+        )
+
+    spoken = write_failure.sentence("Proxmox VM config update failed.")
+    if verification == VERIFICATION_MISMATCH:
+        message = (
+            f"{opener}. {spoken} A fresh read agrees: {where} reads as {fresh.nic.link_state}."
+        )
+    elif matched:
+        message = (
+            f"{opener}. {spoken} A fresh read says {where} reads as {fresh.nic.link_state}, so "
+            "something other than this change left it that way."
+        )
+    else:
+        message = (
+            f"{opener}, and a fresh read says {where} reads as {fresh.nic.link_state}. The "
+            "change may still land, so NOA cannot report it as one that did not happen."
         )
 
     return ChangeOutcome(
-        payload=tool_ok(
+        payload={
+            **tool_failure(write_failure.code, message),
             **_common(target),
-            status=STATUS_CHANGED,
-            link_state=fresh.nic.link_state,
-            verified=True,
-            message=(
-                f"`{target.net}` on VM {target.vmid} ({target.server_name}) was "
-                f"{'disabled' if target.disabled else 'enabled'} and confirmed: its link is now "
-                f"{fresh.nic.link_state}."
-            ),
-        ),
+            # The reading rides beside the verdict on every one of these branches, because it is
+            # what a refusal was missing: a code with no state behind it.
+            "link_state": fresh.nic.link_state,
+            "verified": False,
+        },
         delta=_nic_delta(
             target,
-            verification=VERIFICATION_VERIFIED,
-            changed_fields=_link_state_change(request, measured=fresh.nic.link_state),
+            verification=verification,
+            verification_cause=cause,
+            # `()` only where Proxmox refused and the reading agrees with the refusal — both
+            # sides say nothing moved. Everywhere else `None`: an unanswered write may still
+            # land, and a link already in the desired state after a refusal was not put there by
+            # this change.
+            changed_fields=() if verification == VERIFICATION_MISMATCH else None,
         ),
     )
 

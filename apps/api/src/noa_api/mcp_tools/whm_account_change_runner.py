@@ -59,10 +59,13 @@ from noa_api.mcp_tools.change_target import (
     MESSAGE_SERVER_UNAVAILABLE,
     STATUS_CHANGED,
     VERIFICATION_UNAVAILABLE,
+    WriteFailure,
+    confirmed_verification,
     uuid_or_none,
+    write_failure_or_none,
 )
 from noa_api.mcp_tools.context import McpToolContext
-from noa_api.mcp_tools.results import ERROR_UNKNOWN, ToolPayload, tool_failure, tool_ok
+from noa_api.mcp_tools.results import ToolPayload, tool_failure, tool_ok
 from noa_api.mcp_tools.whm_account_change import (
     ERROR_POSTFLIGHT_FAILED,
     ERROR_SUSPENSION_STATE_UNREADABLE,
@@ -91,6 +94,16 @@ from noa_api.mcp_tools.whm_read import MESSAGE_LIST_ACCOUNTS_FAILED
 # reader as a different fact.
 DELTA_FIELD_SUSPENDED: Final = "suspended"
 
+# The confirming read's own deadline, and it is deliberately not the mutation's.
+#
+# `WHM_READ_TIMEOUT_SECONDS` is 120 by default because `unsuspendacct` was measured at 52.91 s on
+# the owner's web8, and that budget belongs to the change. A read taken after it must not inherit
+# it: 120 s of write plus 120 s of read is four minutes holding one of fifteen pool connections,
+# for a question the write has already answered badly. 30 s is the 20 s every WHM call ran under
+# until this week with half again on top: `listaccts` was served under that 20 s, and what moved
+# the number was a write taking 52.91 s, not a read.
+WHM_CONFIRM_READ_TIMEOUT_SECONDS: Final = 30.0
+
 logger = structlog.get_logger(__name__)
 
 
@@ -118,6 +131,8 @@ class _AccountChangeDirection:
     confirmed_state: str
     # The `postflight_failed` sentence — WHM accepted a call that did not take.
     postflight_message: str
+    # What to say when WHM's own refusal carried no sentence of its own.
+    failure_message: str
     unverified_log_event: str
 
 
@@ -127,6 +142,7 @@ _SUSPEND: Final = _AccountChangeDirection(
     noun="suspension",
     confirmed_state="is suspended",
     postflight_message=MESSAGE_POSTFLIGHT_SUSPEND_FAILED,
+    failure_message=MESSAGE_SUSPEND_FAILED,
     unverified_log_event=LOG_SUSPEND_UNVERIFIED,
 )
 
@@ -136,6 +152,7 @@ _UNSUSPEND: Final = _AccountChangeDirection(
     noun="unsuspension",
     confirmed_state="is no longer suspended",
     postflight_message=MESSAGE_POSTFLIGHT_UNSUSPEND_FAILED,
+    failure_message=MESSAGE_UNSUSPEND_FAILED,
     unverified_log_event=LOG_UNSUSPEND_UNVERIFIED,
 )
 
@@ -191,10 +208,14 @@ def build_whm_suspend_runner(*, context: McpToolContext) -> ChangeRunner:
         mutation = await target.client.suspend_account(
             username=target.username, reason=request.reason
         )
-        if mutation.get("ok") is not True:
-            return _passthrough_failure(target, mutation, fallback=MESSAGE_SUSPEND_FAILED)
-
-        return await _verify_account_state(target, direction=_SUSPEND, request=request)
+        # A failed call is not an answer about the account yet, so there is no early return here:
+        # the postflight runs either way and the failure travels into it.
+        return await _verify_account_state(
+            target,
+            direction=_SUSPEND,
+            request=request,
+            write_failure=write_failure_or_none(mutation),
+        )
 
     return run
 
@@ -216,13 +237,17 @@ def build_whm_unsuspend_runner(*, context: McpToolContext) -> ChangeRunner:
             return ChangeOutcome(payload=target)
 
         mutation = await target.client.unsuspend_account(username=target.username)
-        if mutation.get("ok") is not True:
-            # A locked suspension the tool's preflight did not see — the lock was set after the
-            # request was opened, or WHM did not report it — arrives here as `whm_api_error`
-            # carrying WHM's own `reason`, which is the sentence that names the remedy.
-            return _passthrough_failure(target, mutation, fallback=MESSAGE_UNSUSPEND_FAILED)
-
-        return await _verify_account_state(target, direction=_UNSUSPEND, request=request)
+        # A locked suspension the tool's preflight did not see — the lock was set after the
+        # request was opened, or WHM did not report it — arrives as `whm_api_error` carrying
+        # WHM's own `reason`, which is the sentence that names the remedy. It rides into the
+        # postflight on the failure rather than short-circuiting it, because a refused call and
+        # an unanswered one want different things from the account's current state.
+        return await _verify_account_state(
+            target,
+            direction=_UNSUSPEND,
+            request=request,
+            write_failure=write_failure_or_none(mutation),
+        )
 
     return run
 
@@ -388,11 +413,24 @@ async def _verify_account_state(
     *,
     direction: _AccountChangeDirection,
     request: ChangeExecutionRequest,
+    write_failure: WriteFailure | None = None,
 ) -> ChangeOutcome:
     """Re-read the account and say whether the change took (the crypt-verify rule, one system
     over).
 
-    Three answers, and the middle one is why this is a function rather than a boolean:
+    **`write_failure` is how a failed call reaches here without being erased by it.** It is
+    `None` on the ordinary path and every branch below reads exactly as it did before. When it
+    is set, the call to WHM failed and this reading is the better witness of what the account
+    holds — but a postflight that did not know would emit a clean success and leave no trace
+    anything went wrong, so the failure shapes the sentence and the verdict rather than being
+    dropped.
+
+    The re-read carries its own deadline (`WHM_CONFIRM_READ_TIMEOUT_SECONDS`), which is not the
+    mutation's: the write's 120 s exists for `unsuspendacct`, and a read taken after it must not
+    hold a pool connection for a second two-minute budget.
+
+    Three answers about the account itself, and the middle one is why this is a function rather
+    than a boolean:
 
     - the account reads the way the change asked for → done, and verified;
     - it reads the other way → WHM accepted a call that did not take, which is a failure;
@@ -417,7 +455,9 @@ async def _verify_account_state(
     answers with is never the delta's material: the identity is built from two strings this
     function already holds, and the summary stays in this frame.
     """
-    result = await target.client.list_accounts()
+    result = await target.client.list_accounts(
+        read_timeout_seconds=WHM_CONFIRM_READ_TIMEOUT_SECONDS
+    )
     verified = (
         match_account(normalize_whm_account_list(result.get("accounts")), username=target.username)
         if result.get("ok") is True
@@ -438,18 +478,31 @@ async def _verify_account_state(
             action_request_id=str(request.action_request_id),
             username=target.username,
             cause=cause,
+            write_failure=None if write_failure is None else write_failure.code,
         )
+        # The cause names the **confirming read**, not the write, on both paths: what it answers
+        # is why NOA holds no measurement, and the write's own code is on the envelope beside it
+        # where a reader looks for what failed. Two questions, two fields.
         return ChangeOutcome(
-            payload=tool_ok(
-                status=STATUS_CHANGED,
-                server=target.server_name,
-                username=target.username,
-                verified=False,
-                verification=VERIFICATION_UNAVAILABLE,
-                message=(
-                    f"WHM accepted the {direction.noun} of `{target.username}`, but {detail}. "
-                    "Check the account on the server."
-                ),
+            payload=(
+                tool_ok(
+                    status=STATUS_CHANGED,
+                    server=target.server_name,
+                    username=target.username,
+                    verified=False,
+                    verification=VERIFICATION_UNAVAILABLE,
+                    message=(
+                        f"WHM accepted the {direction.noun} of `{target.username}`, but {detail}. "
+                        "Check the account on the server."
+                    ),
+                )
+                if write_failure is None
+                else tool_failure(
+                    write_failure.code,
+                    f"WHM {write_failure.verb} the {direction.noun} of "
+                    f"`{target.username}` (`{write_failure.code}`), and {detail}. Check the "
+                    "account on the server.",
+                )
             ),
             delta=_account_delta(
                 target,
@@ -459,56 +512,91 @@ async def _verify_account_state(
             ),
         )
 
-    if state is not direction.target_suspended:
+    matched = state is direction.target_suspended
+
+    if write_failure is None:
+        if not matched:
+            return ChangeOutcome(
+                payload=tool_failure(ERROR_POSTFLIGHT_FAILED, direction.postflight_message),
+                # Measured and disagreeing: the account was re-read and the field did not move.
+                delta=_account_delta(target, verification=VERIFICATION_MISMATCH, changed_fields=()),
+            )
+
         return ChangeOutcome(
-            payload=tool_failure(ERROR_POSTFLIGHT_FAILED, direction.postflight_message),
-            # Measured and disagreeing: the account was re-read and the field did not move.
-            delta=_account_delta(target, verification=VERIFICATION_MISMATCH, changed_fields=()),
+            payload=tool_ok(
+                status=STATUS_CHANGED,
+                server=target.server_name,
+                username=target.username,
+                suspended=direction.target_suspended,
+                verified=True,
+                message=f"`{target.username}` {direction.confirmed_state}.",
+            ),
+            delta=_account_delta(
+                target,
+                verification=VERIFICATION_VERIFIED,
+                changed_fields=_suspension_change(target, direction=direction),
+            ),
+        )
+
+    verification, cause = confirmed_verification(matched=matched, failure=write_failure)
+    reading = f"`{target.username}` is {'suspended' if state else 'not suspended'}"
+    opener = (
+        f"WHM {write_failure.verb} the {direction.noun} of `{target.username}` "
+        f"(`{write_failure.code}`)"
+    )
+
+    if verification == VERIFICATION_VERIFIED:
+        # The call never answered and the account is where the change asked for it. No hedge:
+        # NOA sent the write, WHM took the connection, and qualifying every timeout with "NOA
+        # cannot prove it caused this" teaches an operator to skip the qualifier.
+        return ChangeOutcome(
+            payload=tool_ok(
+                status=STATUS_CHANGED,
+                server=target.server_name,
+                username=target.username,
+                suspended=direction.target_suspended,
+                verified=True,
+                message=f"{opener}, so NOA re-read the account: {reading}.",
+            ),
+            delta=_account_delta(
+                target,
+                verification=VERIFICATION_VERIFIED,
+                changed_fields=_suspension_change(target, direction=direction),
+            ),
+        )
+
+    spoken = write_failure.sentence(direction.failure_message)
+    if verification == VERIFICATION_MISMATCH:
+        message = f"{opener}. {spoken} A fresh read agrees: {reading}."
+    elif matched:
+        message = (
+            f"{opener}. {spoken} A fresh read says {reading}, so something other than this "
+            "change left it that way."
+        )
+    else:
+        message = (
+            f"{opener}, and a fresh read says {reading}. The change may still land, so NOA "
+            "cannot report it as one that did not happen."
         )
 
     return ChangeOutcome(
-        payload=tool_ok(
-            status=STATUS_CHANGED,
-            server=target.server_name,
-            username=target.username,
-            suspended=direction.target_suspended,
-            verified=True,
-            message=f"`{target.username}` {direction.confirmed_state}.",
-        ),
+        payload=tool_failure(write_failure.code, message),
         delta=_account_delta(
             target,
-            verification=VERIFICATION_VERIFIED,
-            changed_fields=_suspension_change(target, direction=direction),
-        ),
-    )
-
-
-def _passthrough_failure(
-    target: _ChangeTarget, result: dict[str, object], *, fallback: str
-) -> ChangeOutcome:
-    """A `WHMClient` failure as a tool failure, keeping the code that names the remedy.
-
-    The delta beside it states **no** field change. WHM refusing a call is not the same as WHM
-    reporting that nothing happened: a timeout or a dropped connection arrives here too, and the
-    mutation behind it may have landed. `()` would claim a re-read that never happened, and
-    `false` in a rendered diff would read as one.
-    """
-    message = result.get("message")
-    spoken = message if isinstance(message, str) and message.strip() else None
-    code = str(result.get("error_code") or ERROR_UNKNOWN)
-    return ChangeOutcome(
-        payload=tool_failure(code, spoken or fallback),
-        delta=_account_delta(
-            target,
-            verification=VERIFICATION_UNAVAILABLE,
-            verification_cause=code,
-            changed_fields=None,
+            verification=verification,
+            verification_cause=cause,
+            # `()` only where WHM refused and the reading agrees with the refusal — a comparison
+            # was made and both sides say nothing moved. Everywhere else `None`: a call that went
+            # unanswered may still land, and an account already in the target state after a
+            # refusal was not put there by this change, so neither is a diff NOA can state.
+            changed_fields=() if verification == VERIFICATION_MISMATCH else None,
         ),
     )
 
 
 __all__ = [
     "DELTA_FIELD_SUSPENDED",
+    "WHM_CONFIRM_READ_TIMEOUT_SECONDS",
     "build_whm_account_change_runners",
     "build_whm_suspend_runner",
     "build_whm_unsuspend_runner",

@@ -395,15 +395,41 @@ async def test_a_task_that_finishes_badly_is_a_failure_and_the_nic_is_unchanged(
 async def test_a_task_that_never_finishes_times_out_rather_than_reporting_a_refusal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Not knowing what a task did is not evidence that it failed, and the write was accepted."""
+    """Not knowing what a task did is not evidence that it failed, and the write was accepted.
+
+    The interface is read back before the timeout is reported, so the case has to be the VM whose
+    link did not move: a task NOA stopped waiting on, on a VM that still reads the old state, is
+    `task_timeout` and stays it. The VM that *did* move is the case one test down.
+    """
     no_polling_delay(monkeypatch)
-    fixture, vm = nic_context(vm=FakeProxmoxNICVM(task_never_finishes=True))
+    fixture, vm = nic_context(vm=FakeProxmoxNICVM(task_never_finishes=True, ignore_write=True))
 
     payload = await build_runner(fixture)(execution_request(server_id=server_id(fixture)))
 
     assert payload["ok"] is False
     assert payload["error_code"] == ERROR_TASK_TIMEOUT
     assert len([path for _method, path in vm.requests if "/tasks/" in path]) == TASK_POLL_ATTEMPTS
+
+
+async def test_a_task_that_never_finishes_on_a_link_that_moved_reports_the_move(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The incident this whole shape exists for, one system over from where it happened.
+
+    Proxmox took the write and NOA stopped waiting on its task. The interface itself says the
+    link moved, and that reading is the better witness than a deadline NOA chose: reporting
+    `task_timeout` here sends an operator to check a change that has already landed.
+    """
+    no_polling_delay(monkeypatch)
+    fixture, vm = nic_context(vm=FakeProxmoxNICVM(task_never_finishes=True))
+
+    payload = await build_runner(fixture)(execution_request(server_id=server_id(fixture)))
+
+    assert payload["ok"] is True
+    assert payload["verified"] is True
+    assert payload["link_state"] == vm.link_state()
+    # The call is named in the sentence, so "confirmed" is never read as "answered".
+    assert "did not answer" in str(payload["message"])
 
 
 async def test_a_write_that_answers_synchronously_is_not_polled() -> None:

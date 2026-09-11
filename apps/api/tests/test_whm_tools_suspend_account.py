@@ -602,7 +602,12 @@ async def test_a_change_whm_accepted_but_could_not_confirm_says_unverified() -> 
 
 async def test_a_whm_refusal_at_execute_time_keeps_its_own_code() -> None:
     """The mutation itself refused. `whm_api_error` and WHM's `reason` travel to the receipt,
-    because "WHM said no" and "NOA broke" send an administrator to different systems."""
+    because "WHM said no" and "NOA broke" send an administrator to different systems.
+
+    The sentence now carries the confirming read as well, and the code is unchanged: a refusal
+    that also has a reading behind it is strictly more than the refusal alone, and the code is
+    what an administrator branches on.
+    """
     api = whm_endpoint(suspend_body=whm_api_failure_body("Account is locked"))
     fixture, _ = suspend_context(api)
     runner = payload_runner(build_whm_suspend_runner(context=fixture.context))
@@ -611,7 +616,7 @@ async def test_a_whm_refusal_at_execute_time_keeps_its_own_code() -> None:
 
     assert payload["ok"] is False
     assert payload["error_code"] == "whm_api_error"
-    assert payload["message"] == "Account is locked"
+    assert "Account is locked." in str(payload["message"])
 
 
 async def test_a_server_that_vanished_after_approval_is_refused_before_the_mutation() -> None:
@@ -811,13 +816,14 @@ async def test_a_change_that_did_not_take_publishes_a_measured_empty_diff() -> N
     assert payload["changed_fields"] == []
 
 
-async def test_a_mutation_whm_refused_claims_no_diff_at_all() -> None:
-    """The other spelling, and it is the safe direction rather than the tidy one.
+async def test_a_mutation_whm_refused_now_carries_the_reading_that_agrees_with_it() -> None:
+    """A refusal used to be reported with nothing behind it. It is read back now.
 
-    WHM refusing a call is not WHM reporting that nothing happened: a timeout or a dropped
-    connection arrives on this branch too, and the mutation behind it may have landed. So the
-    facet is absent, the cause names WHM's own code, and nothing claims a re-read that never
-    happened.
+    WHM answering `result:0` is WHM saying what it did, which was nothing — so the account is
+    re-read and, where the reading agrees, the two together are a measurement rather than an
+    absence: `mismatch` with an empty diff, not `unavailable` with no diff at all. The empty
+    diff is earned here, and that is the whole difference from a call that went unanswered,
+    which cannot earn it because the change may still land.
     """
     fixture, _ = suspend_context(
         whm_endpoint(suspend_body=whm_api_failure_body("Account is locked"))
@@ -828,9 +834,8 @@ async def test_a_mutation_whm_refused_claims_no_diff_at_all() -> None:
 
     assert delta is not None
     payload = delta.as_payload()
-    assert payload["verification"] == VERIFICATION_UNAVAILABLE
-    assert payload["verification_cause"] == "whm_api_error"
-    assert "changed_fields" not in payload
+    assert payload["verification"] == VERIFICATION_MISMATCH
+    assert payload["changed_fields"] == []
 
 
 async def test_a_server_that_vanished_after_approval_publishes_no_delta() -> None:

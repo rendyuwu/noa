@@ -716,7 +716,7 @@ async def test_a_whm_refusal_at_execute_time_keeps_its_own_code() -> None:
 
     `whm_api_error` and WHM's `reason` travel to the receipt, because "WHM said no" and "NOA
     broke" send an administrator to different systems, and WHM's sentence is the one that names
-    what to unlock.
+    what to unlock — spliced into a longer sentence now, since the account is re-read first.
     """
     fixture, _ = unsuspend_context(
         whm_endpoint(unsuspend_body=whm_api_failure_body("Account suspension is locked"))
@@ -727,7 +727,7 @@ async def test_a_whm_refusal_at_execute_time_keeps_its_own_code() -> None:
 
     assert payload["ok"] is False
     assert payload["error_code"] == "whm_api_error"
-    assert payload["message"] == "Account suspension is locked"
+    assert "Account suspension is locked." in str(payload["message"])
 
 
 async def test_a_server_that_vanished_after_approval_is_refused_before_the_mutation() -> None:

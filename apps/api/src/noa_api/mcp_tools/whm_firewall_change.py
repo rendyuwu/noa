@@ -152,6 +152,7 @@ from noa_api.mcp_tools.whm_firewall_change_common import (
     EVIDENCE_SERVER_ID,
     EVIDENCE_SERVER_NAME,
     EVIDENCE_TARGET,
+    MESSAGE_BACKEND_REFUSED,
     MESSAGE_EVIDENCE_UNUSABLE,
     STATUS_CHANGED,
     VERIFICATION_UNAVAILABLE,
@@ -159,9 +160,12 @@ from noa_api.mcp_tools.whm_firewall_change_common import (
     FirewallChangeTarget,
     backend_change_failure,
     backend_outcomes,
+    backend_write_failure,
+    confirming_read_sentence,
     evidence_bound,
     evidence_verdict,
     firewall_state,
+    refused_backend_verdict,
     resolve_firewall_change_target,
     tolerated_csf_step,
     tolerated_imunify_step,
@@ -759,17 +763,33 @@ def _release_outcome(
 
     broken = next((changes[name] for name in sorted(changes) if not changes[name].ok), None)
     if broken is not None:
+        # The verdict is consulted here now, and it used not to be — see
+        # `refused_backend_verdict`, which holds why, and why `verified` stays unreachable on a
+        # tool whose answer is per backend. The reading was already taken above.
+        failure = backend_write_failure(broken)
+        measured = None if unanswered else combine_firewall_verdict(list(lookups.values()))
+        verification, cause = refused_backend_verdict(
+            failure=failure,
+            contradicted=measured is not None and measured != VERDICT_ALLOWLISTED,
+        )
         return ChangeOutcome(
             payload={
-                **tool_failure(broken.error_code or ERROR_UNKNOWN, broken.message or ""),
+                **tool_failure(
+                    failure.code,
+                    f"{failure.sentence(MESSAGE_BACKEND_REFUSED)} "
+                    + confirming_read_sentence(
+                        target=target.target,
+                        answer=None if measured is None else f"`{target.target}` is `{measured}`",
+                        unanswered=unanswered,
+                    ),
+                ),
                 **common,
                 "unanswered_backends": unanswered,
             },
-            # No verdict is consulted on this branch, so none is stated. The refusal that *was*
-            # measured is on the backend's own row, where it names a remedy.
             delta=delta(
-                verification=VERIFICATION_UNAVAILABLE,
-                verification_cause=broken.error_code or ERROR_UNKNOWN,
+                verification=verification,
+                verification_cause=cause,
+                measured_verdict=measured,
             ),
         )
 
