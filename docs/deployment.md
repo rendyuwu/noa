@@ -20,7 +20,10 @@ One image per deployable. The build contexts differ, and not by preference:
 ```bash
 docker build -f apps/api/Dockerfile -t noa-api .
 docker build -t noa-admin-web apps/admin-web
-docker build --build-arg NOA_LIBRECHAT_ORIGIN=https://chat.noa.internal -t noa-embed apps/web-embed
+docker build \
+  --build-arg NOA_LIBRECHAT_ORIGIN=https://chat.noa.internal \
+  --build-arg NEXT_PUBLIC_NOA_LIBRECHAT_ORIGIN=https://chat.noa.internal \
+  -t noa-embed apps/web-embed
 ```
 
 The API's context is the repo root because `noa-api` is a uv workspace member and `noa-core` is
@@ -49,11 +52,12 @@ a token, so no credential is added to the image and none should be — see `docs
 
 ## Configuration: build time versus runtime
 
-Exactly one setting is baked at build time, and it is the one that cannot be anything else.
+Two settings are baked at build time, they name one origin, and neither can be anything else.
 
 | Setting | When | Read by | If unset |
 |---|---|---|---|
 | `NOA_LIBRECHAT_ORIGIN` | **build** | `apps/web-embed` `next.config.ts` → `config/framing.ts` | falls back to `https://chat.noa.internal`; the header is never omitted |
+| `NEXT_PUBLIC_NOA_LIBRECHAT_ORIGIN` | **build** | `apps/web-embed` `src/lib/embed/frame-origin.ts` | no target origin: the card posts no height and renders `data-noa-frame-size="no-target-origin"` |
 | `NOA_API_URL` | runtime | both web apps' `/api/*` proxy, server-side | proxy raises — no `NEXT_PUBLIC_*` twin exists |
 | `NOA_SIGN_IN_URL` | runtime | embed 401 card | card names the state and offers no link |
 | everything else | runtime | API, from the environment | per `core/config.py`; secrets and addresses refuse dev defaults outside development |
@@ -62,10 +66,20 @@ Exactly one setting is baked at build time, and it is the one that cannot be any
 compiled into the output (one `frame-ancestors` entry on every response; the framing-header
 build bakes it in). The consequence is two-sided and both sides matter: a
 runtime variable cannot **widen** the framing allowlist, and it cannot **change** it either.
-Moving LibreChat means rebuilding the embed image. `NOA_LIBRECHAT_ORIGIN` therefore appears
-nowhere as a container environment variable, a compose `environment:` key or a ConfigMap entry —
-a setting that looks like it moves this value while doing nothing is exactly the
-silently-wrong-address failure the production-default refusal exists to stop, one setting over.
+Moving LibreChat means rebuilding the embed image, and an image built for one environment cannot
+be promoted to another by retagging. Neither name therefore appears anywhere as a container
+environment variable, a compose `environment:` key or a ConfigMap entry — a setting that looks like
+it moves this value while doing nothing is exactly the silently-wrong-address failure the
+production-default refusal exists to stop, one setting over.
+
+The second name is the origin the card's frame-sizing `postMessage` is sent to, and its
+`NEXT_PUBLIC_` prefix is what makes Next compile the value into the output rather than anything to
+do with the browser. Both must be passed, with one value: pass only the first and the header is
+correct while every sizing message is dropped by the browser for an origin mismatch — a frame that
+renders and never grows, with nothing in any log. Pass only the second and the header falls back to
+the development origin, which refuses the real parent outright. `docker-compose.yml` feeds both
+build arguments from one `.env` key so they cannot disagree there. Detail and the check that the
+value survives a build: `docs/embed-frame.md`.
 
 Measured against the built image, three ways, because one of them alone proves nothing:
 
@@ -76,7 +90,10 @@ Measured against the built image, three ways, because one of them alone proves n
 2. `--build-arg NOA_LIBRECHAT_ORIGIN='https://*.example.test'` → the **build fails** with
    `NOA_LIBRECHAT_ORIGIN must be a single origin like https://chat.noa.internal (scheme, host,
    optional port — no wildcard, no path, no second origin)`. A widening value cannot ship.
-3. `printenv NOA_LIBRECHAT_ORIGIN` in the running container → absent.
+3. `printenv NOA_LIBRECHAT_ORIGIN` in the running container → absent. Same for
+   `NEXT_PUBLIC_NOA_LIBRECHAT_ORIGIN`: both are build arguments, declared in the builder stage
+   only, and `apps/api/tests/test_deployment.py` asserts each name is absent from every image's
+   `ENV` and every compose `environment:` block.
 
 ## Domains and the session cookie
 
@@ -247,5 +264,6 @@ endpoints for both probe kinds on the web tier and gate the API rollout on the m
   deployable and a single Secret the API alone mounts — which is what `.env.example` says at the
   top and why no image bakes a `.env` (no secrets in git; every `.dockerignore` here excludes
   it). Note that
-  `NOA_LIBRECHAT_ORIGIN` is *not* among them: it is baked at build and a ConfigMap key would
-  read as the lever that moves it while doing nothing at all.
+  `NOA_LIBRECHAT_ORIGIN` and `NEXT_PUBLIC_NOA_LIBRECHAT_ORIGIN` are *not* among them: both are
+  baked at build and a ConfigMap key of either name would read as the lever that moves the framing
+  origin while doing nothing at all.

@@ -52,8 +52,34 @@ WEB_DEPLOYABLES = ("admin-web", "embed")
 MEASURED_PNPM_NODE_FLOOR = 22
 MEASURED_PNPM_MAJOR = 11
 
-# The variable that may only ever be a build argument. Named once.
+# The variables that may only ever be build arguments. Named once.
+#
+# Two names, one origin, both baked — and one name contains the other, which is why the checks
+# below match assigned KEYS exactly instead of searching for a substring. A substring test for the
+# private name also fires on a line that sets only the public one, so it reports the wrong
+# variable; and a substring test for the public name never fires on the private one at all. Widening
+# the old substring check by adding a second name would have left one direction uncovered while
+# reading as coverage for both.
 FRAMING_ORIGIN_VAR = "NOA_LIBRECHAT_ORIGIN"
+PUBLIC_FRAMING_ORIGIN_VAR = f"NEXT_PUBLIC_{FRAMING_ORIGIN_VAR}"
+FRAMING_ORIGIN_VARS = (FRAMING_ORIGIN_VAR, PUBLIC_FRAMING_ORIGIN_VAR)
+
+# An `KEY=value` assignment anywhere on a Dockerfile line.
+#
+# Anywhere, not anchored to `ENV`, because a multi-line `ENV A=1 \` puts its second and later keys
+# on continuation lines that start with nothing at all — the embed image's runtime stage is exactly
+# that shape. The old check was an unanchored substring search for the same reason; this keeps the
+# reach and stops matching one name inside the other.
+ENV_ASSIGNMENT = re.compile(r"(?:^|\s)([A-Za-z_][A-Za-z0-9_]*)=")
+
+
+def assigned_env_keys(line: str) -> set[str]:
+    """Every key a Dockerfile line assigns. Comments assign nothing."""
+    stripped = line.strip()
+    if stripped.startswith("#"):
+        return set()
+    return set(ENV_ASSIGNMENT.findall(stripped))
+
 
 # Values `core/config.py` treats as secrets. None may appear as a container
 # environment key in compose: a service that does not read one should not be handed one.
@@ -293,8 +319,14 @@ def test_both_web_images_share_one_node_base() -> None:
 # --------------------------------------------------------------------------------------------
 
 
-def test_embed_image_takes_the_framing_origin_as_a_build_arg() -> None:
-    """`output: 'standalone'` bakes `frame-ancestors`, so the value enters at build.
+@pytest.mark.parametrize("variable", FRAMING_ORIGIN_VARS)
+def test_embed_image_takes_each_framing_origin_as_a_build_arg(variable: str) -> None:
+    """Both names enter at build: both are compiled into the output, neither is read later.
+
+    `output: 'standalone'` bakes `frame-ancestors` from the private name, and Next bakes the
+    `NEXT_PUBLIC_` twin — the origin a sizing message is posted to — into the compiled bundle. Two
+    variables rather than one so that a build setting only the private name cannot leave the header
+    correct while every sizing message goes to the development default.
 
     Position matters as much as presence: an `ARG` after `pnpm build`, or in a different stage,
     is declared and unread — the build would then silently use the fallback default.
@@ -303,10 +335,10 @@ def test_embed_image_takes_the_framing_origin_as_a_build_arg() -> None:
     lines = body.splitlines()
 
     arg_index = next(
-        (i for i, line in enumerate(lines) if line.strip() == f"ARG {FRAMING_ORIGIN_VAR}"),
+        (i for i, line in enumerate(lines) if line.strip() == f"ARG {variable}"),
         None,
     )
-    assert arg_index is not None, f"embed Dockerfile declares no `ARG {FRAMING_ORIGIN_VAR}`"
+    assert arg_index is not None, f"embed Dockerfile declares no `ARG {variable}`"
 
     build_index = next(
         (i for i, line in enumerate(lines) if line.strip() == "RUN pnpm build"), None
@@ -318,31 +350,59 @@ def test_embed_image_takes_the_framing_origin_as_a_build_arg() -> None:
     assert between == [], "a stage boundary sits between the ARG and the build"
 
 
-def test_no_container_is_given_the_framing_origin_at_runtime() -> None:
+def test_no_container_is_given_a_framing_origin_at_runtime() -> None:
     """The other half of the build-input rule, and the one that fails silently.
 
-    A `NOA_LIBRECHAT_ORIGIN` in a compose `environment:` block, a ConfigMap or an image `ENV`
-    reads as the lever that moves the framing allowlist while doing nothing at all — the
-    standalone output never re-reads the Next config. That is a dev default reaching production
-    one setting over, so its absence is asserted rather than assumed.
+    Either framing origin in a compose `environment:` block, a ConfigMap or an image `ENV` reads as
+    the lever that moves the framing allowlist while doing nothing at all — the standalone output
+    never re-reads the Next config, and the `NEXT_PUBLIC_` value was compiled into the bundle. That
+    is a dev default reaching production one setting over, so its absence is asserted rather than
+    assumed, for both names.
     """
     for service, spec in compose_services().items():
         keys = set(spec.get("environment", {}) or {})
-        assert FRAMING_ORIGIN_VAR not in keys, f"service {service} sets it at runtime"
+        for variable in FRAMING_ORIGIN_VARS:
+            assert variable not in keys, f"service {service} sets {variable} at runtime"
 
     for service in DEPLOYABLES:
         for line in dockerfile(service).splitlines():
-            stripped = line.strip()
-            assert not stripped.startswith(f"ENV {FRAMING_ORIGIN_VAR}"), service
-            assert f"{FRAMING_ORIGIN_VAR}=" not in stripped or stripped.startswith("#"), service
+            assigned = assigned_env_keys(line) & set(FRAMING_ORIGIN_VARS)
+            assert not assigned, f"{service} assigns {sorted(assigned)} in its image"
 
 
-def test_only_the_embed_service_passes_the_framing_origin_as_a_build_arg() -> None:
-    """One origin, one image, one place it can enter."""
+def test_the_runtime_guard_separates_the_two_names_and_reads_a_continuation_line() -> None:
+    """The negative control for the guard above, which is otherwise a check nobody watched fire.
+
+    Three properties, and the first is the one a widened substring search would not have had: each
+    name is matched exactly, so a line setting only the public one is never reported as the private
+    one, and a line setting only the private one is still caught. The second is reach — a
+    multi-line `ENV A=1 \\` leaves later keys on lines that begin with nothing, which is the embed
+    image's runtime stage. The third is that a commented example is not a setting.
+    """
+    private, public = FRAMING_ORIGIN_VAR, PUBLIC_FRAMING_ORIGIN_VAR
+
+    assert assigned_env_keys(f"ENV {private}=https://chat.example") == {private}
+    assert assigned_env_keys(f"ENV {public}=https://chat.example") == {public}
+
+    # The continuation line, and the whole reason the pattern is not anchored to `ENV`.
+    assert assigned_env_keys(f"    {public}=https://chat.example \\") == {public}
+
+    # A declared ARG carries no value and is the one permitted form; an ARG with a default is a
+    # hardcoded origin in the image, which is the same mistake wearing a different keyword.
+    assert assigned_env_keys(f"ARG {public}") == set()
+    assert assigned_env_keys(f"ARG {public}=https://chat.example") == {public}
+
+    # The build command in the embed Dockerfile's header comment sets nothing.
+    assert assigned_env_keys(f"#   --build-arg {private}=https://chat.example") == set()
+
+
+@pytest.mark.parametrize("variable", FRAMING_ORIGIN_VARS)
+def test_only_the_embed_service_passes_a_framing_origin_as_a_build_arg(variable: str) -> None:
+    """One origin, one image, one place either name can enter."""
     passers = {
         service
         for service, spec in compose_services().items()
-        if FRAMING_ORIGIN_VAR in (spec.get("build", {}) or {}).get("args", {})
+        if variable in (spec.get("build", {}) or {}).get("args", {})
     }
 
     assert passers == {"embed"}
@@ -354,7 +414,8 @@ def test_admin_image_names_no_framing_origin_at_all() -> None:
     directives = [
         line.strip()
         for line in body.splitlines()
-        if line.strip().startswith(("ARG ", "ENV ")) and FRAMING_ORIGIN_VAR in line
+        if line.strip().startswith(("ARG ", "ENV "))
+        and any(variable in line for variable in FRAMING_ORIGIN_VARS)
     ]
 
     assert directives == []

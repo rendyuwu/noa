@@ -17,6 +17,13 @@
  * at build — and unlike that header, this value is not one a runtime variable must be prevented from
  * changing. It is server-side and deliberately not `NEXT_PUBLIC_*`: the page resolves it and passes
  * it down, so no build inlines it and no client bundle carries it.
+ *
+ * The framing origin is the one value in this app that does carry a `NEXT_PUBLIC_*` twin
+ * (`lib/embed/frame-origin.ts`), and the difference is which way the freezing cuts. That value must
+ * be baked — a runtime variable widening who may frame the approval card is the thing the header
+ * exists to deny — so the twin exists to get it inlined, not to get it into the browser. This one
+ * is a per-deployment address with no such rule behind it, so it stays where a redeploy can move it
+ * without a rebuild.
  */
 
 /** Read from the repo-root `.env` in dev (`config/root-env.ts`), from the environment in prod. */

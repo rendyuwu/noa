@@ -5,7 +5,13 @@
 # `.npmrc` and no `@gio/*` dependency at all — eslint refuses both — so unlike the admin
 # image it builds from the public registry alone.
 #
-#   docker build --build-arg NOA_LIBRECHAT_ORIGIN=https://chat.noa.internal -t noa-embed apps/web-embed
+#   docker build \
+#     --build-arg NOA_LIBRECHAT_ORIGIN=https://chat.noa.internal \
+#     --build-arg NEXT_PUBLIC_NOA_LIBRECHAT_ORIGIN=https://chat.noa.internal \
+#     -t noa-embed apps/web-embed
+#
+# Two arguments, one origin. Both are baked and neither is readable at runtime; what the second one
+# buys is stated beside its ARG below.
 #
 # Node 22 for the reason spelled out in `apps/admin-web/Dockerfile`: `engines.node` allows 20 and
 # the built app runs there, but the pinned pnpm 11.x needs `>=22.13` and dies on Node 20 with a
@@ -33,7 +39,7 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# The one build-time input this repo has, and the only place it can be supplied.
+# The build-time inputs this repo has, and the only place either can be supplied.
 #
 # `Content-Security-Policy: frame-ancestors` is emitted from `next.config.ts` (the framing-headers rule), and
 # `output: 'standalone'` never executes that config at runtime — the origin is baked into the
@@ -50,6 +56,22 @@ COPY . .
 # while doing nothing at all: exactly the silently-wrong-address failure the no-silent-dev-
 # default rule exists to stop, one setting over. `apps/api/tests/test_deployment.py` asserts both halves.
 ARG NOA_LIBRECHAT_ORIGIN
+
+# Its public twin, and it names the same deployment for the same reason at the same moment.
+#
+# The card asks its host to grow the frame by `postMessage`, and that call needs a target origin
+# (`src/lib/embed/frame-origin.ts`). Next bakes a `NEXT_PUBLIC_*` variable into the compiled output
+# at `pnpm build`, so the prefix here is what gets the value INLINED — not what puts it in a
+# browser bundle, which this app otherwise never does. Both names must carry one origin: set only
+# the private one and the header is right while every sizing message is dropped for an origin
+# mismatch, which is a frame that renders and never grows, with nothing in any log.
+#
+# `ARG` and never `ENV`, for two reasons that point the same way. The declared ARG is already
+# visible to `pnpm build` as an environment variable, so `ENV` buys nothing; and an `ENV` line
+# naming this would leave the key set in the runtime stage, where it is the same
+# lever-that-does-nothing the paragraph above refuses — a runtime value cannot reach an output that
+# was compiled here. `apps/api/tests/test_deployment.py` asserts both names on both halves.
+ARG NEXT_PUBLIC_NOA_LIBRECHAT_ORIGIN
 
 RUN pnpm build
 

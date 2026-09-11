@@ -126,6 +126,12 @@ services:
         # does not. Unset or blank leaves the pinned `https://chat.noa.internal` in place, so
         # the header is never omitted by a variable nobody passed.
         NOA_LIBRECHAT_ORIGIN: ${NOA_LIBRECHAT_ORIGIN:-}
+        # The twin the card's frame-sizing message is posted to, baked by the same build. Fed from
+        # the SAME `.env` key on purpose: the two names must carry one origin, and a compose that
+        # could set them apart would be a compose that can ship a frame which renders and never
+        # grows — the header right, every sizing message dropped for an origin mismatch, nothing
+        # in any log. One knob here, two bakes in the image.
+        NEXT_PUBLIC_NOA_LIBRECHAT_ORIGIN: ${NOA_LIBRECHAT_ORIGIN:-}
     environment:
       NOA_API_URL: http://api:8000
       # Where the 401 card sends an operator. Read at request time, so unlike the

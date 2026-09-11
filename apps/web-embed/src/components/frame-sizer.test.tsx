@@ -1,8 +1,10 @@
 import { cleanup, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { LIBRECHAT_ORIGIN_ENV_VAR } from '../../config/framing'
-import { resolveFrameTargetOrigin } from '@/lib/embed/frame-origin'
+import {
+  PUBLIC_LIBRECHAT_ORIGIN_ENV_VAR,
+  resolveFrameTargetOrigin,
+} from '@/lib/embed/frame-origin'
 import { CARD_FRAME_POLICY, FRAME_POST_BUDGET, TABLE_FRAME_POLICY } from '@/lib/embed/frame-size'
 
 import { FrameSizer } from './frame-sizer'
@@ -252,9 +254,14 @@ describe('FrameSizer — degrading', () => {
   })
 
   it('a malformed origin variable ends in silence, not in a throw', () => {
-    // End to end for the wrapper's whole reason: the resolver throws on this value on purpose, and
-    // what an operator must not lose over it is the card.
-    const targetOrigin = resolveFrameTargetOrigin({ [LIBRECHAT_ORIGIN_ENV_VAR]: '*' })
+    // End to end for the wrapper's whole reason: the shared validator throws on this value on
+    // purpose, and what an operator must not lose over it is the card.
+    const previous = process.env[PUBLIC_LIBRECHAT_ORIGIN_ENV_VAR]
+    process.env[PUBLIC_LIBRECHAT_ORIGIN_ENV_VAR] = '*'
+    const targetOrigin = resolveFrameTargetOrigin()
+    if (previous === undefined) delete process.env[PUBLIC_LIBRECHAT_ORIGIN_ENV_VAR]
+    else process.env[PUBLIC_LIBRECHAT_ORIGIN_ENV_VAR] = previous
+
     expect(targetOrigin).toBeNull()
 
     const container = scrollContainer(() => 480)

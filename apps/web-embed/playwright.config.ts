@@ -251,6 +251,14 @@ export default defineConfig({
       env: {
         NOA_API_URL: `http://127.0.0.1:${UPSTREAM_PORT}`,
         NOA_LIBRECHAT_ORIGIN: CHAT_ORIGIN,
+        // The framing origin under the two names the app reads it by, one per consumer: the
+        // private one feeds `frame-ancestors`, the `NEXT_PUBLIC_` one is the target a sizing
+        // message is posted to. Both handed in here, with one value, because the specs in this
+        // lane ask questions of both halves — a refusal spec needs the header and every
+        // frame-size spec needs the message to arrive. Setting only the first would leave the
+        // sizer with no target at all, and every height assertion would fail for a configuration
+        // reason rather than a layout one.
+        NEXT_PUBLIC_NOA_LIBRECHAT_ORIGIN: CHAT_ORIGIN,
         // The 401 card's link-out target. Handed in for the same reason as the upstream above: a value from
         // a developer's `.env` would make the popup specs measure whatever they had configured.
         NOA_SIGN_IN_URL: SIGN_IN_URL,

@@ -28,12 +28,18 @@ import { CardView } from './card-view'
  * down. Resolved per request rather than in `next.config.ts`, because `output: 'standalone'` never
  * runs that config at runtime — the framing header is baked there on purpose, and this is not.
  *
- * **The frame origin follows that precedent with one difference worth naming.** The card asks the
- * host to size its frame (`components/frame-sizer.tsx`) and the message needs a target origin, which
- * is the same value the `frame-ancestors` header carries — so unlike the sign-in address, this
- * one *does* have a build-time twin it has to agree with, and a request-time read can disagree with
- * it. `lib/embed/frame-origin.ts` holds both halves of that: why the read is wrapped, and what a
- * disagreement looks like from an operator's side.
+ * **The frame origin is the one value here that does have such a twin, and it is not the same kind
+ * of value.** The card asks the host to size its frame (`components/frame-sizer.tsx`) and the
+ * message needs a target origin naming the same deployment the `frame-ancestors` header names. Both
+ * are baked at `next build` — the header out of `next.config.ts`, the message target out of
+ * `NEXT_PUBLIC_NOA_LIBRECHAT_ORIGIN` — so neither can be moved by a runtime variable, and a
+ * request-time read of the private name would be a second answer free to disagree with the baked
+ * one. Hence `resolveFrameTargetOrigin()` takes no environment and is handed none: only a
+ * `NEXT_PUBLIC_*` name gets compiled into the output, so the accessor has to name that variable
+ * itself rather than receive whatever environment this page happens to hold. What is baked and
+ * what is not was measured rather than assumed — `lib/embed/frame-origin.ts` records the readings,
+ * along with why the read is wrapped and what an unconfigured one looks like from an operator's
+ * side.
  */
 
 // Reading `headers()` already opts this route out of prerendering; saying so as well means a
@@ -50,7 +56,7 @@ export default async function ApprovalCardPage({ params }: { params: Promise<{ i
       initial={await loadApprovalCard(id, { cookie })}
       actionRequestId={id}
       signInUrl={resolveSignInUrl(process.env)}
-      frameOrigin={resolveFrameTargetOrigin(process.env)}
+      frameOrigin={resolveFrameTargetOrigin()}
     />
   )
 }

@@ -50,6 +50,12 @@ committed and none should be added. The consequence for CI, measured in the old 
 here: `bigsu.biznetgio.pt` resolves to an internal-only address, so a runner on the public internet
 cannot install `@gio/*` at all. The build must run on a runner inside the Biznet Gio network.
 
+One consequence for whoever wires the embed image's build: its framing origin enters at build time
+under two names (`NOA_LIBRECHAT_ORIGIN` and `NEXT_PUBLIC_NOA_LIBRECHAT_ORIGIN`, both compiled into
+the output), so an embed image is tied to the environment it was built for and cannot be promoted
+from staging to production by retagging — each environment builds its own. Detail in
+`docs/embed-frame.md`.
+
 CI for this repo is maintained on company GitLab (`gitlab.biznetgio.pt:simondayce/noa`, branches
 `master` and `staging`) out of band; this file states the requirement, it does not add a workflow.
 The GitHub remote (`origin`, `rendyuwu/noa`) is the working and pull-request surface, not the CI

@@ -53,6 +53,49 @@ export type FramingHeaderEntry = {
 }
 
 /**
+ * One origin, normalised — or `null` when the variable carries nothing at all.
+ *
+ * **One validator, two reads, and the two reads are two different variables.** The
+ * `frame-ancestors` header reads the server-side `NOA_LIBRECHAT_ORIGIN` below; the origin a sizing
+ * message is posted to reads the build-inlined `NEXT_PUBLIC_NOA_LIBRECHAT_ORIGIN`
+ * (`src/lib/embed/frame-origin.ts`). Pointing the header at the public name instead would be
+ * silent, not loud: a build or a compose that set only the private name would emit the development
+ * default while reading as configured. What the two consumers share is the parsing, so the parsing
+ * — and only it — lives here.
+ *
+ * `null` for both unset and blank, so each caller applies its own policy rather than inheriting one
+ * this function chose: the header falls back to the pinned default (never omitted, never widened by
+ * a variable nobody set), the message target refuses to post at all.
+ *
+ * **A value that is set and unusable throws, and the throw belongs here rather than in either
+ * caller.** Under `next build`/`next dev` it is a build or boot failure, which is what a config
+ * error should be — the same rule the API's key guards follow. Folding it into `null` here would
+ * turn a malformed production CSP into a silent development default, the one failure this module
+ * exists to stop. The message-target path wraps the call and swallows it for its own stated reason;
+ * the header path lets it propagate.
+ */
+export function normalizeFrameOrigin(
+  raw: string | undefined,
+  variable: string,
+): string | null {
+  if (raw === undefined) return null
+
+  // Trailing slashes stripped, mirroring `core/config.py::_normalize_base_url`, so the API's copy
+  // of this value and this one cannot normalise differently.
+  const value = raw.trim().replace(/\/+$/, '')
+  if (!value) return null
+
+  if (!ORIGIN_PATTERN.test(value)) {
+    throw new Error(
+      `${variable} must be a single origin like ${DEFAULT_LIBRECHAT_ORIGIN} ` +
+        `(scheme, host, optional port — no wildcard, no path, no second origin). Got: ${raw}`,
+    )
+  }
+
+  return value
+}
+
+/**
  * The origin allowed to frame this app.
  *
  * Absent or blank falls back to the pinned default: the header is never omitted and never widened
@@ -62,22 +105,10 @@ export type FramingHeaderEntry = {
  * nobody meant.
  */
 export function resolveFrameAncestor(env: Record<string, string | undefined>): string {
-  const raw = env[LIBRECHAT_ORIGIN_ENV_VAR]
-  if (raw === undefined) return DEFAULT_LIBRECHAT_ORIGIN
-
-  // Trailing slashes stripped, mirroring `core/config.py::_normalize_base_url`, so the API's copy
-  // of this value and this one cannot normalise differently.
-  const value = raw.trim().replace(/\/+$/, '')
-  if (!value) return DEFAULT_LIBRECHAT_ORIGIN
-
-  if (!ORIGIN_PATTERN.test(value)) {
-    throw new Error(
-      `${LIBRECHAT_ORIGIN_ENV_VAR} must be a single origin like ${DEFAULT_LIBRECHAT_ORIGIN} ` +
-        `(scheme, host, optional port — no wildcard, no path, no second origin). Got: ${raw}`,
-    )
-  }
-
-  return value
+  return (
+    normalizeFrameOrigin(env[LIBRECHAT_ORIGIN_ENV_VAR], LIBRECHAT_ORIGIN_ENV_VAR) ??
+    DEFAULT_LIBRECHAT_ORIGIN
+  )
 }
 
 /** The `headers()` entry `next.config.ts` returns. */

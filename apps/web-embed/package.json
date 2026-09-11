@@ -16,7 +16,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:inlining": "node tests/frame-origin-inlining.mjs"
   },
   "dependencies": {
     "next": "16.3.0",

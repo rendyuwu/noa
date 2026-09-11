@@ -18,8 +18,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
  */
 
 const ENV_VAR = 'NOA_LIBRECHAT_ORIGIN'
+const PUBLIC_ENV_VAR = 'NEXT_PUBLIC_NOA_LIBRECHAT_ORIGIN'
 
-let original: string | undefined
+let original: Record<string, string | undefined> = {}
 
 async function loadHeaders() {
   vi.resetModules()
@@ -27,13 +28,17 @@ async function loadHeaders() {
   return await config.headers!()
 }
 
+function set(name: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[name]
+  else process.env[name] = value
+}
+
 beforeEach(() => {
-  original = process.env[ENV_VAR]
+  original = { [ENV_VAR]: process.env[ENV_VAR], [PUBLIC_ENV_VAR]: process.env[PUBLIC_ENV_VAR] }
 })
 
 afterEach(() => {
-  if (original === undefined) delete process.env[ENV_VAR]
-  else process.env[ENV_VAR] = original
+  for (const [name, value] of Object.entries(original)) set(name, value)
   vi.resetModules()
 })
 
@@ -73,40 +78,61 @@ describe('next.config.ts sends the framing header', () => {
  *
  * The embed surfaces ask their host to resize the frame (`src/components/frame-sizer.tsx`) and a
  * `postMessage` needs a target origin. That target is only useful if it is the origin actually
- * framing the document — and the header is baked at `next build` while the target is read per
- * request, so the two are two reads of one variable and can disagree. Compared against each other
- * rather than each against a literal, which is the only comparison a drift would fail.
+ * framing the document. Both values are baked at `next build` — the header out of this config, the
+ * target out of the `NEXT_PUBLIC_*` twin Next inlines — so this is the one file where both halves
+ * are in scope at once and the only place the pair can be compared against each other rather than
+ * each against a literal, which is the only comparison a drift would fail.
+ *
+ * **Two variables, and that is the fix rather than the hazard.** A single name would have to serve
+ * both, and the header must not read a `NEXT_PUBLIC_*` one: a build or compose file that set only
+ * the private name — every one written before the twin existed — would then emit the development
+ * default while reading as configured, silently. Splitting the names moves the remaining
+ * half-configured case somewhere an operator can see it, which is what the third spec below is.
  */
 describe('the framing header and the sizing message name one origin', () => {
   async function targetOrigin(): Promise<string | null> {
     const { resolveFrameTargetOrigin } = await import('../src/lib/embed/frame-origin')
-    return resolveFrameTargetOrigin(process.env)
+    return resolveFrameTargetOrigin()
   }
 
-  it('agree when the variable is the same at build and at request time', async () => {
-    process.env[ENV_VAR] = 'http://chat.noa.internal:3080'
+  it('agree when both names carry one origin', async () => {
+    set(ENV_VAR, 'http://chat.noa.internal:3080')
+    set(PUBLIC_ENV_VAR, 'http://chat.noa.internal:3080')
 
     const [entry] = await loadHeaders()
 
     expect(entry!.headers[0]!.value).toBe(`frame-ancestors ${await targetOrigin()}`)
   })
 
-  it('disagree when the variable is set at build and gone at request time', async () => {
-    // Recorded rather than merely allowed, because this is a *silent* failure: the CSP is the baked
-    // value so the frame renders, the target is the pinned default so every message is dropped by
-    // the browser for an origin mismatch, and there is no exception and no console error. What an
-    // operator sees is a frame that never grows — indistinguishable from a host that stopped
-    // listening. A deployment that moves LibreChat rebuilds; this is what happens if it does not.
-    process.env[ENV_VAR] = 'http://chat.noa.internal:3080'
+  it('the message target follows the public name, not the header one', async () => {
+    // The separating case, and it is the whole reason the split is safe to make. Wired to the
+    // private name the resolver would pass every agreement spec here and still be the variable
+    // Next cannot inline, so the shipped build would read `undefined` and post nothing.
+    set(ENV_VAR, 'http://chat.noa.internal:3080')
+    set(PUBLIC_ENV_VAR, 'http://chat.a3probe.test:9443')
+
+    expect(await targetOrigin()).toBe('http://chat.a3probe.test:9443')
+  })
+
+  it('a header-only configuration says so on the page instead of naming a default', async () => {
+    // This replaces a spec that recorded the opposite behaviour as intended. It used to be true
+    // that an origin present for the header and absent for the target left the target on the pinned
+    // development default: the frame rendered, every message was dropped by the browser for an
+    // origin mismatch, and there was no exception and no console error — a frame that never grows,
+    // indistinguishable from a host that stopped listening. `null` is what `FrameSizer` turns into
+    // `data-noa-frame-size="no-target-origin"`, in the DOM, findable by anyone looking at the card.
+    set(ENV_VAR, 'http://chat.noa.internal:3080')
+    set(PUBLIC_ENV_VAR, undefined)
+
     const [entry] = await loadHeaders()
 
-    delete process.env[ENV_VAR]
-
-    expect(entry!.headers[0]!.value).not.toBe(`frame-ancestors ${await targetOrigin()}`)
+    expect(entry!.headers[0]!.value).toBe('frame-ancestors http://chat.noa.internal:3080')
+    expect(await targetOrigin()).toBeNull()
   })
 
   it('never name a wildcard, on either side', async () => {
-    process.env[ENV_VAR] = 'https://chat.noa.internal'
+    set(ENV_VAR, 'https://chat.noa.internal')
+    set(PUBLIC_ENV_VAR, 'https://chat.noa.internal')
 
     const [entry] = await loadHeaders()
 

@@ -45,6 +45,13 @@ function getConnectionHeaderNames(headers: Headers): Set<string> {
 // There is no NEXT_PUBLIC_* fallback: NOA_API_URL is the single server-only
 // source, and the repo-root `.env` is the single place local dev sets it
 // (`next.config.ts` loads that file).
+//
+// One NEXT_PUBLIC_* variable does exist in this app, and it is not a precedent for this one:
+// `NEXT_PUBLIC_NOA_LIBRECHAT_ORIGIN` (`lib/embed/frame-origin.ts`) carries a public chat origin
+// that has to be baked into the compiled output, and the prefix is what gets it inlined rather
+// than what puts it in a bundle. This value is the internal API host, which every guard below
+// exists to keep out of the browser, so a twin of it would be that host inlined into shipped
+// JavaScript — the leak, not a convenience.
 export function getBackendBaseUrl(): string {
   const url = process.env.NOA_API_URL
   if (!url) {

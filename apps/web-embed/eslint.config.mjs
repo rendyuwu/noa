@@ -36,13 +36,19 @@ export default defineConfig(
   reactHooks.configs.flat['recommended-latest'],
   nextPlugin.configs.recommended,
   {
-    // Playwright's stub upstream is a plain Node script, not app code: it
-    // runs outside the bundler, so the browser-shaped default globals do not
-    // describe it. Named here rather than app-wide — a `process` reference inside
-    // `src/` should still be an error.
-    files: ['e2e/support/**/*.mjs'],
+    // The harness scripts — Playwright's stub upstream, and the build-and-serve check that proves
+    // the framing origin survives into the shipped server — are plain Node programs, not app code:
+    // they run outside the bundler, so the browser-shaped default globals do not describe them.
+    // Named by glob rather than app-wide — a `process` reference inside `src/` should still be an
+    // error, which is the whole point of the one place `src/` is now allowed to make one.
+    files: ['e2e/support/**/*.mjs', 'tests/**/*.mjs'],
     languageOptions: {
-      globals: { process: 'readonly', URL: 'readonly' },
+      globals: {
+        process: 'readonly',
+        URL: 'readonly',
+        fetch: 'readonly',
+        setTimeout: 'readonly',
+      },
     },
   },
   {

@@ -36,21 +36,66 @@ document's.
 
 ### Posted to a resolved origin. Never `"*"`
 
-`apps/web-embed/src/lib/embed/frame-origin.ts` resolves the target, and it does so through
-`resolveFrameAncestor` in `apps/web-embed/config/framing.ts` — the same function that produces the `frame-ancestors`
-entry in the Content-Security-Policy header, reading `NOA_LIBRECHAT_ORIGIN` and falling back to
-`https://chat.noa.internal`. One resolver for both, because two copies of that rule would be two
-descriptions of one deployment, free to disagree the moment either is edited.
+`apps/web-embed/src/lib/embed/frame-origin.ts` resolves the target. The parsing is shared with the
+`frame-ancestors` entry in the Content-Security-Policy header — `normalizeFrameOrigin` in
+`apps/web-embed/config/framing.ts` is the one place an origin is validated and normalised, because
+two copies of that rule would be two descriptions of one deployment, free to disagree the moment
+either is edited.
 
 `"*"` is not an option. The message is a fact about one operator's card, and a wildcard target
 hands it to whatever document happens to be framing us.
 
-The resolver answers `null` when it cannot produce a trustworthy origin, and `null` is a supported
-state rather than a failure: nothing is posted, the surface keeps its own internal scrolling, and
-what an operator loses is a taller frame rather than the surface. The wrapper exists because
-`resolveFrameAncestor` throws on a malformed value — correct at build time, where it should stop a
-deploy, and wrong at request time, where it would turn a cosmetic misconfiguration into a 500 on
-the approval route.
+### One validator, two variables, and two different answers to "unset"
+
+The two consumers read two different environment variables, and both are build-time inputs:
+
+| Consumer | Variable | Unset or blank |
+|---|---|---|
+| `frame-ancestors` header | `NOA_LIBRECHAT_ORIGIN` | falls back to `https://chat.noa.internal` — the header is never omitted and never widened |
+| `postMessage` target | `NEXT_PUBLIC_NOA_LIBRECHAT_ORIGIN` | `null` — nothing is posted, and the page says so |
+
+The `NEXT_PUBLIC_` prefix is not about the browser. Nothing in this app calls the API from the
+browser, and this origin is a public chat address in any case. The prefix is what makes Next compile
+the value into the output, which is the only way a value reaches the standalone server: `output:
+'standalone'` never re-executes `next.config.ts`, so the header's origin is baked at `next build`
+and a message target read at runtime could not agree with it. Both names must therefore be passed
+to `docker build`, and **the built image is not interchangeable across environments** — moving
+LibreChat means rebuilding, which was already true of the header alone.
+
+Two names rather than one because the header must not read the public one. Every build argument,
+compose file and pipeline written before the twin existed sets only the private name, and a header
+wired to the public name would quietly emit the development default in all of them while reading as
+configured.
+
+The remaining half-configured case — private name set, public name not — is the reason the two
+sides answer "unset" differently. A fallback on the message side would look configured and not be:
+the browser drops every message for an origin mismatch, with no exception and no console entry, and
+a frame that never grows is indistinguishable from a host that stopped listening. `null` instead
+renders `data-noa-frame-size="no-target-origin"` on the page, where it can be found.
+
+`null` is a supported state rather than a failure in every case that produces it: nothing is
+posted, the surface keeps its own internal scrolling, and what an operator loses is a taller frame
+rather than the surface. The wrapper around the validator exists because a malformed value throws —
+correct at build time, where it should stop a deploy, and wrong at request time, where it would turn
+a cosmetic misconfiguration into a 500 on the approval route.
+
+### The check that the value survives a build
+
+`pnpm test:inlining` (`apps/web-embed/tests/frame-origin-inlining.mjs`) builds with a probe origin,
+starts the standalone server with **both** framing variables removed from the environment, and
+asserts the served card carries `data-noa-frame-size="measuring"` — a state reachable only when the
+target origin resolved, and therefore only when the value was compiled in. It is not part of
+`pnpm test`: it runs a real build and boots a real server. Run it after touching `config/framing.ts`,
+`src/lib/embed/frame-origin.ts` or this app's Dockerfile.
+
+A unit test cannot make this claim. In-process the read is dynamic either way, so a spec setting the
+variable passes against a build that baked nothing. Measured on Next 16.3.0 with Turbopack: pointing
+the resolver at the private `NOA_LIBRECHAT_ORIGIN` makes the check fail, which is the mistake it
+exists to catch. Rewriting the read as `process.env[SOME_CONST]` does **not** make it fail —
+Turbopack constant-folds a statically resolvable key — so what this check guards is the variable's
+prefix, not the spelling of the read. The accessor is still written as a literal member expression,
+because that is what Next's own guide guarantees and the folding is an observation about one
+bundler version.
 
 ## Every bound on the number is ours
 
