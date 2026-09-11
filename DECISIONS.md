@@ -915,3 +915,88 @@ marked at the site that holds the session. The upgrade path is to close the sess
 dispatching the runner and reopen it to write the terminal run and the receipt; the cost of that
 path is that those two writes stop sharing one transaction with the run, which makes the stranded-run
 reaper's already-written-receipt case the ordinary one instead of the rare one.
+
+---
+
+## 14. DECIDED — a tool's log lines carry the call's request id, rebound at the call boundary (2026-09-11)
+
+**The rule: an id bound once per HTTP request names the request that opened the MCP session, never
+the tool call being served. Anything logged from inside a `tools/call` therefore rebinds it from the
+live request at the boundary, and no log site reads the ambient binding.**
+
+A Streamable HTTP tool call does not run in the task that served it. The session manager runs the
+session in a task created during `initialize`, and a task copies contextvars at creation — so the
+`request_id` the HTTP middleware binds per request is, read from inside a tool, the id of the
+request that opened the session. One value for every call in that session, for the life of the
+session, and never the one the call's own response returned in its `x-request-id` header.
+
+That is worse than logging no id at all. An operator debugging "the model says it cannot do this"
+greps the id the client was handed, and an id that reads like a correlation while resolving to a
+different request sends them to the handshake instead of to the call.
+
+### 14.1 The measurement
+
+Asserted over the real mount, where the value is decided by middleware rather than planted by a
+test: the id on the logged event against the `x-request-id` of the response that same call
+returned. It failed with two different UUIDs on the two sides — the logged value being the
+`initialize` request's, the header value the call's own.
+
+The second claim is the one the first cannot make, so both are asserted together: two calls in one
+session must log two *different* ids. A single call's line matching its own header is also
+consistent with coincidence, whereas the defect stated directly is that every call in a session
+shared one value. Pinning each id to its own response header additionally rules out a per-call
+*minted* value, which would differ across calls and correlate with nothing.
+
+### 14.2 A rebind at the seam, not a helper each log site must remember to call
+
+The fix is one rebind wrapping the whole of the middleware hook every `tools/call` routes through,
+so it covers the tool body, the error sanitizer's failure line inside the tool's own decorator, the
+CHANGE branch that writes no audit row, the middleware's own events — and every event nobody has
+written yet. A helper called from each known log site would have been the same number of characters
+and a worse mechanism: it leaves the next site wrong by default, and the failure it produces is
+silent. Two mechanisms for one fact also teach the next reader the wrong one, which is why the one
+explicit per-site read that existed in the tree was collapsed into the seam rather than kept beside
+it.
+
+It is two wraps, not one, because the RBAC gate is registered first and is therefore the *outermost*
+middleware: a refused call is logged before the audit middleware's rebind runs at all. Both of the
+gate's hooks are wrapped, since the denial event has two emitters — the refused call, and the caller
+whose `users` row disappeared between authentication and dispatch, which the `tools/list` path
+reaches as well. Same helper at both, not a second mechanism.
+
+**Off-request, nothing is bound and nothing is minted.** A direct call, a non-HTTP transport, a test
+driving a tool alone: there is no request to name. A fresh uuid on a line nobody can correlate is
+the silence this exists to end, wearing a better costume, so the rebind is a no-op instead.
+
+### 14.3 The approval runners are deliberately not on this path
+
+A CHANGE approved in the card does not run during a `tools/call`. The executor creates its task when
+the approval lands, so a runner's log lines inherit the contextvars of **the request that approved
+the change** — which is the request that actually caused the run. That is correct and must stay
+correct.
+
+Stamping the tool call's id there would be this same error pointing the other way. The call that
+opened the card and the request that decided it are two different requests, often minutes apart and
+often from a different document; the run was caused by the decision, and the decision is what its
+log lines should name. A reader who finds the runners outside the rebind and "fixes" them by
+extending it breaks a correlation that currently works.
+
+### 14.4 Rejected
+
+- **A fourth middleware registered ahead of the RBAC gate, so one wrap covers everything.** It is a
+  new class plus a registration to reach one log line that an existing hook can be taught to carry.
+  Reordering the two middlewares instead was rejected for a stronger reason: the gate sitting
+  outside the audit middleware is what makes a refused call write no audit row, and that is
+  asserted.
+- **Minting an id when there is no HTTP request in scope.** Every line gets a plausible-looking
+  field and none of them joins to anything. The absence of the key is the honest answer, and it is
+  asserted through the behaviour — the capture sees no `request_id` — rather than against the
+  returned object's type, so the claim survives changing how the no-op is spelled.
+- **Rebinding the plain `ContextVar` the request-context module also exposes.** No production code
+  reads it from inside a tool; its only reader in the repo is a test. If a production reader ever
+  appears on the tool path it needs the same treatment, and this sentence is the note saying so.
+
+**Known ceiling, same failure mode one level down.** The rebind works because the middleware and the
+tool share a task: `call_next` is awaited directly, so the value set in the middleware is visible in
+the tool. Anything under a tool that moves its work into a task of its own stops carrying the id,
+silently — which is exactly the defect above, one level deeper.
