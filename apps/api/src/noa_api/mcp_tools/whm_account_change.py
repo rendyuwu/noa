@@ -122,12 +122,10 @@ from typing import Annotated, Final
 
 import structlog
 from fastmcp import FastMCP
-from fastmcp.server.dependencies import get_http_request
 from pydantic import Field
 
 from core.db.lifecycle import ToolRisk
 from core.integrations.whm.accounts import WHMAccount, account_suspension_state
-from noa_api.api.request_context import LOG_REQUEST_ID, SCOPE_STATE_REQUEST_ID
 from noa_api.mcp_tools.change_gate import build_change_gate_response, open_change_request
 from noa_api.mcp_tools.change_target import (
     # Hoisted to `change_target` with the release-and-allow tool, when the firewall runner became
@@ -608,41 +606,22 @@ def _refused_preflight(payload: ToolPayload, *, tool_name: str, server_ref: str)
     Identifiers and the code only, never the account payload — the same bound the no-op events
     keep, and for the same reason: `suspendreason` is the operator's own words.
 
-    **The id is read off the live request rather than taken from the ambient binding, and that is
-    not belt-and-braces.** `RequestContextMiddleware` binds one into structlog's contextvars per
-    HTTP request, but a Streamable HTTP tool call does not run in the task that served it: the
-    session manager runs the session in a task created during `initialize`, and a task copies
-    contextvars at creation. So the id riding along here is the id of the request that *opened the
-    MCP session* — one value for every call in that session, and not the one the tool call's own
-    response carried. Measured: `apps/api/tests/test_whm_account_non_answers.py` asserts this line
-    against the `x-request-id` of the very response it belongs to, and that assertion fails on the
-    inherited value. An id that reads like a correlation and resolves to a different request is
-    worse than no id, because it is the thing an operator would grep with.
+    **No `request_id` is passed here and that is the point.** It arrives on the ambient structlog
+    binding, which `ToolRunAuditMiddleware` rebinds from the live request for the duration of every
+    tool call (`noa_api.mcp_audit.rebind_request_id`) — because a Streamable HTTP tool call does not
+    run in the task that served it, so the id bound per HTTP request names the session rather than
+    the call. This line carried an explicit read of its own until that seam existed; collapsing it
+    left one mechanism instead of two, which is what stops the next event from being written the
+    wrong way. Measured: `apps/api/tests/test_whm_account_non_answers.py` asserts this line against
+    the `x-request-id` of the very response it belongs to.
     """
     logger.warning(
         LOG_PREFLIGHT_FAILED,
         tool=tool_name,
         server_ref=server_ref,
         error_code=payload.get("error_code"),
-        **({} if (request_id := _calling_request_id()) is None else {LOG_REQUEST_ID: request_id}),
     )
     return payload
-
-
-def _calling_request_id() -> str | None:
-    """The id of the HTTP request this tool call arrived on, or `None` off-request.
-
-    `get_http_request` is the same production seam `remember_mcp_auth_error` uses, and it raises
-    off-request rather than answering — a direct call, a non-HTTP transport, a test driving the
-    function alone. `None` then, never a minted id: a fresh uuid on a line nobody can correlate is
-    the silence this event exists to end, dressed as an answer.
-    """
-    try:
-        scope = get_http_request().scope
-    except RuntimeError:
-        return None
-    stored = scope.get("state", {}).get(SCOPE_STATE_REQUEST_ID)
-    return stored if isinstance(stored, str) and stored else None
 
 
 async def _open_account_change(

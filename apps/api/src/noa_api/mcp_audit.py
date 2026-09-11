@@ -14,13 +14,39 @@ tool-run trail covers what NOA did, and the refusal already has its own structur
 (`mcp_tool_denied`) — and the gate refuses uncatalogued names, so auditing outside it would
 let any caller mint `tool_runs` rows for arbitrary strings.
 
-**READ only, here.** `risk` comes from the registration map, not from a guess, and a CHANGE
-tool is skipped: its `tools/call` opens an approval gate rather than executing anything
+**READ only for the row; every tool for the rebind.** The middleware itself runs on every
+`tools/call` — the risk check is inside `on_call_tool`, and the branch it guards is the
+*persistence*, not the hook. That is what makes this the one seam a request id can be rebound at,
+which is the module's second job and is described under "The id a tool's log lines carry" below.
+
+`risk` comes from the registration map, not from a guess, and a CHANGE
+tool writes no row: its `tools/call` opens an approval gate rather than executing anything
 (the request-opening gate), and the run-plus-receipt row is written by the executor that runs
 after approval. Recording
 the gate call as a CHANGE run would put a row in the audit trail for a change that has not
 happened and may be denied. The map is why this is a decision rather than an accident — see
 `noa_api.mcp_tools.registry`.
+
+**The id a tool's log lines carry.** A Streamable HTTP tool call does not run in the task that
+served it: the session manager runs the session in a task created during `initialize`, and a task
+copies contextvars at creation. So the `request_id` `RequestContextMiddleware` binds per HTTP
+request is, read from inside a tool, the id of the request that *opened the MCP session* — one
+value for every call in that session, and never the one the call's own response returned in
+`x-request-id`. Every structured event emitted from inside a tool carried that id. An id that
+reads like a correlation and resolves to a different request is worse than no id, because it is
+the thing an operator greps with.
+
+`rebind_request_id` fixes it here rather than at each log site, and the difference is not
+tidiness: a helper called from seven sites leaves the eighth wrong and every future site wrong by
+default, while one rebind at the seam covers events nobody has written yet. It wraps the whole of
+`on_call_tool`, so it covers the CHANGE branch that writes no row, the tool body, the sanitizer's
+failure line (`noa_api.mcp_tools.results`), and this middleware's own events.
+
+**What it does not cover, because the calls are not in this path.** The post-approval executor
+runs a CHANGE in a task `AsyncioApprovedChangeExecutor` creates when an approval lands, not
+during a `tools/call`; the runners' log lines therefore carry the id of the request that approved
+the change, which is the request that caused the run. Nothing here reaches them, and nothing
+should: the tool call that opened the card is a different request from the one that decided it.
 
 **Fail closed on the opening write.** If the `STARTED` row cannot be committed, the tool
 does not run and the caller gets `tool_audit_unavailable`. The audit rule says *every* READ
@@ -58,11 +84,12 @@ check.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from contextlib import AbstractContextManager, nullcontext
 from typing import Any, Final
 from uuid import UUID
 
 import structlog
-from fastmcp.server.dependencies import get_http_headers
+from fastmcp.server.dependencies import get_http_headers, get_http_request
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools import ToolResult
 from mcp import types as mt
@@ -75,7 +102,11 @@ from core.audit.summaries import (
 from core.auth.mcp_auth_errors import McpAuthError
 from core.db.lifecycle import ToolRisk, ToolRunStatus
 from core.secrets.redaction import redact_sensitive_data
-from noa_api.api.request_context import sanitize_header_label
+from noa_api.api.request_context import (
+    LOG_REQUEST_ID,
+    SCOPE_STATE_REQUEST_ID,
+    sanitize_header_label,
+)
 from noa_api.mcp_request_auth import current_mcp_identity
 from noa_api.mcp_tools.context import McpToolContext, build_tool_run_repository
 from noa_api.mcp_tools.results import tool_failure
@@ -125,6 +156,26 @@ def read_conversation_ref() -> str | None:
     )
 
 
+def rebind_request_id() -> AbstractContextManager[None]:
+    """Bind the live HTTP request's id over the session's, for as long as the call runs.
+
+    See the module docstring for why the ambient binding names the wrong request. `get_http_request`
+    is the production seam `remember_mcp_auth_error` already reads, and it raises off-request — a
+    direct call, a non-HTTP transport, a test driving a tool alone. Nothing is bound then, and
+    nothing is minted either: a fresh uuid on a line nobody can correlate is the silence this
+    exists to end, wearing a better costume.
+    """
+    try:
+        scope = get_http_request().scope
+    except RuntimeError:
+        return nullcontext()
+
+    request_id = scope.get("state", {}).get(SCOPE_STATE_REQUEST_ID)
+    if not isinstance(request_id, str) or not request_id:
+        return nullcontext()
+    return structlog.contextvars.bound_contextvars(**{LOG_REQUEST_ID: request_id})
+
+
 def redacted_args(arguments: Mapping[str, Any] | None) -> dict[str, Any]:
     """Tool arguments as they may be stored.
 
@@ -147,48 +198,57 @@ class ToolRunAuditMiddleware(Middleware):
         context: MiddlewareContext[mt.CallToolRequestParams],
         call_next: CallNext[mt.CallToolRequestParams, ToolResult],
     ) -> ToolResult:
-        """Record the call around its execution, or refuse it."""
-        tool_name = context.message.name
-        if self._tool_risks.get(tool_name) is not ToolRisk.READ:
-            # A CHANGE tool's `tools/call` opens the approval gate and executes nothing
-            # ; its row belongs to the post-approval executor. An unmapped
-            # name cannot reach here — the RBAC gate outside refuses anything unregistered —
-            # so this is also the fail-closed answer if that ever stops being true.
-            return await call_next(context)
+        """Rebind the call's own request id, then record the call around its execution.
 
-        try:
-            identity = current_mcp_identity()
-        except McpAuthError as exc:
-            # Unreachable through the mount: authentication answers 401 long before dispatch
-            # and the RBAC gate reads the same identity to permit the call at all. If the
-            # chain ever changes, an unattributable run is refused rather than written
-            # against nobody.
-            logger.error(LOG_AUDIT_IDENTITY_UNRESOLVED, tool=tool_name, error_code=exc.error_code)
-            return self._refuse()
+        The rebind is the outermost statement and it wraps `call_next`, so every log line
+        emitted anywhere under this call — including under the CHANGE branch below, which
+        writes no row — names the request the caller was handed rather than the one that
+        opened the session.
+        """
+        with rebind_request_id():
+            tool_name = context.message.name
+            if self._tool_risks.get(tool_name) is not ToolRisk.READ:
+                # A CHANGE tool's `tools/call` opens the approval gate and executes nothing
+                # ; its row belongs to the post-approval executor. An unmapped
+                # name cannot reach here — the RBAC gate outside refuses anything unregistered —
+                # so this is also the fail-closed answer if that ever stops being true.
+                return await call_next(context)
 
-        started = await self._start_run(
-            tool_name=tool_name,
-            user_id=identity.user_id,
-            arguments=context.message.arguments,
-        )
-        if started is None:
-            return self._refuse()
+            try:
+                identity = current_mcp_identity()
+            except McpAuthError as exc:
+                # Unreachable through the mount: authentication answers 401 long before dispatch
+                # and the RBAC gate reads the same identity to permit the call at all. If the
+                # chain ever changes, an unattributable run is refused rather than written
+                # against nobody.
+                logger.error(
+                    LOG_AUDIT_IDENTITY_UNRESOLVED, tool=tool_name, error_code=exc.error_code
+                )
+                return self._refuse()
 
-        try:
-            result = await call_next(context)
-        except BaseException as exc:
-            # Includes `ToolError` raised above `sanitize_tool_errors` (argument validation),
-            # and cancellation. Recorded, then re-raised untouched: shaping the error is
-            # the sanitizer's job and it belongs to the decorator on the tool, not here.
-            await self._finish_run(started, ToolRunStatus.FAILED, type(exc).__name__)
-            raise
+            started = await self._start_run(
+                tool_name=tool_name,
+                user_id=identity.user_id,
+                arguments=context.message.arguments,
+            )
+            if started is None:
+                return self._refuse()
 
-        await self._finish_run(
-            started,
-            status_for_payload(result.structured_content),
-            result_summary(result.structured_content),
-        )
-        return result
+            try:
+                result = await call_next(context)
+            except BaseException as exc:
+                # Includes `ToolError` raised above `sanitize_tool_errors` (argument validation),
+                # and cancellation. Recorded, then re-raised untouched: shaping the error is
+                # the sanitizer's job and it belongs to the decorator on the tool, not here.
+                await self._finish_run(started, ToolRunStatus.FAILED, type(exc).__name__)
+                raise
+
+            await self._finish_run(
+                started,
+                status_for_payload(result.structured_content),
+                result_summary(result.structured_content),
+            )
+            return result
 
     # --- Internals ---
 
@@ -278,6 +338,7 @@ __all__ = [
     "MESSAGE_AUDIT_UNAVAILABLE",
     "ToolRunAuditMiddleware",
     "read_conversation_ref",
+    "rebind_request_id",
     "redacted_args",
     "result_summary",
     "status_for_payload",
