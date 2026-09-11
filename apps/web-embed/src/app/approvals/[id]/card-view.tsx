@@ -242,6 +242,11 @@ function Run({ card, stalled }: { card: ApprovalCard; stalled: boolean }) {
  * while these answer an administrator's question and are reached through `/admin` (held by
  * `apps/api/tests/test_admin_action_request_routes.py`). They stay in the database and in the
  * API's body either way; what changes here is only which of the two surfaces prints them.
+ *
+ * **Hand-kept, and nothing binds it to the producer.** These paths are TypeScript and the nine
+ * keys they filter come out of `normalize_whm_account_summary` in Python, so an identity field
+ * added there renders on this card and reddens nothing here. Said rather than implied, the way
+ * the tool list in `card-view-render.test.tsx` says it of itself.
  */
 const BEFORE_STATE_HIDDEN = new Set([
   'server_id',
