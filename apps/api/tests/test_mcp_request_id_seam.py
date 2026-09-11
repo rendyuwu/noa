@@ -11,6 +11,11 @@ to a different request is worse than no id, because it is the thing an operator 
 the real mount rather than a tool function: the value under test is decided by middleware, and a
 unit-level request context would be asserting against a number the test planted.
 
+`RbacToolMiddleware` rebinds too, and not redundantly: it is added first and is therefore the
+outermost middleware, so its `mcp_tool_denied` is logged from *outside* the audit middleware's
+rebind. Both of its hooks are covered, because the event has two emitters — the refused call, and
+the caller whose `users` row vanished, which `tools/list` reaches as well.
+
 **Two claims, and the second is the one the first cannot make.** That a line carries the id of the
 response it belongs to is checkable one call at a time — but so is a coincidence. That *two* calls
 in one session carry two *different* ids is the shape of the defect stated directly: under it,
@@ -41,6 +46,7 @@ from structlog.testing import capture_logs
 
 from noa_api.api.request_context import REQUEST_ID_HEADER
 from noa_api.mcp_audit import rebind_request_id
+from noa_api.mcp_rbac import LOG_TOOL_DENIED
 from noa_api.mcp_tools.results import LOG_TOOL_FAILED
 from noa_api.mcp_tools.whm_read import TOOL_WHM_LIST_SERVERS
 from support.mcp_identity import LIBRECHAT_USER, FakeMcpIdentityRepository
@@ -76,24 +82,50 @@ def failing_read(monkeypatch: pytest.MonkeyPatch):
         yield open_session(fixture.client, plaintext)
 
 
-def call_tool_response(session: McpSession, name: str, call_id: int) -> httpx.Response:
-    """One `tools/call` POST, unparsed.
+@pytest.fixture
+def ungranted(monkeypatch: pytest.MonkeyPatch):
+    """An open session whose operator holds no grant at all, and the repository behind it.
 
-    Posted here rather than through `McpSession.call_tool`, which hands back the parsed reply:
+    Every registered tool is refused by `RbacToolMiddleware` before it runs, which is the log
+    site the audit middleware's rebind cannot reach: the RBAC gate is added first and is
+    therefore the outermost middleware, so it logs the denial from outside that rebind.
+
+    The repository is yielded too, because the *other* `mcp_tool_denied` site — the one for a
+    caller whose `users` row disappeared mid-session — is reached by emptying it, and that one
+    fires on the `tools/list` path as well as on a call.
+    """
+    identities = FakeMcpIdentityRepository()
+    authorization = FakeAuthorizationRepository()
+    tools = build_tool_context(servers=[whm_server(SERVER_NAME)], authorization=authorization)
+
+    with mounted_app(monkeypatch, repository=identities, tool_context=tools.context) as fixture:
+        user = authorization.add_user("operator@example.com", roles=(ROLE_SUPPORT,))
+        plaintext, _ = identities.add_token(user_id=user.id, librechat_user_id=LIBRECHAT_USER)
+        yield open_session(fixture.client, plaintext), authorization
+
+
+def rpc_response(
+    session: McpSession, method: str, call_id: int, params: dict[str, Any] | None = None
+) -> httpx.Response:
+    """One JSON-RPC POST, unparsed.
+
+    Posted here rather than through `McpSession.request`, which hands back the parsed reply:
     the response *headers* are half of every claim in this file.
     """
-    return session.client.post(
-        MCP_URL,
-        content=json.dumps(
-            {"jsonrpc": "2.0", "id": call_id, "method": "tools/call", "params": {"name": name}}
-        ),
-        headers=session.headers,
-    )
+    body: dict[str, Any] = {"jsonrpc": "2.0", "id": call_id, "method": method}
+    if params is not None:
+        body["params"] = params
+    return session.client.post(MCP_URL, content=json.dumps(body), headers=session.headers)
 
 
-def logged_request_ids(logs: list[dict[str, Any]]) -> list[str]:
-    """The `request_id` of each sanitizer failure line, in the order they were emitted."""
-    return [event["request_id"] for event in logs if event.get("event") == LOG_TOOL_FAILED]
+def call_tool_response(session: McpSession, name: str, call_id: int) -> httpx.Response:
+    """One `tools/call` POST, unparsed."""
+    return rpc_response(session, "tools/call", call_id, {"name": name})
+
+
+def logged_ids(logs: list[dict[str, Any]], event: str) -> list[str]:
+    """The `request_id` of each line named `event`, in the order they were emitted."""
+    return [entry["request_id"] for entry in logs if entry.get("event") == event]
 
 
 def test_a_failed_read_logs_the_id_its_own_response_carried(failing_read: McpSession) -> None:
@@ -102,7 +134,7 @@ def test_a_failed_read_logs_the_id_its_own_response_carried(failing_read: McpSes
         response = call_tool_response(failing_read, TOOL_WHM_LIST_SERVERS, 99)
 
     assert response.status_code == 200
-    assert logged_request_ids(logs) == [response.headers[REQUEST_ID_HEADER]]
+    assert logged_ids(logs, LOG_TOOL_FAILED) == [response.headers[REQUEST_ID_HEADER]]
 
 
 def test_two_calls_in_one_session_log_two_different_ids(failing_read: McpSession) -> None:
@@ -116,7 +148,7 @@ def test_two_calls_in_one_session_log_two_different_ids(failing_read: McpSession
         first = call_tool_response(failing_read, TOOL_WHM_LIST_SERVERS, 99)
         second = call_tool_response(failing_read, TOOL_WHM_LIST_SERVERS, 100)
 
-    logged = logged_request_ids(logs)
+    logged = logged_ids(logs, LOG_TOOL_FAILED)
     assert logged == [first.headers[REQUEST_ID_HEADER], second.headers[REQUEST_ID_HEADER]]
     assert logged[0] != logged[1]
 
@@ -133,3 +165,40 @@ def test_off_request_the_seam_binds_nothing_rather_than_minting_an_id() -> None:
         structlog.get_logger(__name__).warning("off_request_probe")
 
     assert logs == [{"event": "off_request_probe", "log_level": "warning"}]
+
+
+def test_a_denied_call_logs_the_id_its_own_response_carried(ungranted) -> None:
+    """`mcp_tool_denied`, from outside the audit middleware entirely.
+
+    Both claims again, for the same reason: that the line carries the id of the response it
+    belongs to is checkable one call at a time and is therefore also consistent with a
+    coincidence, while two calls in one session carrying two *different* ids is the defect
+    stated directly. A gate that logged the session's id would satisfy neither.
+    """
+    session, _ = ungranted
+
+    with capture_logs(processors=[merge_contextvars]) as logs:
+        first = call_tool_response(session, TOOL_WHM_LIST_SERVERS, 99)
+        second = call_tool_response(session, TOOL_WHM_LIST_SERVERS, 100)
+
+    logged = logged_ids(logs, LOG_TOOL_DENIED)
+    assert logged == [first.headers[REQUEST_ID_HEADER], second.headers[REQUEST_ID_HEADER]]
+    assert logged[0] != logged[1]
+
+
+def test_a_list_refused_by_a_vanished_row_logs_that_request_s_id(ungranted) -> None:
+    """The same event's other emitter, which `tools/list` reaches and a `tools/call` also does.
+
+    `_permitted_tools` logs `mcp_tool_denied` when the `users` row went away between
+    authentication and dispatch, and both hooks call it — so covering only `on_call_tool`
+    would leave this line naming the session. Driven by emptying the repository mid-session,
+    which is what an admin deleting the operator looks like from here.
+    """
+    session, authorization = ungranted
+    authorization.users.clear()
+
+    with capture_logs(processors=[merge_contextvars]) as logs:
+        response = rpc_response(session, "tools/list", 101)
+
+    assert response.status_code == 200
+    assert logged_ids(logs, LOG_TOOL_DENIED) == [response.headers[REQUEST_ID_HEADER]]

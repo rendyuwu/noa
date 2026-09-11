@@ -56,6 +56,7 @@ from mcp import types as mt
 
 from core.auth.authorization_errors import UserNotFoundError
 from core.auth.mcp_auth_errors import McpAuthError
+from noa_api.mcp_audit import rebind_request_id
 from noa_api.mcp_request_auth import current_mcp_identity
 from noa_api.mcp_tools.context import McpToolContext, build_authorization_service
 from noa_api.mcp_tools.results import tool_failure
@@ -95,28 +96,42 @@ class RbacToolMiddleware(Middleware):
         Filtered after `call_next` rather than by asking the registry directly, so tool
         transformations and any future provider still pass through fastmcp's own resolution
         first and the filter applies to what would actually have been sent.
+
+        Rebound for the same reason `on_call_tool` is — `_permitted_tools` emits
+        `mcp_tool_denied` from this path too, when the caller's row has gone away.
         """
-        tools = await call_next(context)
-        permitted = await self._permitted_tools()
-        return [tool for tool in tools if tool.name in permitted]
+        with rebind_request_id():
+            tools = await call_next(context)
+            permitted = await self._permitted_tools()
+            return [tool for tool in tools if tool.name in permitted]
 
     async def on_call_tool(
         self,
         context: MiddlewareContext[mt.CallToolRequestParams],
         call_next: CallNext[mt.CallToolRequestParams, ToolResult],
     ) -> ToolResult:
-        """Refuse before the tool runs, whatever an earlier `tools/list` said."""
-        tool_name = context.message.name
-        if tool_name not in await self._permitted_tools():
-            logger.warning(LOG_TOOL_DENIED, tool=tool_name, error_code=ERROR_TOOL_NOT_PERMITTED)
-            return ToolResult(
-                structured_content=tool_failure(
-                    ERROR_TOOL_NOT_PERMITTED, MESSAGE_TOOL_NOT_PERMITTED
-                ),
-                is_error=True,
-            )
+        """Refuse before the tool runs, whatever an earlier `tools/list` said.
 
-        return await call_next(context)
+        Wrapped in the audit middleware's rebind because this gate is added first and is
+        therefore *outermost*: that middleware's own rebind sits inside this one, so a denial
+        is logged before it ever runs and `mcp_tool_denied` would carry the id of the request
+        that opened the MCP session rather than the refused call's own. Same helper, not a
+        second mechanism — see `noa_api.mcp_audit` for why the ambient binding names the
+        wrong request, and note that the two nest harmlessly on the permitted path because
+        both bind the same value and restore what they replaced.
+        """
+        with rebind_request_id():
+            tool_name = context.message.name
+            if tool_name not in await self._permitted_tools():
+                logger.warning(LOG_TOOL_DENIED, tool=tool_name, error_code=ERROR_TOOL_NOT_PERMITTED)
+                return ToolResult(
+                    structured_content=tool_failure(
+                        ERROR_TOOL_NOT_PERMITTED, MESSAGE_TOOL_NOT_PERMITTED
+                    ),
+                    is_error=True,
+                )
+
+            return await call_next(context)
 
     # --- Internals ---
 
