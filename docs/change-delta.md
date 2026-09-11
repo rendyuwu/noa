@@ -157,6 +157,31 @@ Genuinely four, and each is already a distinct branch in the code:
 A `verification_cause` on a `verified` delta is refused at construction: a reason for a non-answer
 cannot ride on an answer.
 
+### A write that failed is not the end of the story
+
+Every CHANGE runner re-reads its target after it writes, and it does so whether or not the write
+succeeded. When the write failed, the reading decides the verdict — but only in one direction.
+
+A state that matches the change after a call that never answered is `verified`, with no cause and
+no qualifier: NOA sent the write, the remote took the connection, and the state is what was asked
+for. A state that does *not* match after the same call is `unavailable` with the write's own code,
+never a claim that the change did not happen, because a change landing a second after NOA stopped
+waiting reads exactly like one that never landed.
+
+When the remote **refused** — it answered, and said it did nothing — the reading becomes
+conclusive. A disagreeing read is `mismatch` with an empty diff. An agreeing one is `unavailable`
+with the refusal's code, because something other than this change put the state there.
+
+A confirming read that itself fails reports `unavailable` with the *read's* cause, not the write's;
+the write's code stays on the envelope, where a reader looks for what failed.
+
+Two tools depart from this, both deliberately. The firewall pair answers per backend, so a positive
+reading cannot make a change whole when a named backend refused its command — `verified` is
+unreachable on that branch, and `unanswered` still names every source that could not answer.
+`pmg_whitelist` keeps its own answer where the write landed and `pmgconfig sync` did not: that is
+`not_in_force`, a measurement a fresh read cannot add to, since `mynetworks` will read back exactly
+as written.
+
 ### A bounded list ships its bound
 
 The cap's own bound. `before.firewall.matches` is cut at twenty by csf's own `max_matches`, and travels with

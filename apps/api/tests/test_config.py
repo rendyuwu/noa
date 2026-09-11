@@ -631,3 +631,34 @@ def test_get_settings_is_cached() -> None:
         assert get_settings() is get_settings()
     finally:
         get_settings.cache_clear()
+
+
+# --- Source file size caps ---
+
+# The per-language line caps AGENTS.md states. Until this test existed they were a claim: every
+# file was inside them, and nothing read them against the tree, so the first overflow would have
+# arrived in a review months later as a file nobody wants to open. Two files sat one and three
+# lines under their cap when this was written.
+#
+# The scan lives beside the secret-name scan above, and for the same reason: it is one rule
+# spanning Python and two independent web packages that lint separately, so a Python test over the
+# tracked file list is the only place that sees all of it at once. Like that scan, it needs `git`
+# and therefore skips where `git` is absent — run it locally before committing.
+FILE_LINE_CAPS = {".py": 900, ".tsx": 450, ".ts": 300}
+
+
+def test_no_tracked_source_file_exceeds_its_line_cap() -> None:
+    oversized: list[str] = []
+
+    for path in tracked_files():
+        cap = FILE_LINE_CAPS.get(path.suffix)
+        # A `.d.ts` is generated declarations, not authored source, and the cap is about what a
+        # reader has to hold in their head.
+        if cap is None or path.name.endswith(".d.ts"):
+            continue
+
+        lines = len(read_text_or_empty(path).splitlines())
+        if lines > cap:
+            oversized.append(f"{path.relative_to(REPO_ROOT)}: {lines} lines, cap {cap}")
+
+    assert oversized == [], "Split these before committing:\n" + "\n".join(oversized)
