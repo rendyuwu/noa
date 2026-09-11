@@ -410,8 +410,9 @@ tool name (`noa_api/mcp_tools/change_runners.py`). Three things about it:
   as `suspendacct`'s `reason`. The runner does **not** echo it back in its payload:
   `tool_runs.result_summary` is derived from that payload and `noa_get_action_result` returns the
   summary to a model, so an echo would reach the LLM through the audit row. Not
-  through the receipt — `core/approvals/results.py` leaves `include_receipt` at its default, so
-  that reader never joins `action_receipts`.
+  through the receipt — that reader takes two scalars off `action_receipts`, the delta's
+  `verification` and `verification_cause` lifted out of the JSONB in SQL, so no receipt row
+  (and therefore no `before` half holding the reason) enters that process.
 - **The change is re-read, and the read has three answers.** Suspended → done and verified. Still
   live → `postflight_failed`, because WHM accepted a call that did not take. The confirming read
   itself failing → `{"ok": true, "verified": false, "verification": "unavailable"}`, which is

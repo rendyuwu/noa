@@ -48,11 +48,13 @@ It is carried for *every* approved change and read by the runners that have some
 The unsuspend tool's `unsuspendacct` has no note field, so that runner never touches the value —
 which is what "a value, not a permission" looks like from the other side.
 
-Not through the receipt, which is the door it is tempting to name: `core.approvals.results`
-leaves `include_receipt` at its default, so the action-result tool's reader never joins
-`action_receipts`. The receipt is read by the approval card and the admin audit surface, both of
-which are the operator's own. Naming the wrong door here would send the next runner's author to
-guard the wrong field.
+Not through the receipt, which is the door it is tempting to name: the action-result tool's reader
+takes two scalars off `action_receipts` and nothing else — the delta's `verification` and
+`verification_cause`, projected out of the JSONB **in SQL**
+(`core.approvals.reads.select_requester_matched_with_change_verification`) — so the `before` half
+that carries this value never enters that process. The receipt *row* is read by the approval card
+and the admin audit surface, both of which are the operator's own. Naming the wrong door here
+would send the next runner's author to guard the wrong field.
 
 **Redacted arguments are refused, not executed.** `approval_context.arguments` is redacted at
 gate time (`noa_api.mcp_tools.change_gate.build_approval_context`), and redaction is by key

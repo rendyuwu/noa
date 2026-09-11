@@ -536,10 +536,10 @@ async def test_the_runner_payload_never_carries_the_reason_back() -> None:
     model actually reads: a payload assertion alone would still pass if `result_summary` ever
     started composing its own text from fields this one happens not to carry.
 
-    **Not through the receipt** — `core/approvals/results.py` leaves `include_receipt` at its
-    default, so the action-result tool's reader never joins `action_receipts` — rendering the
-    receipt is the approval card's own job. Naming that door here would point a future runner's
-    author at the wrong field.
+    **Not through the receipt** — the action-result tool's reader takes two scalars off
+    `action_receipts`, the delta's `verification` and `verification_cause` lifted out of the JSONB
+    in SQL, so no receipt row enters that process; rendering the receipt is the approval card's
+    own job. Naming that door here would point a future runner's author at the wrong field.
     """
     api = whm_endpoint(listings=[[suspended_account()]])
     fixture, _ = suspend_context(api)

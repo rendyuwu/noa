@@ -37,11 +37,13 @@ payload, because `tool_runs.result_summary` is derived from that payload and
 `noa_get_action_result` hands the summary to a model — and a value kept from a model must stay
 unreadable on every path back.
 
-**Not through the receipt**, which is the door it is tempting to name here: `core.approvals.results`
-leaves `include_receipt` at its default, so the action-result reader never joins `action_receipts`
-and never fetches one — the approval card's flag, requester-matched. The receipt is read by the
-approval card and the admin audit surface, both of which are the operator's own. A runner's author
-sent to the wrong field guards the wrong thing.
+**Not through the receipt**, which is the door it is tempting to name here: the action-result
+reader takes exactly two scalars off `action_receipts` — the delta's `verification` and
+`verification_cause`, lifted out of the JSONB **in SQL**
+(`core.approvals.reads.select_requester_matched_with_change_verification`) — so no receipt row
+enters that process, and a `before` half carrying the reason cannot be filtered out late because
+it never arrives. The receipt *row* is read by the approval card and the admin audit surface, both
+of which are the operator's own. A runner's author sent to the wrong field guards the wrong thing.
 
 **Each system contributes its own map**, the way `noa_api.mcp_tools.registry` collects
 registrars: a runner belongs beside the tool that opens the request for it, so the before-state

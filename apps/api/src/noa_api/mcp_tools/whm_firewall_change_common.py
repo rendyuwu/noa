@@ -206,9 +206,11 @@ def firewall_state(
     **Uncut**, unlike the dual-backend firewall read's own `matches`. These lines go onto
     `action_requests.approval_context`
     and from there to the approval card and the receipt, both of which are the operator's own
-    surfaces behind their cookie — and `noa_get_action_result` reaches neither
-    (`ActionResultView` has no evidence field, and `core.approvals.results` never joins
-    `action_receipts` — the requester-match rule, and the card renders the receipt). The
+    surfaces behind their cookie — and `noa_get_action_result` reaches neither: `ActionResultView`
+    has no evidence field, and the only thing `core.approvals.results` takes off `action_receipts`
+    is the delta's two verification scalars, lifted out of the JSONB **in SQL**
+    (`core.approvals.reads.select_requester_matched_with_change_verification`), so no receipt row
+    enters that process at all. The
     no-path-back rule withholds from the surface that answers a *model*; withholding
     here would take the reason off the two places that exist to show it.
     """

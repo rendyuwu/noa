@@ -191,11 +191,14 @@ async def select_requester_matched(
     dropped by a refactor — defence in depth, said here rather than in a test name that would
     imply otherwise (a control asserted by prose is worth what the prose is worth).
 
-    **`include_receipt` defaults to off, and that is the model path's guard**. A
+    **`include_receipt` defaults to off, and off is what a model-facing caller takes**. A
     receipt's `before` half is the gate's in-process preflight evidence, which the same rule
     keeps out of
-    the transcript — so `core.approvals.results` leaves this false and the receipt is never
-    *fetched* rather than fetched and then dropped by a projection somebody could widen. The
+    the transcript — so a reader answering a model never sets it, and the receipt is never
+    *fetched* rather than fetched and then dropped by a projection somebody could widen.
+    `core.approvals.results` goes one finer than that: it reads through
+    `select_requester_matched_with_change_verification` above, which names two of the receipt's
+    values in the select list and never the row. The
     join itself is bound by the same `WHERE` as everything else here: a receipt hangs off an
     `action_requests` row that was already requester-matched, so there is no second access
     control to get right. The receipt table's `UNIQUE (action_request_id)` is what keeps this
