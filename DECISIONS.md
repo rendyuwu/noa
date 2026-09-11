@@ -846,3 +846,72 @@ The dividing line is the same one that decides what a timeout means: a timeout s
 know what the remote did, so the state is the better witness and NOA believes it; an explicit
 refusal says the remote knows what it did, so the refusal is the better witness. A successful write
 is the case where both witnesses agree, and neither is being weighed against the other.
+
+---
+
+## 13. DECIDED — the WHM read deadline is 120 seconds, and it is a split budget (2026-09-11)
+
+**This is the first decision the value has carried.** What it replaced was 20 seconds, and that
+number was inherited, not chosen: `docs/integrations/whm.md` named `timeout` only in its error-code
+tables and never as a value, this file had no timeout entry at all,
+`git log -S "timeout_seconds" -- core/integrations/whm/` yields exactly one commit — the port —
+whose message lists six deliberate deviations from the reference repo with timeouts not among them,
+and the reference repo on its port branch carries the identical `20.0`. Boilerplate, copied twice.
+
+### 13.1 The measurement that settles it
+
+Taken against the production WHM server on 2026-09-11, with the credential NOA itself uses:
+
+| Call | Wall time | WHM's answer |
+|---|---|---|
+| `suspendacct` | **12.09 s** | `http=200`, `result: 1` |
+| `unsuspendacct` | **52.91 s** | `http=200`, `result: 1` |
+
+**Unsuspend was broken, not at risk.** 52.91 s against a 20 s deadline means every
+`whm_unsuspend_account` through NOA timed out while WHM went on to complete the change — NOA
+reporting a failure for a change that had landed, on every call, by construction. The suspend side
+passed at 12.09 s, and yet the run that opened this whole question exceeded 20 s on that same call,
+so same-operation variance on this host is at least 1.65x. A deadline that only the faster of two
+operations clears, and only sometimes, is not a deadline anybody picked.
+
+120 seconds is 2.3x headroom over the measured maximum. 60 was rejected as too close to it on a
+server the owner reports as spiky.
+
+### 13.2 Why a split budget and not a bigger number
+
+A scalar timeout sets connect, read, write and pool alike, so raising the budget to cover a slow
+call also means an **unreachable** host hangs for the full two minutes before failing. The four
+deadlines answer different questions and only one of them is about how long WHM may take to think:
+
+- connect 10 s — a host that is not answering is not answering, and waiting longer never changes
+  that;
+- read 120 s — the one the measurement is about, and the only one a slow `suspendacct` binds. It is
+  socket silence, not wall clock: the deadline fires when WHM sends nothing, not when the call has
+  simply been running a while;
+- write 30 s, pool 10 s — unchanged in character, bounded independently.
+
+Only the read deadline is overridable per request, and that is deliberate: a caller that reads
+state back to find out whether a failed write landed wants a shorter budget for that read than the
+write got, and nothing about that caller's situation argues for a different connect deadline. The
+shape was ported from the Proxmox client rather than invented, that being the place this repo had
+already solved a per-request override.
+
+Operator-facing name: `whm_read_timeout_seconds`.
+
+### 13.3 Two consequences, both accepted and both instrumented
+
+**Raising a deadline hides a slow server.** A call that would have failed at 20 s now succeeds at
+80 and says nothing about it. So the log event that closes every approved change carries the
+duration of the run beside its status and error code — measured with a monotonic clock rather than
+the wall clock, because an NTP step backwards would otherwise report a change that finished before
+it started. "How long did it hang" becomes a question the logs answer for every CHANGE tool at
+once, which is what makes it safe to stop asking it of the deadline.
+
+**A slow change now pins a database connection for longer.** The executor opens a session and holds
+it across the whole remote call, WHM round trips included, and the pool is 5 with 10 overflow — so
+at a two-minute read deadline, fifteen concurrent slow changes exhaust it. Realistic concurrency
+for a human-approval ops tool is one to three, so this is a stated ceiling rather than a defect,
+marked at the site that holds the session. The upgrade path is to close the session before
+dispatching the runner and reopen it to write the terminal run and the receipt; the cost of that
+path is that those two writes stop sharing one transaction with the run, which makes the stranded-run
+reaper's already-written-receipt case the ordinary one instead of the rare one.
