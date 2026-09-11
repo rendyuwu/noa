@@ -55,11 +55,24 @@ MESSAGE_ACTION_REQUEST_NOT_FOUND = (
     "again to open a new request."
 )
 
+# The `change_verification` clause is the point of the field, not a gloss on it. The incident
+# behind the pair is a model telling an operator a suspension had not happened while the account
+# was suspended, so the two keys are worth nothing unless the text that reaches a model says what
+# `unavailable` obliges it to say — the same voice every CHANGE tool's own description uses
+# ("never report the account as suspended without it").
 DESCRIPTION_NOA_GET_ACTION_RESULT = (
     "Look up what happened to a change that was submitted for approval: whether the operator "
     "approved, denied or let it expire, and how far its execution got. Use it when the "
     "operator asks about a change you already submitted, and pass the approval request id "
     "that was returned when it was submitted. Only requests you submitted are visible. "
+    "Read `change_verification` before saying what the change did: `verified` means NOA read the "
+    "system afterwards and it holds the change, `mismatch` means NOA read it and the change is "
+    "not there, `not_in_force` means it was written but the step that puts it into effect did "
+    "not run, and `unavailable` means NOA holds no reading at all — `change_verification_cause` "
+    "names why. On `unavailable`, and whenever the field is null, report the outcome as "
+    "unconfirmed and say it has to be checked on the system; never report the change as not "
+    "having happened, because a change that landed after NOA stopped waiting looks exactly like "
+    "one that never ran. "
     "Read-only: it changes nothing and it does not approve anything."
 )
 

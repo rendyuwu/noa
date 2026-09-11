@@ -31,6 +31,7 @@ against nothing, because a payload that never had them cannot be shown to have d
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -38,12 +39,13 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from core.approvals.delta import VERIFICATION_UNAVAILABLE
+from core.approvals.delta import VERIFICATION_STATES, VERIFICATION_UNAVAILABLE
 from core.auth.tool_catalog import TOOL_CATALOG
 from core.db.lifecycle import ActionRequestStatus, ToolRisk, ToolRunStatus
 from core.db.models import ADMIN_ROLE_NAME
 from noa_api.mcp_server import build_mcp_server
 from noa_api.mcp_tools.noa_read import (
+    DESCRIPTION_NOA_GET_ACTION_RESULT,
     ERROR_ACTION_REQUEST_NOT_FOUND,
     MESSAGE_ACTION_REQUEST_NOT_FOUND,
     TOOL_NOA_GET_ACTION_RESULT,
@@ -187,6 +189,29 @@ async def test_a_timed_out_change_is_reported_as_unmeasured_rather_than_as_a_fai
     # the run still answers the call's. Two facts in one field is what this avoids.
     assert result["status"] == "APPROVED"
     assert result["run"]["status"] == "FAILED"
+
+
+def test_the_description_names_the_verification_pair_and_every_state_it_can_hold() -> None:
+    """The keys are worth nothing to a model that is never told they exist.
+
+    The incident is a *model* reporting a suspension as not having happened, and the fix hands
+    it two keys; the text this tool is registered with is the only place it learns what they
+    oblige. Bound rather than eyeballed: both names have to be keys `as_payload` actually
+    emits, so a rename on either side reddens here, and every state a delta may publish has to
+    be named — a fifth state added with no instruction beside it is the same silence, one state
+    later.
+
+    The state words are deliberately not asserted against the payload keys: they are values,
+    and asserting them as keys is how a check starts passing for the wrong reason.
+    """
+    payload_keys = set(result_view().as_payload())
+    named = set(re.findall(r"`([a-z_]+)`", DESCRIPTION_NOA_GET_ACTION_RESULT))
+
+    assert {"change_verification", "change_verification_cause"} <= named & payload_keys
+    assert VERIFICATION_STATES <= named
+    # The instruction itself, not only the vocabulary: `unavailable` is the state whose wrong
+    # reading produced the incident, and the sentence that forbids it is the point of the clause.
+    assert "never report the change as not having happened" in DESCRIPTION_NOA_GET_ACTION_RESULT
 
 
 async def test_a_request_that_never_ran_says_so_rather_than_omitting_the_field() -> None:
