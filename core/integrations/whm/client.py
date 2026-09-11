@@ -316,7 +316,11 @@ class WHMClient:
         """
         return await self._get_json_api("applist")
 
-    async def privileges(self) -> dict[str, object]:
+    async def privileges(
+        self,
+        *,
+        read_timeout_seconds: float | None = None,
+    ) -> dict[str, object]:
         """`myprivs` → `{"ok": True, "acls": [...]}`, the granted ACL names, sorted.
 
         The validate probe. It replaced `applist` because `applist` does not appear in
@@ -331,8 +335,12 @@ class WHMClient:
         read" have different remedies, and reporting the first for the second sends an operator
         to edit a credential that was fine (folding a non-answer into the benign value is what
         this refuses).
+
+        `read_timeout_seconds` is for the caller this probe exists for: an admin pressing
+        Validate is holding an HTTP request open while it runs, so it takes its own short
+        budget rather than the one a slow account mutation needs (`core.servers.validation`).
         """
-        result = await self._get_json_api("myprivs")
+        result = await self._get_json_api("myprivs", read_timeout_seconds=read_timeout_seconds)
         if result.get("ok") is not True:
             return result
         privileges = _unwrap_privileges(result.get("data"))

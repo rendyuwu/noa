@@ -54,8 +54,16 @@ a server the operator reports as spiky. Raising a deadline hides how slow a serv
 the `approved_change_execution_finished` log event carries `duration_ms` for every change beside
 its `status` and `error_code`.
 
-A caller may shorten the **read** deadline for one call — a read taken to confirm what a change
-did has no business waiting as long as the change itself — and that override moves nothing else.
+A caller may shorten the **read** deadline for one call, and that override moves nothing else.
+Two callers do:
+
+- the confirming read a failed change takes (`WHM_CONFIRM_READ_TIMEOUT_SECONDS`, 30 s) — a read
+  taken to find out what a change did has no business waiting as long as the change itself;
+- the admin validate probe (`WHM_VALIDATE_READ_TIMEOUT_SECONDS`, 20 s) — `myprivs` is a read, an
+  admin is holding an HTTP request open while it runs, and the 120 s above was measured for a
+  write. It is applied per call because only the MCP wiring binds the configured deadline onto a
+  client factory, so a probe left on the client's default would wait the tool path's length no
+  matter what `WHM_READ_TIMEOUT_SECONDS` is set to.
 
 A timed-out call is not a failed change. WHM may have completed the mutation after the socket
 gave up, so the runner records `verification: "unavailable"` rather than claiming a re-read it

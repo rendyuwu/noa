@@ -51,7 +51,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import Any, Protocol, TypeVar
+from typing import Any, Final, Protocol, TypeVar
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -348,6 +348,22 @@ class _WHMProbeOutcome:
     acls: tuple[str, ...] | None = None
 
 
+# The validate probe's own read deadline, and it is deliberately not the tool path's.
+#
+# An admin pressing Validate holds an HTTP request open for as long as this runs. The configured
+# `WHM_READ_TIMEOUT_SECONDS` defaults to 120 because `unsuspendacct` was measured at 52.91 s, and
+# that budget belongs to the change: a host that takes the connection and then never answers would
+# block the admin's request for two minutes on a probe. 20 s is the deadline every WHM call ran
+# under until that measurement moved it, and what moved it was a write — `myprivs` is a read, and
+# WHM serves its reads well inside it (`docs/integrations/whm.md`, section "Deadlines").
+#
+# Applied per call rather than bound onto a client, the way the account runner's confirming read
+# applies its own: only the MCP wiring binds the configured deadline onto a client factory
+# (`noa_api.mcp_tools.context.build_mcp_tool_context`), so a probe relying on the client's default
+# would wait the tool path's length whichever factory built it.
+WHM_VALIDATE_READ_TIMEOUT_SECONDS: Final = 20.0
+
+
 class WHMServerValidationService:
     """Validate one WHM server: the API token, then SSH if the row carries credentials.
 
@@ -447,7 +463,9 @@ class WHMServerValidationService:
         ssh_wanted: bool,
         setup: SSHConnectionConfig | ServerValidationResult | None,
     ) -> _WHMProbeOutcome:
-        api_answer, acls = _whm_acl_answer(await client.privileges())
+        api_answer, acls = _whm_acl_answer(
+            await client.privileges(read_timeout_seconds=WHM_VALIDATE_READ_TIMEOUT_SECONDS)
+        )
         if not api_answer.ok or not ssh_wanted:
             return _WHMProbeOutcome(result=api_answer, acls=acls)
         if isinstance(setup, ServerValidationResult):
@@ -616,6 +634,7 @@ __all__ = [
     "REMOTE_FAILURES",
     "SSH_PROBE_COMMAND",
     "WHM_ACL_INSUFFICIENT_CODE",
+    "WHM_VALIDATE_READ_TIMEOUT_SECONDS",
     "HostKeyCapture",
     "HostKeyPinRepository",
     "PMGServerValidationService",

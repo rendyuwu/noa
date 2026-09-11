@@ -78,10 +78,15 @@ def build_whm_client(
 ) -> WHMClient:
     """Row → authenticated WHM API client.
 
-    `read_timeout_seconds` defaults to the client's own measured default rather than to a
-    number written again here — two spellings of one deadline is how a deployment ends up
-    waiting one length in the tool path and another in the admin validate probe. The app binds
-    the configured value onto this factory once, at the MCP wiring point.
+    `read_timeout_seconds` defaults to the client's own measured default rather than to a second
+    number written here, so this factory has no deadline of its own to drift from the client's.
+    **Only the MCP wiring binds the configured value** onto this factory
+    (`noa_api.mcp_tools.context.build_mcp_tool_context`), which means a caller that constructs a
+    client straight off this default gets 120 s and not `WHM_READ_TIMEOUT_SECONDS` — the admin
+    validate probe is that caller, and it does not inherit either, because it passes its own
+    short deadline per call (`core.servers.validation.WHM_VALIDATE_READ_TIMEOUT_SECONDS`). A
+    caller that must honour the deployment's setting takes a factory the app bound, never this
+    default.
 
     `transport` is forwarded for the same reason `build_whm_client_from_creds` takes one: it
     is the test seam, and it is a parameter rather than an attribute a test reaches into

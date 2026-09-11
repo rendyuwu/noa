@@ -24,8 +24,10 @@ from typing import Any
 import pytest
 
 from core.integrations.whm.client import (
+    DEFAULT_WHM_READ_TIMEOUT_SECONDS,
     WHM_ACL_LIST_ACCOUNTS,
     WHM_ACL_SUSPEND_ACCOUNT,
+    WHM_CONNECT_TIMEOUT_SECONDS,
     WHMClient,
     build_whm_client_from_creds,
 )
@@ -33,6 +35,7 @@ from core.remote_exec.types import SSHConnectionConfig
 from core.secrets.crypto import SecretCipher
 from core.servers.validation import (
     WHM_ACL_INSUFFICIENT_CODE,
+    WHM_VALIDATE_READ_TIMEOUT_SECONDS,
     ServerValidationResult,
     WHMServerValidationService,
     _whm_acl_answer,
@@ -70,7 +73,18 @@ def cipher() -> SecretCipher:
     return build_cipher()
 
 
-def _client_factory(api: FakeWHMApi) -> Callable[..., WHMClient]:
+def _client_factory(
+    api: FakeWHMApi,
+    *,
+    read_timeout_seconds: float = DEFAULT_WHM_READ_TIMEOUT_SECONDS,
+) -> Callable[..., WHMClient]:
+    """The production factory's shape, over a doubled socket.
+
+    `read_timeout_seconds` is what a deployment binds onto the real factory at the MCP wiring
+    point, and it is a parameter here only so one case can build a client whose deadline is
+    unmistakably not the probe's.
+    """
+
     def factory(server: Any, *, cipher: SecretCipher) -> WHMClient:
         return build_whm_client_from_creds(
             base_url=server.base_url,
@@ -78,6 +92,7 @@ def _client_factory(api: FakeWHMApi) -> Callable[..., WHMClient]:
             encrypted_token=server.api_token,
             verify_ssl=server.verify_ssl,
             cipher=cipher,
+            read_timeout_seconds=read_timeout_seconds,
             transport=api.transport,
         )
 
@@ -104,6 +119,7 @@ def _build(
     api: FakeWHMApi,
     with_ssh: bool = False,
     probe: Callable[[SSHConnectionConfig], Awaitable[None]] | None = None,
+    client_read_timeout_seconds: float = DEFAULT_WHM_READ_TIMEOUT_SECONDS,
 ) -> tuple[WHMServerValidationService, Any, FakeHostKeyPinRepository, RecordingAuditSink]:
     """One WHM row and the service over it. `with_ssh` decides whether the SSH half runs at
     all — the ACL gate sits in front of it, so most cases here do not need it."""
@@ -121,7 +137,7 @@ def _build(
         repository_factory=lambda _session: pins,
         cipher=cipher,
         audit_sink=audit,
-        client_factory=_client_factory(api),
+        client_factory=_client_factory(api, read_timeout_seconds=client_read_timeout_seconds),
         capture_host_key=_capture,
         probe=probe or _recording_probe(),
     )
@@ -399,6 +415,43 @@ async def test_the_xid_stripped_compare_still_separates_two_reasons() -> None:
 
     assert _without_xid(other) != _without_xid(MEASURED_REFUSAL)
     assert _without_xid(other.replace("zz99aa", "3y67mz")) != _without_xid(MEASURED_REFUSAL)
+
+
+# --- The probe's read deadline is its own ---
+
+
+# A deployment's configured deadline, exaggerated past the 120 s default so an inherited one is
+# unmistakable in the failure line rather than a number two constants happen to share.
+TOOL_PATH_READ_TIMEOUT = 300.0
+
+
+async def test_the_validate_probe_does_not_inherit_the_tool_paths_read_deadline(
+    cipher: SecretCipher,
+) -> None:
+    """An admin is holding an HTTP request open while this runs, so it takes a short budget.
+
+    The tool path's 120 s was measured for `unsuspendacct` and belongs to that change. A host
+    that takes the connection and then never answers would otherwise hold an admin's validate
+    open for two minutes over a capability read — and lowering `WHM_READ_TIMEOUT_SECONDS` would
+    not shorten it, because only the MCP wiring binds that setting onto a client factory.
+
+    Asserted at the socket, over a client built with a deadline longer than any deployment's, so
+    a probe that dropped its per-call override reports that client's number instead of this one.
+    """
+    api = FakeWHMApi(body=myprivs_body(reseller_privileges()))
+    service, row, _, _ = _build(
+        cipher=cipher, api=api, client_read_timeout_seconds=TOOL_PATH_READ_TIMEOUT
+    )
+
+    await service.validate(row.id)
+
+    timeout = api.requests_to(MYPRIVS_PATH)[0].extensions.get("timeout")
+    assert isinstance(timeout, dict)
+    assert timeout["read"] == WHM_VALIDATE_READ_TIMEOUT_SECONDS
+    assert timeout["read"] < DEFAULT_WHM_READ_TIMEOUT_SECONDS
+    # Only the read moves. Reaching the host is a different question from WHM thinking, and a
+    # probe has no reason to be given less time to open a socket.
+    assert timeout["connect"] == WHM_CONNECT_TIMEOUT_SECONDS
 
 
 # --- The credential is never in what validate reports ---
