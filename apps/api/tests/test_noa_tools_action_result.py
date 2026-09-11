@@ -247,9 +247,17 @@ def test_the_hedging_instruction_never_reaches_a_request_that_did_not_run() -> N
     # reading told an operator a live suspension had not happened.
     assert "`unavailable`" in hedge
     assert "never report the change as not having happened" in hedge
-    # And bounded: where the hedge speaks of the field being null, `run` bounds it in the same
-    # sentence, so the null the payload above carries is not one the model must hedge on.
-    assert "null" not in hedge or "`run`" in hedge
+    # And bounded: the hedge names `run` in the same sentence, so the null the payload above
+    # carries is not one the model must hedge on.
+    #
+    # Asserted flatly rather than as "either it never mentions nullness, or it bounds it". The
+    # conditional form was measured and it does not hold the scope: rewriting the hedge to say
+    # "whenever `change_verification` is absent" and dropping the bound restores the whole defect
+    # — a denial reported as something the operator must go and check — and the conditional stays
+    # green, because the rewrite no longer says "null". There is no legitimate wording that scopes
+    # this to a change which ran without naming the key that says it ran, so the escape clause
+    # bought nothing and only opened the hole.
+    assert "`run`" in hedge
 
 
 async def test_a_request_that_never_ran_says_so_rather_than_omitting_the_field() -> None:
