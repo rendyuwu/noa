@@ -27,8 +27,9 @@ the gate call as a CHANGE run would put a row in the audit trail for a change th
 happened and may be denied. The map is why this is a decision rather than an accident — see
 `noa_api.mcp_tools.registry`.
 
-**The id a tool's log lines carry.** A Streamable HTTP tool call does not run in the task that
-served it: the session manager runs the session in a task created during `initialize`, and a task
+**The id a tool's log lines carry** (DECISIONS section 14). A Streamable HTTP tool call does not
+run in the task that served it: the session manager runs the session in a task created during
+`initialize`, and a task
 copies contextvars at creation. So the `request_id` `RequestContextMiddleware` binds per HTTP
 request is, read from inside a tool, the id of the request that *opened the MCP session* — one
 value for every call in that session, and never the one the call's own response returned in

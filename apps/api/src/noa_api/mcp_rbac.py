@@ -43,6 +43,14 @@ fastmcp's own `Unknown tool` error, which would answer in a different shape and 
 **Fail closed.** If identity cannot be resolved (no access token on a request that somehow
 reached a tool) or the `users` row has disappeared mid-request, the answer is zero
 permissions — an empty `tools/list` and a refused call — not an exception and not a pass.
+
+**A refusal names the refused call, not the MCP session** (DECISIONS section 14). A tool call is
+served in a task created when the session opened, so an id bound per HTTP request names the
+session rather than the call; `rebind_request_id` corrects that at the tool-call seam. This
+middleware sits outside that seam, so a denial is logged before the rebind runs and has to rebind
+for itself. Both hooks do, because the denial event has two emitters and only one of them is on
+the call path: the refusal in `on_call_tool`, and the vanished-`users`-row branch in
+`_permitted_tools`, which `on_list_tools` reaches as well.
 """
 
 from __future__ import annotations
