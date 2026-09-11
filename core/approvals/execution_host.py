@@ -157,6 +157,15 @@ class AsyncioApprovedChangeExecutor:
         turn a shutdown into a hang.
         """
         try:
+            # ponytail: this session is held for the whole remote call, WHM round trips
+            # included, so each in-flight change pins one connection of the pool's 5 plus 10
+            # overflow for as long as the target takes to answer. With WHM's read deadline at
+            # two minutes, fifteen concurrent slow changes exhaust it; realistic concurrency for
+            # a human-approval ops tool is one to three, which is why this is a stated ceiling
+            # rather than a defect. Upgrade path: close the session before dispatching the
+            # runner and reopen it to write the terminal run and the receipt — which means the
+            # two writes stop sharing one transaction with the load, so the reaper's
+            # already-written-receipt case becomes the ordinary one rather than the rare one.
             async with self._session_factory() as session:
                 service = ApprovedChangeExecutionService(
                     repository=self._repository_factory(session),

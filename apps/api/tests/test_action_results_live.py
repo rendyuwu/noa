@@ -35,6 +35,11 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from core.approvals.decisions import SQLActionDecisionRepository
+from core.approvals.delta import (
+    VERIFICATION_UNAVAILABLE,
+    ChangeDelta,
+    reason_bearing_key_paths,
+)
 from core.approvals.execution import build_receipt
 from core.approvals.expiry import ActionRequestExpiryService, SQLActionRequestExpiryRepository
 from core.approvals.results import (
@@ -81,6 +86,20 @@ SEPARABLE_CONTEXT: dict[str, object] = {
 # model path ever grows the join: evidence staying in-process is one reason, the receipt
 # staying off the read path is the other.
 RECEIPT_SENTINEL = "after-state-only-the-approval-card-may-see"
+
+# WHM writes the operator's typed reason onto the account as its suspension note and hands it
+# back on every later `listaccts`, so a preflight's own evidence half is shaped exactly like
+# this. That makes it the instrument for the verification join: the two fields that now cross
+# from the receipt are lifted out of the same JSONB column this sits in, one key over.
+REASON_ECHO = "the operator's own words, echoed back by the target system"
+WHM_EVIDENCE_HALF: dict[str, object] = {
+    "account": {"user": "acmeco", "suspended": True, "suspendreason": REASON_ECHO},
+}
+
+# The gate's own payload carrying that evidence. The executor copies this half onto the receipt,
+# so the two places a reason could cross from — the request row and the receipt row — hold the
+# same words, and a leak from either is visible in one assertion.
+WHM_CONTEXT: dict[str, object] = {**SEPARABLE_CONTEXT, "evidence": WHM_EVIDENCE_HALF}
 
 
 @pytest.fixture(scope="module")
@@ -142,15 +161,23 @@ async def write_receipt(
     action_request_id: UUID,
     *,
     tool_run_id: UUID,
+    evidence: dict[str, object] | None = None,
+    delta: ChangeDelta | None = None,
 ) -> None:
-    """A receipt through the production writer, in the production shape."""
+    """A receipt through the production writer, in the production shape.
+
+    `delta` goes through the real `ChangeDelta` rather than a hand-written dict: the two keys
+    the reader lifts out of the JSONB are spelled by that class's own serialiser, so a rename
+    there has to fail here rather than quietly turning the projection into two nulls.
+    """
     async with factory() as session:
         await SQLActionReceiptRepository(session).create_if_missing(
             action_request_id=action_request_id,
             tool_run_id=tool_run_id,
             receipt_data=build_receipt(
-                evidence=EVIDENCE_HALF,
+                evidence=EVIDENCE_HALF if evidence is None else evidence,
                 payload={"ok": True, "result": RECEIPT_SENTINEL},
+                delta=delta,
             ),
         )
         await session.commit()
@@ -290,13 +317,16 @@ async def test_preflight_evidence_never_reaches_the_result(factory) -> None:  # 
 
 
 async def test_a_receipt_never_reaches_the_result(factory) -> None:  # type: ignore[no-untyped-def]
-    """The card renders the receipt; this reader does not even fetch one.
+    """The card renders the receipt; this reader fetches two strings out of one and no more.
 
     The receipt is the same before-state one table over (the approved-change executor copies
     `approval_context`'s evidence onto it), so a join added here would put the in-process
     evidence back on the path that answers into a transcript LibreChat persists. The row
     genuinely exists — asserted against the table — so this is not green because nothing wrote
     a receipt.
+
+    The delta's verification pair does cross, as a SQL projection rather than as a row; the two
+    specs at the end of this file are about that and about what still must not.
 
     Both sentinels, because both halves would arrive together: the before-state that must not
     travel because evidence stays in-process, and the after-state that must not because the
@@ -460,3 +490,131 @@ async def test_a_foreign_due_request_is_not_expired_by_this_read(factory) -> Non
     owner_view = await read_result(factory, request_id, requester_user_id=owner_id)
     assert owner_view is not None
     assert owner_view.status is ActionRequestStatus.EXPIRED
+
+
+# --------------------------------------------------------------------------------------
+# The one thing the receipt contributes, and the fence that keeps it at one thing
+# --------------------------------------------------------------------------------------
+
+
+async def test_a_change_that_could_not_be_measured_reads_back_as_unmeasured(factory) -> None:  # type: ignore[no-untyped-def]
+    """A failed call is not the same answer as a change that did not happen.
+
+    The incident: WHM completed a suspension, the call timed out on the way back, and the model
+    was handed a failed run with nothing beside it — so it told the operator the account had not
+    been suspended, while NOA's own receipt said neither confirmed nor refuted. The runner was
+    already right; this reader was the surface that dropped what it said.
+
+    Against a real row, because the two values are lifted out of JSONB *by the statement*: a
+    double would be agreeing with the projection rather than running it, and the key names would
+    be a spelling nothing checks. The delta goes in through the real class, so the path from
+    `ChangeDelta.as_payload` to the model runs end to end.
+    """
+    user_id = await insert_user(factory, OPERATOR_EMAIL)
+    request_id = await open_request(
+        factory,
+        requested_by_user_id=user_id,
+        approval_context=SEPARABLE_CONTEXT,
+    )
+    tool_run_id = await approve(factory, request_id, caller_user_id=user_id)
+    await write_receipt(
+        factory,
+        request_id,
+        tool_run_id=tool_run_id,
+        delta=ChangeDelta(
+            identity={"server": "web8", "username": "acmeco"},
+            verification=VERIFICATION_UNAVAILABLE,
+            verification_cause="timeout",
+        ),
+    )
+
+    view = await read_result(factory, request_id, requester_user_id=user_id)
+
+    assert view is not None
+    payload = view.as_payload()
+    assert payload["change_verification"] == VERIFICATION_UNAVAILABLE
+    assert payload["change_verification_cause"] == "timeout"
+
+
+async def test_a_request_with_no_delta_reports_no_verification_rather_than_a_benign_one(
+    factory,
+) -> None:  # type: ignore[no-untyped-def]
+    """Four ways there is no answer, one reading: `null`.
+
+    No receipt, a receipt with no delta, a runner with nothing to state, a delta with no cause.
+    None of them may fold into "verified" — a non-answer read as the benign value is the whole
+    class of mistake the verification vocabulary exists to prevent. This is the second half of
+    the spec above: without it, a reader that hardcoded the state would pass that one.
+    """
+    user_id = await insert_user(factory, OPERATOR_EMAIL)
+    request_id = await open_request(
+        factory,
+        requested_by_user_id=user_id,
+        approval_context=SEPARABLE_CONTEXT,
+    )
+    tool_run_id = await approve(factory, request_id, caller_user_id=user_id)
+    # A receipt, and no delta on it — the shape every runner that states nothing writes.
+    await write_receipt(factory, request_id, tool_run_id=tool_run_id)
+
+    view = await read_result(factory, request_id, requester_user_id=user_id)
+
+    assert view is not None
+    payload = view.as_payload()
+    assert payload["change_verification"] is None
+    assert payload["change_verification_cause"] is None
+    # Present rather than omitted, for the reason `run` is: a key a model has to notice is
+    # missing is a key it will not notice.
+    assert "change_verification" in payload
+
+
+async def test_the_verification_pair_carries_no_evidence_and_no_reason_with_it(factory) -> None:  # type: ignore[no-untyped-def]
+    """The fence, against the shape that would actually breach it.
+
+    The receipt's `before` half is the gate's in-process preflight, and for a WHM account that
+    is an account summary carrying `suspendreason` — the operator's own typed words, echoed back
+    by the target system. So the join this reader now makes is one key away from handing a model
+    exactly what the reason rule exists to withhold, and it answers into a transcript LibreChat
+    keeps.
+
+    Two halves, and the first is **bound rather than hand-kept**: `reason_bearing_key_paths` is
+    the same recursive walk the delta's own fence runs, over the same seven spellings, so a
+    spelling added there is covered here without anything being edited. A flat scan of the
+    top-level keys would pass `{"account": {"suspendreason": ...}}` straight through, which is
+    precisely the shape a WHM preflight produces. The second half is the two receipt halves
+    themselves, which are not reason-bearing and so are not the walk's business.
+    """
+    user_id = await insert_user(factory, OPERATOR_EMAIL)
+    request_id = await open_request(
+        factory,
+        requested_by_user_id=user_id,
+        approval_context=WHM_CONTEXT,
+    )
+    tool_run_id = await approve(factory, request_id, caller_user_id=user_id)
+    await write_receipt(
+        factory,
+        request_id,
+        tool_run_id=tool_run_id,
+        evidence=WHM_EVIDENCE_HALF,
+        delta=ChangeDelta(
+            identity={"server": "web8", "username": "acmeco"},
+            verification=VERIFICATION_UNAVAILABLE,
+            verification_cause="timeout",
+        ),
+    )
+
+    view = await read_result(factory, request_id, requester_user_id=user_id)
+
+    assert view is not None
+    payload = view.as_payload()
+
+    # The join happened — otherwise the rest of this passes for the wrong reason.
+    assert payload["change_verification"] == VERIFICATION_UNAVAILABLE
+
+    assert reason_bearing_key_paths(payload) == []
+    assert "before" not in payload
+    assert "after" not in payload
+    assert "evidence" not in payload
+    serialized = json.dumps(payload)
+    assert REASON_ECHO not in serialized
+    assert RECEIPT_SENTINEL not in serialized
+    assert REASON not in serialized

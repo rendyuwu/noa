@@ -58,6 +58,38 @@ import httpx
 
 from core.secrets.crypto import SecretCipher
 
+# The read deadline every caller gets when nothing configures one. Measured, not inherited:
+# `unsuspendacct` against the production server took 52.91 s (2026-09-11), so the 20 s this
+# replaced made every unsuspend time out while WHM completed it. `core.config` carries the
+# number an operator can move and the reasoning behind it; this constant is what a client
+# built outside the app (an admin validate probe, a test) falls back to, and the two must not
+# be allowed to drift — the config field's default is this value.
+DEFAULT_WHM_READ_TIMEOUT_SECONDS = 120.0
+
+# The three deadlines that are *not* configurable, and that is the point of stating them apart.
+# A scalar timeout sets connect, read, write and pool alike, so raising the budget for a slow
+# `unsuspendacct` would also mean an unreachable host hangs for two minutes before saying so.
+# Only the read deadline has to cover WHM doing real work behind an open socket; the other three
+# cover a network that is answering, and a network that is not answering should say so quickly.
+WHM_CONNECT_TIMEOUT_SECONDS = 10.0
+WHM_WRITE_TIMEOUT_SECONDS = 30.0
+WHM_POOL_TIMEOUT_SECONDS = 10.0
+
+
+def _split_timeout(read_timeout_seconds: float) -> httpx.Timeout:
+    """The four deadlines, with only the read one moving.
+
+    Built here rather than at each call site so there is one answer to "what does NOA wait for",
+    and so a caller cannot reintroduce the scalar by passing a bare float.
+    """
+    return httpx.Timeout(
+        connect=WHM_CONNECT_TIMEOUT_SECONDS,
+        read=read_timeout_seconds,
+        write=WHM_WRITE_TIMEOUT_SECONDS,
+        pool=WHM_POOL_TIMEOUT_SECONDS,
+    )
+
+
 PrimitiveQueryValue = str | int | float | bool
 QueryValue = PrimitiveQueryValue | Sequence[PrimitiveQueryValue]
 
@@ -160,14 +192,16 @@ class WHMClient:
         api_username: str,
         api_token: str,
         verify_ssl: bool,
-        timeout_seconds: float = 20.0,
+        read_timeout_seconds: float = DEFAULT_WHM_READ_TIMEOUT_SECONDS,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._api_username = api_username
         self._api_token = api_token
         self._verify_ssl = verify_ssl
-        self._timeout_seconds = timeout_seconds
+        # One `httpx.Timeout` rather than the float it replaced: the parameter names the half a
+        # deployment may move, and the object is what reaches the socket.
+        self._timeout = _split_timeout(read_timeout_seconds)
         self._transport = transport
 
     def _headers(self) -> dict[str, str]:
@@ -177,18 +211,35 @@ class WHMClient:
         }
 
     async def _get_json_api(
-        self, command: str, *, params: Mapping[str, object] | None = None
+        self,
+        command: str,
+        *,
+        params: Mapping[str, object] | None = None,
+        # httpx's read deadline, not an asyncio one — the Proxmox client's per-request override
+        # says the same thing one system over. `asyncio.timeout` would raise `CancelledError`
+        # past this method, losing the `timeout` error_code that tells a caller to retry and,
+        # on a CHANGE, that the write may have landed anyway.
+        read_timeout_seconds: float | None = None,
     ) -> dict[str, object]:
-        """Call `/json-api/<command>` and normalise every outcome (see module docstring)."""
+        """Call `/json-api/<command>` and normalise every outcome (see module docstring).
+
+        `read_timeout_seconds` replaces **only** the read deadline, leaving connect, write and
+        pool where they were: a caller that wants a shorter budget for one call — a read taken
+        to confirm what a change did, which must not itself hang for the mutation's whole
+        budget — is asking about WHM's thinking time, not about whether the host is reachable.
+        """
         merged_params: dict[str, object] = {"api.version": 1}
         if params is not None:
             merged_params.update(dict(params))
 
+        timeout = (
+            self._timeout if read_timeout_seconds is None else _split_timeout(read_timeout_seconds)
+        )
         url = f"{self._base_url}/json-api/{command}"
         try:
             async with httpx.AsyncClient(
                 verify=self._verify_ssl,
-                timeout=self._timeout_seconds,
+                timeout=timeout,
                 transport=self._transport,
             ) as client:
                 response = await client.get(
@@ -294,14 +345,22 @@ class WHMClient:
         acls = sorted(name for name, value in privileges.items() if whm_privilege_granted(value))
         return {"ok": True, "message": "ok", "acls": acls}
 
-    async def list_accounts(self) -> dict[str, object]:
+    async def list_accounts(
+        self,
+        *,
+        read_timeout_seconds: float | None = None,
+    ) -> dict[str, object]:
         """`listaccts` → `{"ok": True, "accounts": [...]}`.
 
         The `data.acct` unwrap lives here so no caller re-derives it, and non-dict rows are
         dropped rather than handed on: `whm_list_accounts` renders this straight into a
         table surface.
+
+        `read_timeout_seconds` is for the caller that reads account state back to find out what
+        a change did: that read gets its own, shorter budget, because a confirming read waiting
+        as long as the mutation it is confirming doubles the worst case an operator sits through.
         """
-        result = await self._get_json_api("listaccts")
+        result = await self._get_json_api("listaccts", read_timeout_seconds=read_timeout_seconds)
         if result.get("ok") is not True:
             return result
         data = result.get("data")
@@ -341,6 +400,7 @@ def build_whm_client_from_creds(
     encrypted_token: str,
     verify_ssl: bool,
     cipher: SecretCipher,
+    read_timeout_seconds: float = DEFAULT_WHM_READ_TIMEOUT_SECONDS,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> WHMClient:
     """Single construction point for an authenticated WHM client.
@@ -348,6 +408,10 @@ def build_whm_client_from_creds(
     `encrypted_token` is the at-rest column value; `maybe_decrypt_text` unwraps it, tolerating
     a row that predates encryption. One decrypt site means one place to audit and one
     place to change when a `v2` scheme lands.
+
+    `read_timeout_seconds` is threaded rather than left to the client's own default, so the
+    deployment's configured deadline reaches the socket: a factory that dropped it would leave
+    the setting readable and inert, which is worse than not having one.
 
     `transport` is a test seam — `httpx.MockTransport` in `test_whm_client.py`. `noa-old`'s
     test reached into `client._transport` after construction because the factory had no such
@@ -358,13 +422,18 @@ def build_whm_client_from_creds(
         api_username=api_username,
         api_token=cipher.maybe_decrypt_text(encrypted_token),
         verify_ssl=verify_ssl,
+        read_timeout_seconds=read_timeout_seconds,
         transport=transport,
     )
 
 
 __all__ = [
+    "DEFAULT_WHM_READ_TIMEOUT_SECONDS",
     "WHM_ACL_LIST_ACCOUNTS",
     "WHM_ACL_SUSPEND_ACCOUNT",
+    "WHM_CONNECT_TIMEOUT_SECONDS",
+    "WHM_POOL_TIMEOUT_SECONDS",
+    "WHM_WRITE_TIMEOUT_SECONDS",
     "WHMClient",
     "build_whm_client_from_creds",
     "whm_privilege_granted",

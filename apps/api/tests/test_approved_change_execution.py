@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -28,6 +29,7 @@ from core.approvals.execution import (
     ERROR_ARGUMENTS_REDACTED,
     ERROR_EXECUTION_FAILED,
     ERROR_RUNNER_UNAVAILABLE,
+    LOG_EXECUTION_FINISHED,
     LOG_EXECUTION_REFUSED,
     LOG_EXECUTION_STARTED,
     LOG_EXECUTION_UNAUTHORIZED,
@@ -42,6 +44,7 @@ from support.action_decisions import CHANGE_TOOL
 from support.approved_change_execution import (
     EVIDENCE,
     RUNNER_OK,
+    ChangeExecutionRequest,
     FakeApprovedChangeExecutionRepository,
     RecordingChangeRunner,
     authorized_change,
@@ -470,3 +473,43 @@ async def test_the_start_is_logged_with_the_identifiers_and_not_the_arguments() 
     started = next(entry for entry in logs if entry["event"] == LOG_EXECUTION_STARTED)
     assert started["tool"] == CHANGE_TOOL
     assert "hunter2" not in repr(logs)
+
+
+# --------------------------------------------------------------------------------------
+# How long it took, on the event that says it finished
+# --------------------------------------------------------------------------------------
+
+
+async def test_the_finished_event_carries_how_long_the_runner_took() -> None:
+    """Raising a deadline to cover a slow server hides how slow the server got.
+
+    So the pair has to be greppable from one line: the terminal event already names the tool,
+    the run and the `error_code`, and the duration goes there rather than into a second event at
+    the integration call — one layer down, for one system, answering the same question. A change
+    that hung for its whole budget and a change that failed instantly are both `error_code:
+    timeout` without it.
+
+    The sleep is what separates a measurement from a constant: a zero, or a duration taken
+    around nothing, passes a mere presence check.
+    """
+    repository = FakeApprovedChangeExecutionRepository(authorized=authorized_change())
+
+    async def slow_runner(request: ChangeExecutionRequest) -> dict[str, Any]:
+        await asyncio.sleep(0.05)
+        return {"ok": False, "error_code": "timeout", "message": "Request timed out"}
+
+    service = ApprovedChangeExecutionService(
+        repository=repository,
+        runners={CHANGE_TOOL: slow_runner},
+    )
+
+    with capture_logs() as logs:
+        await service.execute_approved_tool_run(
+            action_request_id=repository.authorized.action_request_id,
+            tool_run_id=repository.authorized.tool_run_id,
+        )
+
+    finished = next(entry for entry in logs if entry["event"] == LOG_EXECUTION_FINISHED)
+    assert finished["error_code"] == "timeout"
+    assert finished["status"] == ToolRunStatus.FAILED.value
+    assert finished["duration_ms"] >= 40

@@ -13,6 +13,7 @@ column resolving to
 
 from __future__ import annotations
 
+import httpx
 import pytest
 
 from core.integrations.whm.ssh import (
@@ -155,3 +156,31 @@ def test_build_whm_client_decrypts_the_api_token_from_the_row() -> None:
     client = build_whm_client(server, cipher=cipher)
 
     assert client._headers()["Authorization"] == "whm root:API_TOKEN"
+
+
+async def test_build_whm_client_carries_the_configured_read_deadline_to_the_socket() -> None:
+    """The row factory threads the deadline too, and that is not free.
+
+    This is the factory the MCP tool path and the admin validate probe both reach for, so a
+    deadline it dropped would leave every tool waiting the client's own default while the
+    deployment's configured number sat in `core.config` looking authoritative. Asserted on the
+    deadlines httpx resolved for the request — the four numbers that would arm the real
+    socket — rather than on the attribute the client was built from.
+    """
+    cipher = build_cipher()
+    server = FakeWHMServer(api_token=cipher.encrypt_text("API_TOKEN"))
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["timeout"] = request.extensions.get("timeout")
+        return httpx.Response(status_code=200, json={"metadata": {"result": 1}}, request=request)
+
+    client = build_whm_client(
+        server,
+        cipher=cipher,
+        read_timeout_seconds=3.25,
+        transport=httpx.MockTransport(handler),
+    )
+    await client.applist()
+
+    assert seen["timeout"] == {"connect": 10.0, "read": 3.25, "write": 30.0, "pool": 10.0}

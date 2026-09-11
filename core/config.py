@@ -145,6 +145,24 @@ class Settings(BaseSettings):
     ldap_user_filter: str = "(|(mail={email})(userPrincipalName={email}))"
     ldap_timeout_seconds: int = Field(default=5, ge=1)
 
+    # --- WHM ---
+    # How long WHM may stay silent on an open socket before the call is abandoned. The *read*
+    # deadline alone — connect, write and pool are fixed in the client, because a budget that
+    # sets all four alike means an unreachable host hangs for the whole of it instead of
+    # failing at connect.
+    #
+    # 120 seconds, and the number is measured rather than inherited: `unsuspendacct` against
+    # the production server took 52.91 s and `suspendacct` 12.09 s (2026-09-11), while the
+    # value this replaced was 20 s carried over from the reference repository with no decision
+    # behind it. Every unsuspend therefore timed out while WHM completed it, and NOA reported a
+    # failure for a change that had landed. 60 s was rejected as too close to the measured
+    # maximum on a server the operator reports as spiky; this is 2.3x headroom over it.
+    # Raising a deadline hides a slow server, so the finished-execution log line carries the
+    # duration of every change beside its status.
+    #
+    # `ge=1` because a sub-second read deadline fails every WHM call that does real work.
+    whm_read_timeout_seconds: float = Field(default=120.0, ge=1.0)
+
     # --- MCP tokens ---
     # Staleness interval for LDAP revalidation; LDAP down -> fail closed.
     mcp_token_ldap_revalidate_seconds: int = Field(default=900, ge=0)

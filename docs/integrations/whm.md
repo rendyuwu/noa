@@ -29,6 +29,39 @@ upstream provenance no longer claims it).
 - Auth header: `Authorization: whm <whm-user>:<api-token>`.
 - `verify_ssl` is per server row and defaults **on** for WHM (unlike Proxmox).
 
+### Deadlines
+
+Four of them, and they are deliberately not one number
+(`core.integrations.whm.client._split_timeout`):
+
+| Deadline | Value | What it covers |
+|---|---|---|
+| connect | 10 s | Reaching the host at all. Fixed. |
+| read | **120 s**, `WHM_READ_TIMEOUT_SECONDS` | WHM working behind an open socket. |
+| write | 30 s | Sending the request. Fixed. |
+| pool | 10 s | Waiting for a connection. Fixed. |
+
+Only the read deadline is configurable, and it is the only one a slow WHM call consumes. A
+single scalar would set all four alike, so raising the budget for a slow call would also mean an
+unreachable host hanging for two minutes before being called unreachable.
+
+**120 s is measured, not inherited.** Against the production server on 2026-09-11,
+`unsuspendacct` took **52.91 s** and `suspendacct` **12.09 s**. The previous value — 20 s,
+carried over from the reference repository with no decision behind it — was below the first of
+those, so *every* unsuspend timed out while WHM went on to complete it, and NOA reported a
+failure for a change that had landed. 60 s was rejected as too close to the measured maximum on
+a server the operator reports as spiky. Raising a deadline hides how slow a server has got, so
+the `approved_change_execution_finished` log event carries `duration_ms` for every change beside
+its `status` and `error_code`.
+
+A caller may shorten the **read** deadline for one call — a read taken to confirm what a change
+did has no business waiting as long as the change itself — and that override moves nothing else.
+
+A timed-out call is not a failed change. WHM may have completed the mutation after the socket
+gave up, so the runner records `verification: "unavailable"` rather than claiming a re-read it
+never made, the approval card headlines `Outcome unknown`, and `noa_get_action_result` answers
+`change_verification: "unavailable"` beside the failed run.
+
 ## Upstream WHM API calls used by code
 
 All go through `WHMClient._get_json_api`, which appends `api.version=1`.

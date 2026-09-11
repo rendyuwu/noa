@@ -42,10 +42,11 @@ from datetime import datetime
 from typing import Any, Protocol, TypeVar, cast
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.approvals.clock import as_utc, now_utc
+from core.approvals.execution import RECEIPT_DELTA_KEY
 from core.approvals.expiry import ActionRequestExpiryService
 from core.db.lifecycle import ActionRequestStatus, ToolRunStatus
 from core.db.models import ActionReceipt, ActionRequest, ToolRun
@@ -97,6 +98,71 @@ def run_view(run: ToolRun) -> ActionRunView:
     )
 
 
+def _requester_matched(statement: Select[Any], *, action_request_id: UUID, requester_user_id: UUID):
+    """The join and the access control, added to whatever projection a caller asked for.
+
+    One function rather than one clause per statement: the requester-match is the control, and
+    two spellings of a control is how it ends up holding at one surface and not the other. What
+    varies between callers is what is *selected*; what must not vary is which row they may see.
+    """
+    return statement.outerjoin(ToolRun, ActionRequest.tool_run_id == ToolRun.id).where(
+        ActionRequest.id == action_request_id,
+        # The access control, in the statement — see the module docstring above.
+        ActionRequest.requested_by_user_id == requester_user_id,
+    )
+
+
+async def select_requester_matched_with_change_verification(
+    session: AsyncSession,
+    *,
+    action_request_id: UUID,
+    requester_user_id: UUID,
+) -> tuple[ActionRequest, ToolRun | None, str | None, str | None] | None:
+    """The caller's request, its run, and two strings lifted out of the receipt — nothing else.
+
+    **The receipt is not fetched. Two of its values are.** `include_receipt` above loads the
+    whole `receipt_data` column, `before` half included, which is the gate's in-process
+    preflight evidence and for a WHM account is the shape that carries the operator's own typed
+    reason back as `suspendreason`. That is why the model path leaves that flag off. But
+    "the call failed" and "NOA holds no reading, so this is neither confirmed nor refuted" are
+    different answers, and the second one is the honest one for a mutation that timed out — so
+    the model's reader has to be able to say it.
+
+    The way both hold at once is a projection **in SQL**: the two scalars come back as text and
+    the halves never enter this process at all. Widening this is not a matter of remembering to
+    drop a field later — a second key here is a second column in the statement, which is a
+    deliberate act rather than an omission.
+
+    `None` for either string covers every way there is no answer: no receipt row, a receipt
+    written before deltas existed, a runner with nothing to state, or a delta that carries a
+    `verification` and no cause. A model reading `null` is being told NOA has no word on it,
+    which is true in all four cases.
+    """
+    delta = ActionReceipt.receipt_data[RECEIPT_DELTA_KEY]
+    result = await session.execute(
+        _requester_matched(
+            select(
+                ActionRequest,
+                ToolRun,
+                # The delta's own spelling of its two fields. Bound to the producer by test
+                # rather than by a shared constant: `core.approvals.delta` writes these keys
+                # inside `as_payload`, and the live reader test drives a real `ChangeDelta`
+                # through the real receipt writer, so a rename there fails here.
+                delta["verification"].astext,
+                delta["verification_cause"].astext,
+            ).outerjoin(ActionReceipt, ActionReceipt.action_request_id == ActionRequest.id),
+            action_request_id=action_request_id,
+            requester_user_id=requester_user_id,
+        )
+    )
+    row = result.first()
+    if row is None:
+        return None
+
+    request, run, verification, verification_cause = row
+    return request, run, verification, verification_cause
+
+
 async def select_requester_matched(
     session: AsyncSession,
     *,
@@ -144,10 +210,10 @@ async def select_requester_matched(
         else select(ActionRequest, ToolRun)
     )
     result = await session.execute(
-        statement.outerjoin(ToolRun, ActionRequest.tool_run_id == ToolRun.id).where(
-            ActionRequest.id == action_request_id,
-            # The access control, in the statement — see the docstring above.
-            ActionRequest.requested_by_user_id == requester_user_id,
+        _requester_matched(
+            statement,
+            action_request_id=action_request_id,
+            requester_user_id=requester_user_id,
         )
     )
     row = result.first()
@@ -223,4 +289,5 @@ __all__ = [
     "apply_due_expiry",
     "run_view",
     "select_requester_matched",
+    "select_requester_matched_with_change_verification",
 ]

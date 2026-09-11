@@ -38,6 +38,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from core.approvals.delta import VERIFICATION_UNAVAILABLE
 from core.auth.tool_catalog import TOOL_CATALOG
 from core.db.lifecycle import ActionRequestStatus, ToolRisk, ToolRunStatus
 from core.db.models import ADMIN_ROLE_NAME
@@ -151,7 +152,41 @@ async def test_it_answers_with_the_requests_status_and_its_run() -> None:
             "created_at": CREATED_AT.isoformat(),
             "completed_at": (CREATED_AT + timedelta(seconds=42)).isoformat(),
         },
+        # Present and null on a run that stated no verification, for the reason `run` is: a key
+        # a model has to notice is missing is a key it will not notice.
+        "change_verification": None,
+        "change_verification_cause": None,
     }
+
+
+async def test_a_timed_out_change_is_reported_as_unmeasured_rather_than_as_a_failure() -> None:
+    """The incident, at the surface that told the operator the wrong thing.
+
+    A WHM suspension completed and the call timed out on the way back. The runner refused to
+    claim either outcome and recorded `unavailable`; this tool then answered a plain failed run,
+    and the model told the operator the suspension had not happened. The run still reports
+    `FAILED` — the call did fail — and the two fields beside it are what stop that from being
+    read as "and so nothing changed".
+    """
+    tools = build_tool_context()
+    owner = uuid4()
+    view = result_view(
+        status=ActionRequestStatus.APPROVED,
+        decided_at=CREATED_AT + timedelta(seconds=30),
+        run=run_view(status=ToolRunStatus.FAILED, result_summary="Request timed out"),
+        change_verification=VERIFICATION_UNAVAILABLE,
+        change_verification_cause="timeout",
+    )
+    tools.action_results.add(view, requester_user_id=owner)
+
+    result = await ask(tools, view.action_request_id, user_id=owner)
+
+    assert result["change_verification"] == VERIFICATION_UNAVAILABLE
+    assert result["change_verification_cause"] == "timeout"
+    # The addition is additive: `status` still answers the approval request's own lifecycle and
+    # the run still answers the call's. Two facts in one field is what this avoids.
+    assert result["status"] == "APPROVED"
+    assert result["run"]["status"] == "FAILED"
 
 
 async def test_a_request_that_never_ran_says_so_rather_than_omitting_the_field() -> None:

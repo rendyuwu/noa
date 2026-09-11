@@ -63,6 +63,19 @@ function verificationLine(container: HTMLElement): string {
   return container.querySelector('[data-noa-verification]')?.textContent ?? ''
 }
 
+/** The state behind that sentence, as the DOM carries it for a reader checking a screenshot. */
+function verificationState(container: HTMLElement): string {
+  return container.querySelector('[data-noa-verification]')?.getAttribute('data-noa-verification') ?? ''
+}
+
+/** The headline row — the value beside the `Outcome` label, not merely the word somewhere. */
+function outcomeLine(container: HTMLElement): string {
+  const label = Array.from(container.querySelectorAll('dt')).find(
+    (node) => node.textContent === 'Outcome',
+  )
+  return label?.nextElementSibling?.textContent ?? ''
+}
+
 describe('Outcome', () => {
   afterEach(cleanup)
 
@@ -323,5 +336,63 @@ describe('Outcome', () => {
     expect(screen.getByText('Completed')).toBeTruthy()
     expect(screen.getByText('suspended_at')).toBeTruthy()
     expect(screen.getByText('2026-09-11T09:31:00+00:00')).toBeTruthy()
+  })
+
+  it('headlines an unmeasured outcome as unknown, beside the state that says why', () => {
+    // The incident this case exists for: a suspension WHM completed, reported to the operator as
+    // a failure because the call timed out on the way back. The envelope's `ok: false` is true —
+    // the call did not return a success — and "did not complete" is the claim NOA cannot make
+    // over a block saying it holds no reading. The top line is the one an operator acts on.
+    const { container } = renderOutcome({
+      ok: false,
+      errorCode: 'timeout',
+      delta: delta({ verification: VERIFICATION_UNAVAILABLE, verificationCause: 'timeout' }),
+    })
+
+    expect(outcomeLine(container)).toBe('Outcome unknown')
+    // Headline and state, asserted on the same render: the word above and the sentence below have
+    // to be answers to the same receipt, and a card whose top line was reconciled by hand could
+    // pass the first of these with the second saying something else.
+    expect(verificationState(container)).toBe(VERIFICATION_UNAVAILABLE)
+    expect(verificationLine(container)).toContain('neither confirmed nor refuted')
+  })
+
+  it('does not headline a change that was written but never applied as completed', () => {
+    // The same defect mirrored. Here the envelope says the write succeeded, so the old headline
+    // did too — over a sentence explaining that the step which applies it never ran. An operator
+    // told "completed" does not go and run it.
+    const { container } = renderOutcome({
+      ok: true,
+      delta: delta({ verification: VERIFICATION_NOT_IN_FORCE }),
+    })
+
+    expect(outcomeLine(container)).not.toBe('Completed')
+    expect(outcomeLine(container)).toBe('Not in force')
+  })
+
+  it('leaves the two states the envelope already agrees with alone', () => {
+    // The negative control, and it is what keeps the two specs above from passing against a
+    // headline that stopped reading the envelope at all. A contradicted reading arrives with
+    // `ok: false` and "did not complete" is what the delta says too, so there is nothing to
+    // reconcile; a verified one is the ordinary success.
+    const { container: verified } = renderOutcome()
+    expect(outcomeLine(verified)).toBe('Completed')
+    cleanup()
+
+    const { container: contradicted } = renderOutcome({
+      ok: false,
+      errorCode: 'postflight_mismatch',
+      delta: delta({ verification: VERIFICATION_MISMATCH }),
+    })
+    expect(outcomeLine(contradicted)).toBe('Did not complete')
+  })
+
+  it('falls back to the envelope when there is no delta to read', () => {
+    // A receipt with no delta is NOA having no statement about what moved, which is compatible
+    // with a change that landed — but there is nothing here to headline it with, so the envelope
+    // is the only thing there is to report and it reports exactly that.
+    const { container } = renderOutcome({ ok: false, errorCode: 'ssh_failed', delta: null })
+
+    expect(outcomeLine(container)).toBe('Did not complete')
   })
 })

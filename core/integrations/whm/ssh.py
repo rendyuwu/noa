@@ -39,7 +39,11 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from core.integrations.whm.client import WHMClient, build_whm_client_from_creds
+from core.integrations.whm.client import (
+    DEFAULT_WHM_READ_TIMEOUT_SECONDS,
+    WHMClient,
+    build_whm_client_from_creds,
+)
 from core.remote_exec.errors import SSHExecutionError
 from core.remote_exec.types import SSHConnectionConfig
 from core.secrets.crypto import SecretCipher
@@ -69,9 +73,15 @@ def build_whm_client(
     server: WHMServerSecretLike,
     *,
     cipher: SecretCipher,
+    read_timeout_seconds: float = DEFAULT_WHM_READ_TIMEOUT_SECONDS,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> WHMClient:
     """Row → authenticated WHM API client.
+
+    `read_timeout_seconds` defaults to the client's own measured default rather than to a
+    number written again here — two spellings of one deadline is how a deployment ends up
+    waiting one length in the tool path and another in the admin validate probe. The app binds
+    the configured value onto this factory once, at the MCP wiring point.
 
     `transport` is forwarded for the same reason `build_whm_client_from_creds` takes one: it
     is the test seam, and it is a parameter rather than an attribute a test reaches into
@@ -84,6 +94,7 @@ def build_whm_client(
         encrypted_token=server.api_token,
         verify_ssl=server.verify_ssl,
         cipher=cipher,
+        read_timeout_seconds=read_timeout_seconds,
         transport=transport,
     )
 

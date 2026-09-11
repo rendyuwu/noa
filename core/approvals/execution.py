@@ -85,6 +85,7 @@ and a delta must not be.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Final, Protocol
@@ -428,8 +429,15 @@ class ApprovedChangeExecutionService:
             conversation_ref=authorized.conversation_ref,
         )
 
+        # `perf_counter`, not the wall clock: this measures an interval, and a clock that an
+        # NTP step can move backwards would report a change that finished before it started.
+        # The span is the runner's — from dispatch to its answer — and it stops before the two
+        # writes below, because the question it answers is "how long did the remote host take",
+        # which is the question a raised deadline makes it possible to stop asking.
+        started = time.perf_counter()
         outcome = await self._run(authorized)
-        return await self._record(authorized, outcome)
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        return await self._record(authorized, outcome, duration_ms=duration_ms)
 
     # --- Internals ---
 
@@ -512,6 +520,8 @@ class ApprovedChangeExecutionService:
         self,
         authorized: AuthorizedChange,
         outcome: ChangeOutcome,
+        *,
+        duration_ms: int,
     ) -> ToolRunStatus:
         """The terminal run and the receipt, in one commit.
 
@@ -548,6 +558,13 @@ class ApprovedChangeExecutionService:
             tool_run_id=str(authorized.tool_run_id),
             status=status.value,
             error_code=payload.get(RECEIPT_ERROR_CODE_KEY),
+            # How long the runner took, on every change rather than on a timeout alone: raising
+            # a deadline to cover a slow server hides how slow the server got, and this line
+            # with `error_code=timeout` beside it is the pair that answers "did it hang, and for
+            # how long" for all seven change tools at once. One event, not two — an event at the
+            # integration call would be the same question one layer down for one system, and it
+            # can be added when this one proves insufficient.
+            duration_ms=duration_ms,
         )
         return status
 

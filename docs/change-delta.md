@@ -199,9 +199,17 @@ runner must not echo the reason back in its payload, because `tool_runs.result_s
 derived from that payload and `noa_get_action_result` hands the summary to a model.
 
 **The receipt is not that door**, and it is worth being exact about which one is: the model-facing
-reader leaves `include_receipt` at its default (`core/approvals/results.py`), so it never joins
-`action_receipts` and never fetches a receipt at all. What reaches a model is
-`result_summary`, and nothing else. A delta is a *receipt* key, read by the approval card and the
+reader never loads a receipt row (`core/approvals/results.py`). What it does take is a
+projection of exactly two of the delta's fields, `verification` and `verification_cause`, lifted
+out of the JSONB **in SQL** and answered as `change_verification` and `change_verification_cause`
+— because a mutation that timed out leaves NOA holding no reading, and a model told only that
+the run failed reports to the operator that nothing happened. Both are NOA's own vocabulary: a
+state from a fixed set, and a named cause. Neither receipt half is fetched, so `before` — which
+on a WHM account carries `suspendreason` — does not enter that process at all. Widening the pair
+means adding a column to that statement, which is a deliberate act and not an omission. What
+else reaches a model is `result_summary`, and nothing beyond these.
+
+A delta is otherwise a *receipt* key, read by the approval card and the
 admin audit surface — both the operator's own, behind their cookie — and the fence exists there
 anyway, because those two surfaces are where the operator's words would be reflected back at
 them, and because a future reader that does pass the flag must not be the moment the question is

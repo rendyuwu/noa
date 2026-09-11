@@ -155,6 +155,10 @@ def build_runtime(settings: Settings) -> AppRuntime:
         # The generated-password length, resolved here rather than read inside the generator, so the
         # two places that could answer "how long is a NOA-generated password" stay one.
         secret_password_length=settings.secret_password_length,
+        # How long WHM may stay silent before a call is abandoned, resolved here for the reason
+        # every line above is resolved here: a second `get_settings()` caller inside the WHM
+        # factory is how one deployment ends up waiting two different lengths for one server.
+        whm_read_timeout_seconds=settings.whm_read_timeout_seconds,
     )
     # The permission-change notifier, backstopped by the execution-time RBAC re-check. One
     # register per app, and the notifier over it, so the MCP middleware and the

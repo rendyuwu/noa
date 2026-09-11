@@ -85,6 +85,8 @@ def result_view(
     now: datetime | None = None,
     decided_at: datetime | None = None,
     run: ActionRunView | None = None,
+    change_verification: str | None = None,
+    change_verification_cause: str | None = None,
 ) -> ActionResultView:
     """One request as the reader returns it. `expires_in_seconds` may be negative.
 
@@ -104,6 +106,8 @@ def result_view(
         expires_at=moment + timedelta(seconds=expires_in_seconds),
         decided_at=decided_at,
         run=run,
+        change_verification=change_verification,
+        change_verification_cause=change_verification_cause,
     )
 
 

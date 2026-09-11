@@ -1,17 +1,22 @@
 """What the two requester-matched readers actually ask the database for.
 
 `core.approvals.reads` builds one statement for two surfaces: the approval card and
-`noa_get_action_result`. They guard the row identically and they project it differently, and one
-of those differences is now a *join* rather than a projection — the card asks for
-`action_receipts` and the model-facing reader does not.
+`noa_get_action_result`. They guard the row identically and they project it differently, and the
+sharpest of those differences is what each takes off `action_receipts`: the card fetches the row,
+and the model-facing reader takes two JSON paths out of one column and nothing else.
+
+Both statements therefore name the table now, and "does it join `action_receipts`" has stopped
+being the question. The question is what the **select list** holds — the two verification values
+are NOA's own vocabulary and may cross; `before` is the gate's in-process preflight, which on a
+WHM account carries the operator's typed reason back as `suspendreason`, and may not.
 
 **This file exists because the payload tests cannot see that difference.** `ActionResultView` has
 no `receipt` field, so adding `include_receipt=True` to `SQLActionResultRepository` leaves every
 assertion in `test_action_results_live.py` and `test_noa_tools_action_result.py` green: the row
 would be fetched into the process that answers a model and then dropped by a dataclass that has
 nowhere to put it. That was measured, not assumed — the mutation was run and the suite stayed
-green. Which makes "the receipt is never read on this path" a claim held by prose unless
-something asserts the statement, and prose is not evidence.
+green. Which makes "the receipt's halves are never read on this path" a claim held by prose
+unless something asserts the statement, and prose is not evidence.
 
 So the compiled SQL is the assertion. No database: a `Select` compiles without a connection, and
 what is being claimed is about the statement NOA builds, not about what Postgres does with it —
@@ -84,19 +89,33 @@ async def test_the_cards_read_joins_the_receipt() -> None:
     assert "tool_runs" in sql
 
 
-async def test_the_models_read_does_not_join_the_receipt() -> None:
+def projection(sql: str) -> str:
+    """The select list alone — what the statement fetches, not what it joins to reach it."""
+    head, _, _ = sql.partition("FROM")
+    return head
+
+
+async def test_the_models_read_takes_two_values_off_the_receipt_and_no_column() -> None:
     """The before-state is never loaded on the path that answers into a transcript.
 
-    A receipt carries the gate's in-process preflight one table over (the executor copies it there),
-    and `ActionResultView` having no field for it is not the control — it is what makes the absence
-    unassertable anywhere else. Here it is asserted.
+    A receipt carries the gate's in-process preflight one table over (the executor copies it
+    there), and `ActionResultView` having no field for it is not the control — it is what makes
+    the absence unassertable anywhere else. Here it is asserted, and it is asserted
+    **exhaustively**: every term in the select list that mentions the receipt table is counted,
+    so a widening cannot arrive as a term nobody thought to name. A whole-row join adds terms
+    that are bare columns, and a bare column is exactly what a JSON path is not.
 
-    The `tool_runs` join is checked too, so this cannot pass because the reader stopped joining
+    The `tool_runs` join is checked too, so this cannot pass because the reader stopped fetching
     anything: what a model may be told about an approved change still includes its run.
     """
     sql = await read_as_result()
+    terms = [term for term in projection(sql).split(",") if "action_receipts" in term]
 
-    assert "action_receipts" not in sql
+    assert len(terms) == 2
+    # `->>` is the path operator, so each of the two is a value dug out of the JSONB rather than
+    # the column that holds it. A selected `action_receipts.receipt_data` would carry `before`
+    # whole.
+    assert all("->>" in term for term in terms)
     assert "tool_runs" in sql
 
 

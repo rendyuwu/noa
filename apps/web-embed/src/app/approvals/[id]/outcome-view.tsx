@@ -339,12 +339,43 @@ function Delta({ delta }: { delta: ChangeDelta }): JSX.Element {
   )
 }
 
+/**
+ * The headline, and it reads the delta rather than the envelope alone.
+ *
+ * **A third word, because two were a claim NOA cannot make.** `ok: false` means the call did not
+ * come back with a success, which is not the same as the change not having happened: a mutation
+ * that timed out may well have landed on the far side, and the runner says so by publishing
+ * `unavailable` rather than inventing a reading. Headlining that as "did not complete" while the
+ * block below says NOA holds no measurement is the card contradicting itself, and an operator
+ * reads the top line.
+ *
+ * **`not_in_force` moves the headline in the other direction**, and it is the same defect
+ * mirrored: the envelope says the write succeeded, so the old headline said so too, over a
+ * sentence explaining that the step which applies the change never ran. An operator told
+ * "completed" does not go and run it.
+ *
+ * `mismatch` is left alone deliberately — a contradicted reading arrives with `ok: false` and
+ * "did not complete" is what the delta says too, so there is nothing here to reconcile.
+ *
+ * No delta at all falls through to the envelope, which is the only thing there is to report.
+ */
+function outcomeText(receipt: ApprovalReceipt): string {
+  switch (receipt.delta?.verification) {
+    case VERIFICATION_UNAVAILABLE:
+      return 'Outcome unknown'
+    case VERIFICATION_NOT_IN_FORCE:
+      return 'Not in force'
+    default:
+      return receipt.ok ? 'Completed' : 'Did not complete'
+  }
+}
+
 export function Outcome({ receipt }: { receipt: ApprovalReceipt }): JSX.Element {
   return (
     <section className={styles.section}>
       <h2 className={styles.sectionTitle}>What the change did</h2>
       <dl className={styles.facts}>
-        <Fact label="Outcome" value={receipt.ok ? 'Completed' : 'Did not complete'} />
+        <Fact label="Outcome" value={outcomeText(receipt)} />
         {/*
          * "Error code", not "Reason". In this repository a reason is one thing — the justification
          * an operator types at decision time, which the model never authors, relays or sees — and

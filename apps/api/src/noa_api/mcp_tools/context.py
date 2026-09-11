@@ -41,6 +41,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import partial
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -191,6 +192,7 @@ def build_mcp_tool_context(
     result_table_max_rows: int,
     secret_delivery: SecretDelivery,
     secret_password_length: int,
+    whm_read_timeout_seconds: float,
 ) -> McpToolContext:
     """Production wiring (`create_app`, beside `build_mcp_auth_context`, at the FastMCP mount)."""
     return McpToolContext(
@@ -202,6 +204,12 @@ def build_mcp_tool_context(
         result_table_max_rows=result_table_max_rows,
         secret_delivery=secret_delivery,
         secret_password_length=secret_password_length,
+        # The configured WHM read deadline, bound onto the factory once here rather than passed
+        # at each tool's call site: every tool asks for a client the same way, so binding it at
+        # the seam is what keeps one deployment from waiting two different lengths. The default
+        # on the field below is the unbound factory, which falls back to the client's own
+        # measured default — a test that supplies its own factory is unaffected either way.
+        whm_client_factory=partial(build_whm_client, read_timeout_seconds=whm_read_timeout_seconds),
     )
 
 

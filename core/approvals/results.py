@@ -42,6 +42,18 @@ halves a model may see; the approval card is where it renders first, and it has 
 That decision is now expressible rather than merely stated: `select_requester_matched` takes an
 `include_receipt` flag, the card passes it and this reader does not. So the separation is a
 statement that was never issued, not a field this class remembers to drop.
+
+**And the receipt has since been split rather than let in.** A change that timed out leaves NOA
+holding no reading — the runner records `verification: "unavailable"` rather than claiming a
+re-read it never made — and a model told only `status: failed` reports to the operator that the
+change did not happen, which is a claim NOA's own record does not support. So two values do
+cross: `verification` and `verification_cause`, and they cross **as a SQL projection** rather
+than as a joined row (`select_requester_matched_with_change_verification`). The halves stay on
+the far side of the statement. That is the same argument the `include_receipt` split makes, held
+one level finer: the receipt's `before` is the gate's in-process preflight evidence, and on a WHM
+account WHM echoes the operator's typed reason back inside it as `suspendreason`, so a join taken
+for convenience here would hand a transcript the one field the whole reason rule exists to keep
+out of one. Two columns, named in the statement. Never the row.
 """
 
 from __future__ import annotations
@@ -60,7 +72,7 @@ from core.approvals.reads import (
     ActionRunView,
     apply_due_expiry,
     run_view,
-    select_requester_matched,
+    select_requester_matched_with_change_verification,
 )
 from core.db.lifecycle import ActionRequestStatus
 
@@ -73,6 +85,11 @@ class ActionResultView:
     carries the whole `approval_context`; this is what a model may be told. No `reason`, no
     `evidence`, no requester identity — see the module docstring for why each is absent rather
     than filtered.
+
+    The two `change_verification*` fields are the one thing the receipt contributes, and they
+    are NOA's own vocabulary — a state out of a fixed set and a named cause — never a value
+    read off a target system. Anything else from a receipt belongs on the approval card, which
+    an operator reads and a transcript does not keep.
     """
 
     action_request_id: UUID
@@ -83,12 +100,32 @@ class ActionResultView:
     expires_at: datetime
     decided_at: datetime | None
     run: ActionRunView | None
+    # Whether the runner could measure what its change did, and the named reason when it could
+    # not. Two strings off the receipt's delta and nothing else off the receipt — see
+    # `as_payload` for why the pair is here at all, and the module docstring for the fence that
+    # keeps it at two.
+    change_verification: str | None = None
+    change_verification_cause: str | None = None
 
     def as_payload(self) -> dict[str, Any]:
         """JSON-native fields for the tool result.
 
         `run` is `None` rather than omitted when there is none: "this change never ran" is an
-        answer, and a missing key reads to a model as a field it forgot to look at.
+        answer, and a missing key reads to a model as a field it forgot to look at. The two
+        verification fields follow that rule for the same reason.
+
+        **The verification pair is additive, and `status` keeps its old meaning.** A model that
+        knows only this view's older shape reads `status` and the run exactly as before; one
+        that reads the new keys learns the thing `status` cannot say. Redefining `status` would
+        have been the shorter diff and the wrong one — it is the approval request's lifecycle,
+        answered from `action_requests.status` by the verdict-from-status rule, and overloading
+        it with what the *change* did would put two facts in one field.
+
+        Why the pair exists: a mutation that timed out leaves NOA holding no reading, and the
+        runner says exactly that rather than guessing (`verification: "unavailable"`). Without
+        these keys the model sees a failed run, tells the operator the change did not happen,
+        and NOA's own record says neither confirmed nor refuted. The incident that produced this
+        was a WHM suspension that completed while the caller was told it had failed.
         """
         return {
             "action_request_id": str(self.action_request_id),
@@ -99,6 +136,8 @@ class ActionResultView:
             "expires_at": self.expires_at.isoformat(),
             "decided_at": None if self.decided_at is None else self.decided_at.isoformat(),
             "run": None if self.run is None else self.run.as_payload(),
+            "change_verification": self.change_verification,
+            "change_verification_cause": self.change_verification_cause,
         }
 
 
@@ -132,18 +171,21 @@ class SQLActionResultRepository:
     ) -> ActionResultView | None:
         """The caller's request and the run it started, or `None`.
 
-        The statement is `core.approvals.reads.select_requester_matched` — one outer join with
-        the requester-match in the `WHERE`, shared with the approval card so the access control has
-        one spelling. What is local to this class is the *projection*: only
-        `arguments_from_context` comes off `approval_context`, and `ActionResultView` has
-        nowhere to put the rest.
+        The statement is `core.approvals.reads`' — the requester-match in the `WHERE`, written
+        once and shared with the approval card so the access control has one spelling. What is
+        local to this class is the *projection*: only `arguments_from_context` comes off
+        `approval_context`, and `ActionResultView` has nowhere to put the rest.
 
-        **`include_receipt` is left at its default, and that is deliberate**. The
-        card passes it; this does not, so `action_receipts` is not joined and its
-        before-state — the same in-process preflight `approval_context` holds — is never
-        fetched into the process that answers a model. Not filtered downstream: not read.
+        **The receipt row is still never fetched, and now two of its values are.**
+        `select_requester_matched`'s `include_receipt` — which loads `receipt_data` whole,
+        `before` half included — is what the card passes and what this path must never pass: the
+        before-state is the gate's in-process preflight evidence, and on a WHM account it
+        carries the operator's own typed reason back as `suspendreason`. So this asks instead
+        for a statement that lifts the delta's two verification fields **as text, in SQL**. The
+        halves are not filtered downstream; they do not arrive. Widening that is adding a column
+        to a statement, not forgetting to drop a field.
         """
-        row = await select_requester_matched(
+        row = await select_requester_matched_with_change_verification(
             self._session,
             action_request_id=action_request_id,
             requester_user_id=requester_user_id,
@@ -151,8 +193,7 @@ class SQLActionResultRepository:
         if row is None:
             return None
 
-        # Third slot is the receipt this path did not ask for, and it is always `None` here.
-        request, run, _ = row
+        request, run, verification, verification_cause = row
         return ActionResultView(
             action_request_id=request.id,
             tool_name=request.tool_name,
@@ -162,6 +203,8 @@ class SQLActionResultRepository:
             expires_at=as_utc(request.expires_at),
             decided_at=None if request.decided_at is None else as_utc(request.decided_at),
             run=None if run is None else run_view(run),
+            change_verification=verification,
+            change_verification_cause=verification_cause,
         )
 
 
