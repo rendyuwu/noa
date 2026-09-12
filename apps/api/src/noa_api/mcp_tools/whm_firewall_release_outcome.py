@@ -27,6 +27,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Final
+from zoneinfo import ZoneInfo
 
 import structlog
 
@@ -50,12 +51,13 @@ from noa_api.mcp_tools.whm_firewall_change_common import (
     STATUS_CHANGED,
     VERIFICATION_UNAVAILABLE,
     BackendChange,
-    backend_failure_sentence,
     backend_outcomes,
+    backend_refusal_sentence,
     backend_write_failure,
-    confirming_read_sentence,
     evidence_bound,
     evidence_verdict,
+    firewall_verdict_sentence,
+    name_sources,
     refused_backend_verdict,
     unanswered_backends,
 )
@@ -67,14 +69,28 @@ ERROR_RELEASE_FAILED = "firewall_release_failed"
 # It is no longer blocked and it is not allowed either: the release took and the allow did not.
 ERROR_ALLOW_FAILED = "firewall_allow_failed"
 
-MESSAGE_RELEASE_FAILED = (
-    "The address is still blocked after the release ran. Check the server's firewall directly "
-    "before asking again."
-)
-MESSAGE_ALLOW_FAILED = (
-    "The address was released from the deny lists but is not on an allow list. Check the "
-    "server's firewall directly before asking again."
-)
+_JAKARTA: Final = ZoneInfo("Asia/Jakarta")
+
+
+def jakarta_stamp(at: datetime) -> str:
+    """`12 Sep 2026, 8:26 PM (WIB)` — one instant, in one zone, with the zone on the value.
+
+    **The zone is appended unconditionally and there is no parameter that can suppress it.** The
+    approval card has no zone-naming heading the way the copied block does, so the zone rides on
+    the value or it is not stated at all — and a bare wall-clock time that reaches a ticket is
+    read by whoever opens it in whatever zone they sit in. Written this way the stamp has no bare
+    form to escape in, which is the whole of what the rule protects.
+
+    Jakarta and never the runner's own clock, for the same reason the embed pins one zone: two
+    people reading one approval have to be reading one clock.
+
+    This is the only operator-facing stamp any runner composes, and it composes it here rather
+    than leaving the instant for a renderer to format, because the sentence around it is this
+    family's own vocabulary and the branch that drops the sentence altogether is a Python branch.
+    """
+    local = at.astimezone(_JAKARTA)
+    return f"{local:%-d %b %Y, %-I:%M %p} (WIB)"
+
 
 # The change ran and the confirming read could not answer. Warning, because an operator may want
 # to look at the box.
@@ -247,29 +263,43 @@ def release_outcome(
             measured_verdict=measured_verdict,
         )
 
-    broken = next((changes[name] for name in sorted(changes) if not changes[name].ok), None)
-    if broken is not None:
+    broken_name = next((name for name in sorted(changes) if not changes[name].ok), None)
+    if broken_name is not None:
         # The verdict is consulted here now, and it used not to be — see
         # `refused_backend_verdict`, which holds why, and why `verified` stays unreachable on a
         # tool whose answer is per backend. The reading was already taken above.
-        failure = backend_write_failure(broken)
+        failure = backend_write_failure(changes[broken_name])
         measured = None if unanswered else combine_firewall_verdict(list(lookups.values()))
         verification, cause = refused_backend_verdict(
             failure=failure,
             contradicted=measured is not None and measured != VERDICT_ALLOWLISTED,
         )
+        # Where the reading itself could not answer, the silent sources are **named** in place of
+        # the second sentence — never a guess at what the firewall now holds.
+        reading = (
+            "NOA checked afterwards: "
+            + firewall_verdict_sentence(
+                target=target.target, server=target.server_name, verdict=measured
+            )
+            if measured is not None
+            else (
+                f"{name_sources(unanswered)} did not answer when NOA checked afterwards, so NOA "
+                f"cannot say what the firewall holds for {target.target}."
+            )
+        )
         return ChangeOutcome(
             payload={
                 **tool_failure(
                     failure.code,
-                    f"{backend_failure_sentence(failure)} "
-                    + confirming_read_sentence(
-                        target=target.target,
-                        answer=None if measured is None else f"`{target.target}` is `{measured}`",
-                        unanswered=unanswered,
-                    ),
+                    backend_refusal_sentence(
+                        name=broken_name,
+                        server=target.server_name,
+                        refused=failure.refused,
+                    )
+                    + f" {reading}",
                 ),
                 **common,
+                "headline": f"Unblock failed — {target.target}",
                 "unanswered_backends": unanswered,
             },
             delta=delta(
@@ -290,14 +320,19 @@ def release_outcome(
         return ChangeOutcome(
             payload=tool_ok(
                 **common,
+                headline=f"IP unblocked — {target.target}",
                 status=STATUS_CHANGED,
                 verified=False,
                 verification=VERIFICATION_UNAVAILABLE,
                 unanswered_backends=unanswered,
+                # **No expiry stamp on this branch.** The commands were accepted, so the window
+                # is on the delta and in `/admin`; a card whose corner says NOA could not confirm
+                # the change must not print a precise time for a window it cannot confirm is in
+                # force. Owner-decided.
                 message=(
-                    f"`{target.target}` was released and allowed on {target.server_name}, but "
-                    f"{' and '.join(unanswered)} did not answer the confirming read. Check the "
-                    "server's firewall directly."
+                    f"The unblock ran on {target.server_name}. {name_sources(unanswered)} did "
+                    "not answer when NOA checked afterwards, so NOA cannot say it is fully "
+                    "unblocked."
                 ),
             ),
             # The silent backends are named on `unanswered` rather than counted, and no cause is
@@ -310,8 +345,18 @@ def release_outcome(
     if verdict == VERDICT_BLOCKED:
         return ChangeOutcome(
             payload={
-                **tool_failure(ERROR_RELEASE_FAILED, MESSAGE_RELEASE_FAILED),
+                **tool_failure(
+                    ERROR_RELEASE_FAILED,
+                    # The expiry prints here and not on the branch above, because this reading
+                    # answered: the allow entry exists and the surviving deny entry overrides it,
+                    # which is how both backends resolve a conflict. Saying the entry was written
+                    # without saying it is overridden would read as a change that half took.
+                    f"NOA checked afterwards: {target.target} is still blocked on "
+                    f"{target.server_name}.\nAn allow entry was written and expires "
+                    f"{jakarta_stamp(expires_at)}, and the deny entry overrides it.",
+                ),
                 **common,
+                "headline": f"IP still blocked — {target.target}",
                 "released": False,
                 "allowlisted": False,
             },
@@ -320,11 +365,21 @@ def release_outcome(
             delta=delta(verification=VERIFICATION_MISMATCH, measured_verdict=verdict),
         )
     if verdict != VERDICT_ALLOWLISTED:
-        # `not_found`: nothing blocks it and nothing allows it either.
+        # `not_found`: nothing blocks it and nothing allows it either. No expiry line, and that
+        # absence is measured — `new_values` is absent on this branch because every backend
+        # answered that it holds no entry at all, so a resolved timestamp here would name a
+        # window nothing wrote.
         return ChangeOutcome(
             payload={
-                **tool_failure(ERROR_ALLOW_FAILED, MESSAGE_ALLOW_FAILED),
+                **tool_failure(
+                    ERROR_ALLOW_FAILED,
+                    "NOA checked afterwards: "
+                    + firewall_verdict_sentence(
+                        target=target.target, server=target.server_name, verdict=verdict
+                    ),
+                ),
                 **common,
+                "headline": f"Nothing found for {target.target}",
                 "released": True,
                 "allowlisted": False,
             },
@@ -336,14 +391,15 @@ def release_outcome(
     return ChangeOutcome(
         payload=tool_ok(
             **common,
+            headline=f"IP unblocked — {target.target}",
             status=STATUS_CHANGED,
             released=True,
             allowlisted=True,
             verified=True,
             unanswered_backends=unanswered,
             message=(
-                f"`{target.target}` is released from the deny lists on {target.server_name} and "
-                f"allowed until {expires_at.isoformat()}."
+                f"{target.target} is no longer blocked on {target.server_name}.\n"
+                f"The allow entry expires {jakarta_stamp(expires_at)}."
             ),
         ),
         delta=delta(verification=VERIFICATION_VERIFIED, measured_verdict=verdict),
@@ -354,8 +410,6 @@ __all__ = [
     "ERROR_ALLOW_FAILED",
     "ERROR_RELEASE_FAILED",
     "LOG_RELEASE_UNVERIFIED",
-    "MESSAGE_ALLOW_FAILED",
-    "MESSAGE_RELEASE_FAILED",
     "TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW",
     "ReleaseTarget",
     "release_delta",

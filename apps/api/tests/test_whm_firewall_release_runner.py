@@ -45,6 +45,7 @@ import pytest
 from core.approvals.execution import build_receipt
 from core.audit.summaries import result_summary
 from core.errors import NoaError
+from core.integrations.whm.availability import FirewallAvailability
 from core.integrations.whm.firewall_gate import ERROR_NO_FIREWALL_BACKEND
 from core.remote_exec.errors import SSHExecutionError
 from core.remote_exec.sudo import SSH_SUDO_REQUIRED_CODE
@@ -60,6 +61,7 @@ from noa_api.mcp_tools.whm_firewall_change import (
     VERIFICATION_UNAVAILABLE,
     build_whm_firewall_release_runner,
 )
+from noa_api.mcp_tools.whm_firewall_change_common import BACKEND_DISPLAY_NAMES
 from support.action_decisions import REASON
 from support.change_delta import outcome_of, payload_runner
 from support.remote_exec import SUDO_DENIED_STDERR, command_result
@@ -314,9 +316,24 @@ async def test_a_refused_backend_beside_a_silent_one_still_names_the_silent_one(
     assert payload["ok"] is False
     assert payload["error_code"] == SSH_SUDO_REQUIRED_CODE
     assert payload["unanswered_backends"] == ["imunify"]
-    assert "imunify" in str(payload["message"])
+    # The sentence names the source in the words the product uses; the payload key beside it
+    # keeps the raw name an administrator greps for. Named either way, never counted.
+    assert BACKEND_DISPLAY_NAMES["imunify"] in str(payload["message"])
     assert "released" not in payload
     assert "allowlisted" not in payload
+
+
+def test_every_backend_the_probe_can_name_has_a_display_name() -> None:
+    """The display-name map is read against the code rather than kept by hand.
+
+    A hand-kept dict of two entries is a claim until something compares it to the thing it
+    claims to cover. `FirewallAvailability.as_tools_dict` is the authority on which backends can
+    appear in a lookup at all, so a third backend added there fails here instead of rendering on
+    an operator's card as a bare package name.
+    """
+    named = FirewallAvailability(csf=True, imunify=True, sudo_required=False).as_tools_dict()
+
+    assert set(BACKEND_DISPLAY_NAMES) == set(named)
 
 
 class _SilentAllow(FakeFirewallBox):

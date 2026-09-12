@@ -36,12 +36,17 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import Final
 
 import structlog
 
 from core.approvals.delta import VERIFICATION_MISMATCH, BackendOutcome, Bound
 from core.errors import NoaError
-from core.integrations.whm.availability import FirewallAvailability
+from core.integrations.whm.availability import (
+    BACKEND_CSF,
+    BACKEND_IMUNIFY,
+    FirewallAvailability,
+)
 from core.integrations.whm.csf_cli import require_csf_success, run_csf_command
 from core.integrations.whm.imunify_cli import parse_imunify_json_output, run_imunify_command
 from core.integrations.whm.ssh import resolve_whm_ssh_config
@@ -65,6 +70,8 @@ from noa_api.mcp_tools.change_target import (
 from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.results import ERROR_UNKNOWN, ToolPayload, tool_failure
 from noa_api.mcp_tools.whm_firewall import (
+    VERDICT_ALLOWLISTED,
+    VERDICT_BLOCKED,
     BackendLookup,
     combine_firewall_verdict,
     without_noa_comment_text,
@@ -380,12 +387,70 @@ async def resolve_firewall_change_target(
     return FirewallChangeTarget(config=config, server_name=server_name, target=target.strip())
 
 
+# The name each backend goes by on an operator's card, against the key it goes by in code. The
+# operator-facing surfaces name a source that could not answer rather than counting it, and
+# `imunify` is a package name while `Imunify` is what the product calls itself — a sentence
+# reading "imunify did not answer" looks like a typo for a word the reader half-recognises.
+#
+# A hand-kept map is a claim only where something reads it against the code, so
+# `test_whm_firewall_release_runner.py` asserts it covers exactly the backends
+# `FirewallAvailability` can name. An unmapped name still renders, as itself: an operator who
+# sees a raw key can go and look it up, and a backend dropped from the sentence names nothing.
+BACKEND_DISPLAY_NAMES: Final[Mapping[str, str]] = {
+    BACKEND_CSF: "CSF",
+    BACKEND_IMUNIFY: "Imunify",
+}
+
+
+def name_sources(names: Sequence[str]) -> str:
+    """`CSF and Imunify` — the sources, named, for a sentence an operator reads.
+
+    Named and never counted: "one source did not answer" tells an operator that something is
+    wrong and not which server to go and look at. That is the same rule `delta.unanswered`
+    carries as a list rather than a number, applied to the sentence beside it.
+    """
+    return " and ".join(BACKEND_DISPLAY_NAMES.get(name, name) for name in names)
+
+
+def firewall_verdict_sentence(*, target: str, server: str, verdict: str) -> str:
+    """One combined verdict, as the sentence an operator reads.
+
+    `blocked` and `allowlisted` stay in the firewall's own words — they name states a reader can
+    act on, and translating them would put a second vocabulary between the operator and the box
+    they are about to look at. `not_found` is the exception and it is not a softening: the token
+    names nothing to a reader, so it renders as what this repo documents it to mean, which is
+    that neither list holds an entry for the address at all.
+    """
+    if verdict == VERDICT_BLOCKED:
+        return f"{target} is still blocked on {server}."
+    if verdict == VERDICT_ALLOWLISTED:
+        return f"{target} is allowed on {server}."
+    return f"{server} has no deny entry and no allow entry for {target}."
+
+
 # What a backend failure says when it carried no sentence of its own. Two of them, because the
 # blank case still has to answer the one question this whole path turns on: a backend that
 # refused said what it did, and a backend that never answered said nothing at all. Shared so the
 # two tools do not answer one blank message two ways.
 MESSAGE_BACKEND_REFUSED = "The firewall command did not run."
 MESSAGE_BACKEND_UNANSWERED = "The firewall command did not answer."
+
+
+def backend_refusal_sentence(*, name: str, server: str, refused: bool) -> str:
+    """Which source could not be driven, and which of the two ways it could not.
+
+    The distinction is the whole value of the line: a backend that **refused** answered, and what
+    it answered is that it did not act — which makes a disagreeing read afterwards conclusive. A
+    backend that never answered said nothing, and nothing is known. `backend_failure_sentence`
+    keeps the same split for the backend's own words; this is that split in words an operator
+    reads, with the source named rather than left to the error code that no longer renders here.
+    """
+    if refused:
+        return f"{BACKEND_DISPLAY_NAMES.get(name, name)} refused the command on {server}."
+    return (
+        f"{BACKEND_DISPLAY_NAMES.get(name, name)} did not answer when NOA ran the command "
+        f"on {server}."
+    )
 
 
 def backend_failure_sentence(failure: WriteFailure) -> str:
@@ -472,6 +537,7 @@ def confirming_read_sentence(*, target: str, answer: str | None, unanswered: Seq
 
 
 __all__ = [
+    "BACKEND_DISPLAY_NAMES",
     "ERROR_EVIDENCE_UNUSABLE",
     "ERROR_SERVER_UNAVAILABLE",
     "EVIDENCE_FIREWALL",
@@ -491,12 +557,15 @@ __all__ = [
     "backend_change_failure",
     "backend_failure_sentence",
     "backend_outcomes",
+    "backend_refusal_sentence",
     "backend_write_failure",
     "confirming_read_sentence",
     "evidence_bound",
     "evidence_verdict",
     "firewall_state",
+    "firewall_verdict_sentence",
     "holds_allow_entry",
+    "name_sources",
     "refused_backend_verdict",
     "resolve_firewall_change_target",
     "tolerated_csf_step",

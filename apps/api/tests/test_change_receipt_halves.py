@@ -22,11 +22,13 @@ is the only alternative:
   them yields a change, and no field the delta reports as moved is among those keys.
 - **how large a payload is, and which one the pin belongs on.** The `result_summary` pin moved
   here from `test_change_delta_runners.py`, and not for room: the size question had ended up
-  split across two files, one pinning a single payload at 391 characters and the other measuring
-  all seven, which is one claim in two places. The pin called `whm_firewall_release_and_allow`
-  "the largest payload any CHANGE runner produces" and the measurement says it is not —
-  `proxmox_reset_vm_password` renders 424. It is the largest *once a delta is folded in*, which
-  is what the pin is actually guarding, and both orderings are asserted below.
+  split across two files, one pinning a single payload and the other measuring all seven, which
+  is one claim in two places. Which tool renders longest is a **measurement and moves with the
+  wording**: it was `proxmox_reset_vm_password` while the runners answered in their old strings,
+  and it is `whm_firewall_release_and_allow` now that each branch carries a heading and its
+  sentence names the expiry in words. What does not move is which payload the pin belongs on —
+  the release tool is the largest *once a delta is folded in*, because it fills four facets in
+  one answer, and that is what the pin is actually guarding. Both orderings are asserted below.
 
 `test_every_change_tool_is_covered_here` reads the case list against `build_change_runners`, so
 the eighth CHANGE tool fails here until somebody states its halves rather than quietly not being
@@ -54,6 +56,7 @@ from core.approvals.execution import (
     build_receipt,
 )
 from core.audit.summaries import MAX_RESULT_SUMMARY_LENGTH, result_summary
+from noa_api.mcp_tools.change_gate import EVIDENCE_HEADLINE
 from noa_api.mcp_tools.change_runners import build_change_runners
 from noa_api.mcp_tools.pmg_whitelist import TOOL_PMG_WHITELIST
 from noa_api.mcp_tools.pmg_whitelist_runner import build_pmg_whitelist_runner
@@ -130,27 +133,58 @@ OWNER = "root"
 _INSTANT = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?\+00:00")
 FIXED_INSTANT = "2026-09-09T12:00:00.000000+00:00"
 
-# `whm_firewall_release_and_allow`'s summary, with those instants normalised. 391 of the 2000
-# characters `tool_runs.result_summary` holds, so the headroom is 1609 — 80% of the column still
-# free.
+# The same instant again, in the words the operator reads it in. Its rendered width *moves*: the
+# day and the hour drop their leading zero, so `3 Sep 2026, 4:41 AM (WIB)` is three characters
+# shorter than `13 Sep 2026, 11:41 AM (WIB)`. A length pinned over those bytes would fail on a
+# schedule nobody can reproduce, which is the same reason the ISO form above is normalised.
+_FRIENDLY_STAMP = re.compile(r"\d{1,2} [A-Z][a-z]{2} \d{4}, \d{1,2}:\d{2} [AP]M \(WIB\)")
+FIXED_FRIENDLY_STAMP = "12 Sep 2026, 8:26 PM (WIB)"
+
+# `whm_firewall_release_and_allow`'s summary, with those instants normalised. 426 of the 2000
+# characters `tool_runs.result_summary` holds, so the headroom is 1574 — 79% of the column still
+# free. It was 391 before each branch gained a heading and the expiry moved into the sentence in
+# words, so the whole wording pass cost 35 characters of a column with 1600 to spare.
 #
-# **Not the largest payload of the seven**, which is what this file measured and what the
-# comment here used to claim — `proxmox_reset_vm_password` renders 424. It is the largest *once
-# a delta is folded in*, which is the measurement the pin is about, and
-# `test_which_payload_the_summary_pin_belongs_on` below asserts both orderings.
+# `test_which_payload_the_summary_pin_belongs_on` below asserts which payload this pin belongs
+# on, and that ordering is re-measured rather than assumed.
 #
 # Pinned rather than bounded, because what it is guarding is *growth*: the delta doubles this
-# figure the moment it enters the payload (822 characters, asserted below), and a `<= 2000`
+# figure the moment it enters the payload (857 characters, asserted below), and a `<= 2000`
 # assertion would sit green through that and through the next four fields after it. The cut this
 # is really about is silent — `result_summary` replaces the tail with `...` rather than failing —
 # and it lands on the audit trail, the card's execution line and `noa_get_action_result` at once.
-PINNED_SUMMARY_LENGTH = 391
+PINNED_SUMMARY_LENGTH = 426
 SUMMARY_HEADROOM = MAX_RESULT_SUMMARY_LENGTH - PINNED_SUMMARY_LENGTH
+
+# The card's own heading, written by the gate for a PENDING card and again by the runner for a
+# completed one. One name, two facts, two moments — `Unblock an IP — 1.2.3.4` against `IP still
+# blocked — 1.2.3.4` — so it is the one shared key the halves are allowed to disagree on, and it
+# is named here rather than left to a reader to infer from a green test.
+CARD_TEXT_KEYS = frozenset({EVIDENCE_HEADLINE})
 
 
 def pinned(summary: str | None) -> str:
-    """One rendered summary with its clock-stamped bytes normalised."""
-    return _INSTANT.sub(FIXED_INSTANT, summary or "")
+    """One rendered summary with its clock-stamped bytes normalised.
+
+    Both spellings of an instant, because the release runner now composes the operator-facing
+    one into its sentence and the ISO one still rides on `expires_at`.
+    """
+    return _FRIENDLY_STAMP.sub(FIXED_FRIENDLY_STAMP, _INSTANT.sub(FIXED_INSTANT, summary or ""))
+
+
+def test_the_normaliser_still_separates_what_it_is_not_hiding() -> None:
+    """The clock bytes are dropped from the compare; nothing else is.
+
+    A normaliser wide enough to swallow the sentence around a stamp would make every length pin
+    in this file green against any wording at all. So: two stamps of different widths collapse to
+    one, and a sentence that differs anywhere else still differs afterwards.
+    """
+    early = "The allow entry expires 3 Sep 2026, 4:41 AM (WIB)."
+    late = "The allow entry expires 13 Sep 2026, 11:41 PM (WIB)."
+
+    assert pinned(early) == pinned(late)
+    assert pinned(early) != pinned(early.replace("allow", "deny"))
+    assert len(pinned(early)) == len(pinned(late))
 
 
 @dataclass(frozen=True)
@@ -396,7 +430,10 @@ async def test_the_two_halves_of_a_receipt_cannot_be_diffed(
 
     - every key the halves share carries the **same value** in both, because a runner resolves
       its identity out of the evidence rather than re-deriving it. A shared key can therefore
-      never yield a difference.
+      never yield a difference. `CARD_TEXT_KEYS` is the one exemption and it is named rather
+      than implied — the card's heading is written by both halves under one name and the two
+      deliberately disagree, because the gate states what is being asked and the runner states
+      what happened. Neither is an identity, and the second claim below still covers them.
     - no field the delta reports as moved is one of those shared keys. The change is real and it
       is simply not addressable in both vocabularies: `evidence["nic"]["link_state"]` against
       `payload["link_state"]`, `evidence["account"]["suspended"]` against `payload["suspended"]`.
@@ -408,8 +445,8 @@ async def test_the_two_halves_of_a_receipt_cannot_be_diffed(
 
     halves = await build(monkeypatch)
 
-    assert halves.shared_keys == expected_shared
-    for key in sorted(halves.shared_keys):
+    assert halves.shared_keys == expected_shared | (CARD_TEXT_KEYS & set(halves.payload))
+    for key in sorted(halves.shared_keys - CARD_TEXT_KEYS):
         assert halves.evidence[key] == halves.payload[key], key
     assert halves.moved_fields & halves.shared_keys == set()
 
@@ -419,13 +456,14 @@ async def test_which_payload_the_summary_pin_belongs_on(
 ) -> None:
     """Two superlatives, and they are not the same tool. Measured, because one was assumed.
 
-    `test_change_delta_runners.py` pins `whm_firewall_release_and_allow`'s rendered summary and
-    called it "the largest payload any CHANGE runner produces". It is not:
-    `proxmox_reset_vm_password` renders longer, because it carries a delivery URL and a sentence
-    naming the VM, the user and where the password went.
+    Which tool renders longest is a measurement, and it moves with the wording — it was
+    `proxmox_reset_vm_password` while the runners answered in their old strings, and it is
+    `whm_firewall_release_and_allow` now that each branch carries a heading and names its expiry
+    in words. So it is asserted rather than assumed, and re-measured whenever a runner is
+    reworded.
 
-    What the pin is actually guarding survives the correction, and this is the assertion that
-    says so. The cut it exists for is the one a **delta folded into the payload** would push
+    What the pin is actually guarding does not move with the wording, and this is the assertion
+    that says so. The cut it exists for is the one a **delta folded into the payload** would push
     content past, and by that measure the release tool is the worst case by a wide margin — it
     fills four facets in one answer, so its delta is the biggest thing that could ever be folded
     in. Both orderings are asserted, because keeping only the first would move the pin to the
@@ -442,7 +480,7 @@ async def test_which_payload_the_summary_pin_belongs_on(
         bare[tool] = len(result_summary(halves.payload) or "")
         folded[tool] = len(result_summary({**halves.payload, RECEIPT_DELTA_KEY: delta}) or "")
 
-    assert max(bare, key=lambda tool: bare[tool]) == TOOL_PROXMOX_RESET_VM_PASSWORD
+    assert max(bare, key=lambda tool: bare[tool]) == TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW
     assert max(folded, key=lambda tool: folded[tool]) == TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW
     # Not a tie on either: a `max` over equal values answers whichever came first.
     assert sorted(bare.values())[-1] > sorted(bare.values())[-2]
@@ -482,14 +520,15 @@ async def test_the_largest_change_payload_stays_where_it_was(
         "allowlisted",
         "verified",
         "unanswered_backends",
+        "headline",
         "message",
     }
     summary = pinned(result_summary(outcome.payload))
     assert len(summary) == PINNED_SUMMARY_LENGTH
-    assert SUMMARY_HEADROOM == 1609
+    assert SUMMARY_HEADROOM == 1574
 
     assert outcome.delta is not None
     folded_in = pinned(
         result_summary({**outcome.payload, RECEIPT_DELTA_KEY: outcome.delta.as_payload()})
     )
-    assert len(folded_in) == 822
+    assert len(folded_in) == 857
