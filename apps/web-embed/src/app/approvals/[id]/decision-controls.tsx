@@ -33,10 +33,21 @@ import styles from './card.module.css'
 export function DecisionControls({
   actionRequestId,
   csrf,
+  onRecorded,
 }: {
   actionRequestId: string
   /** A live token. The server renders this component only when there is one. */
   csrf: string
+  /**
+   * Re-reads the card. Called once, after a decision the API recorded.
+   *
+   * The decision endpoint answers 202 and the change runs somewhere else, so the row is the only
+   * thing that knows what happened next — and the card's own loop waits 15s between polls while a
+   * request sits PENDING (`lib/approvals/poll.ts`), because the 2s run cadence is only chosen once
+   * a poll has already seen a run in flight. One round trip here instead of up to fifteen seconds
+   * of a card that looks like it did nothing.
+   */
+  onRecorded: () => Promise<unknown>
 }) {
   const [reason, setReason] = useState('')
   const [pending, setPending] = useState<DecisionKind | null>(null)
@@ -53,8 +64,22 @@ export function DecisionControls({
     setPending(decision)
     setOutcome(null)
     try {
-      setOutcome(await submitDecision({ actionRequestId, decision, reason, csrf }))
+      const result = await submitDecision({ actionRequestId, decision, reason, csrf })
+      setOutcome(result)
+
+      // After `setOutcome`, never before, and the order is load-bearing rather than a style
+      // choice: a re-read that succeeds makes this request undecidable, and the card then replaces
+      // these controls with a single line — unmounting the `role="status"` node below along with
+      // them. Re-read first and that node is torn down before it ever rendered, so an operator
+      // waiting for the sentence, and a test waiting for the node, both get silence.
+      //
+      // No error path: the re-read swallows an unreachable NOA and leaves the card untouched
+      // (`fetchApprovalCard` answers `unavailable` for every failure), and the poll still arrives.
+      if (result.kind === 'recorded') await onRecorded()
     } finally {
+      // On the recorded path this runs after the unmount above. React 18 dropped the warning for
+      // setting state on an unmounted component, so it is a silent no-op there; every other path
+      // is still on screen and needs the buttons back.
       setPending(null)
     }
   }

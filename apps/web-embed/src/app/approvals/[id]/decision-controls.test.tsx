@@ -30,6 +30,11 @@ function stubFetch(response: Response): SeenRequest[] {
   return seen
 }
 
+/** The component under test, with the card's re-read stubbed out — see the last case for why. */
+function mount(onRecorded: () => Promise<unknown> = () => Promise.resolve()) {
+  return render(<DecisionControls actionRequestId={ID} csrf={CSRF} onRecorded={onRecorded} />)
+}
+
 function type(reason: string): void {
   fireEvent.change(screen.getByLabelText(/why is this change/i), { target: { value: reason } })
 }
@@ -55,7 +60,7 @@ describe('DecisionControls', () => {
   })
 
   it('renders no form, and neither button submits one', () => {
-    const { container } = render(<DecisionControls actionRequestId={ID} csrf={CSRF} />)
+    const { container } = mount()
 
     expect(container.querySelector('form')).toBeNull()
     for (const button of screen.getAllByRole('button')) {
@@ -64,7 +69,7 @@ describe('DecisionControls', () => {
   })
 
   it('offers exactly one reason box and two decisions', () => {
-    render(<DecisionControls actionRequestId={ID} csrf={CSRF} />)
+    mount()
 
     // Exactly one, because the one-reason-field rule says exactly one reason field exists anywhere.
     expect(screen.getAllByLabelText(/why is this change/i)).toHaveLength(1)
@@ -76,7 +81,7 @@ describe('DecisionControls', () => {
 
   it('POSTs the typed reason and the token to the approve path', async () => {
     const seen = stubFetch(Response.json({ action_request_id: ID, tool_run_id: 'run-1' }))
-    render(<DecisionControls actionRequestId={ID} csrf={CSRF} />)
+    mount()
 
     type(REASON)
     click(/approve/i)
@@ -91,7 +96,7 @@ describe('DecisionControls', () => {
     // The separating case: without it, "Approve posts to approve" passes just as well against a
     // component whose two buttons do the same thing.
     const seen = stubFetch(Response.json({ action_request_id: ID, status: 'DENIED' }))
-    render(<DecisionControls actionRequestId={ID} csrf={CSRF} />)
+    mount()
 
     type('Not a legitimate request.')
     click(/deny/i)
@@ -113,7 +118,7 @@ describe('DecisionControls', () => {
         { status: 409 },
       ),
     )
-    render(<DecisionControls actionRequestId={ID} csrf={CSRF} />)
+    mount()
 
     click(/approve/i)
     await settle()
@@ -127,7 +132,7 @@ describe('DecisionControls', () => {
     // Exactly one `pending → decided` transition exists, so a second click could only ever earn a
     // 409. Disabling after a *recorded* answer and not after a refused one is the distinction.
     stubFetch(Response.json({ action_request_id: ID, tool_run_id: 'run-1' }))
-    render(<DecisionControls actionRequestId={ID} csrf={CSRF} />)
+    mount()
 
     type(REASON)
     click(/approve/i)
@@ -139,7 +144,7 @@ describe('DecisionControls', () => {
 
   it('does not POST twice for a second click on a recorded decision', async () => {
     const seen = stubFetch(Response.json({ action_request_id: ID, tool_run_id: 'run-1' }))
-    render(<DecisionControls actionRequestId={ID} csrf={CSRF} />)
+    mount()
 
     type(REASON)
     click(/approve/i)
@@ -155,7 +160,7 @@ describe('DecisionControls', () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
       throw new TypeError('fetch failed')
     })
-    render(<DecisionControls actionRequestId={ID} csrf={CSRF} />)
+    mount()
 
     type(REASON)
     click(/approve/i)
@@ -163,5 +168,46 @@ describe('DecisionControls', () => {
 
     expect(screen.getByRole('status').textContent).toContain('nothing was recorded')
     expect(screen.getByRole('button', { name: /approve/i }).hasAttribute('disabled')).toBe(false)
+  })
+
+  it('re-reads the card once a decision is recorded, and not for a refusal', async () => {
+    // Without this the card learns nothing until the next poll, which is 15s away while a request
+    // sits PENDING — the fast run cadence is only chosen once a poll has already seen a run in
+    // flight (`lib/approvals/poll.ts`). A refusal changed nothing, so there is nothing to re-read.
+    //
+    // **What this case cannot reach, said rather than implied.** A successful re-read makes the
+    // request undecidable, and `card-view.tsx` then unmounts these controls — which is what fixes
+    // the ordering of the re-read against `setOutcome` in place. This renders the component
+    // standalone against a stub, so nothing unmounts here and no jsdom case in this app covers
+    // that; `e2e/approvals.browser.e2e.ts` is the lane that could. For the same reason nothing
+    // below asserts on `pending` clearing or on the button label: on the real path this component
+    // is gone by then, so an assertion about either could not fail.
+    const onRecorded = vi.fn(() => Promise.resolve())
+
+    stubFetch(
+      Response.json(
+        { error_code: 'change_reason_required', message: 'A reason is required.' },
+        { status: 409 },
+      ),
+    )
+    mount(onRecorded)
+    click(/approve/i)
+    await settle()
+
+    expect(onRecorded).not.toHaveBeenCalled()
+
+    // Torn down before the second half so `settle` waits on a fresh status node rather than
+    // finding the refusal's and resolving before the recorded answer has landed.
+    cleanup()
+
+    const seen = stubFetch(Response.json({ action_request_id: ID, tool_run_id: 'run-1' }))
+    mount(onRecorded)
+    type(REASON)
+    click(/approve/i)
+    await settle()
+
+    expect(onRecorded).toHaveBeenCalledTimes(1)
+    // The re-read is the card's GET, never a second decision: one POST for one click.
+    expect(seen).toHaveLength(1)
   })
 })

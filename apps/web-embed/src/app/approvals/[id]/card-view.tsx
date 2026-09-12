@@ -233,10 +233,13 @@ function Card({
   card,
   stalled,
   frameOrigin,
+  onRecorded,
 }: {
   card: ApprovalCard
   stalled: boolean
   frameOrigin: string | null
+  /** The card's own reader, handed down so a decision lands on the card without waiting for a poll. */
+  onRecorded: () => Promise<unknown>
 }) {
   const scrollContainer = useRef<HTMLElement>(null)
 
@@ -270,7 +273,11 @@ function Card({
         {card.receipt ? <Outcome receipt={card.receipt} /> : null}
 
         {canDecide(card) && card.csrf ? (
-          <DecisionControls actionRequestId={card.actionRequestId} csrf={card.csrf} />
+          <DecisionControls
+            actionRequestId={card.actionRequestId}
+            csrf={card.csrf}
+            onRecorded={onRecorded}
+          />
         ) : (
           // No reason box and no buttons once nothing may be decided (the explicit-state family): a live
           // Approve button over a decided or expired request is an action that was never
@@ -374,6 +381,7 @@ export function CardView({
         card={load.card}
         stalled={isStalled(load.card, runPolls)}
         frameOrigin={frameOrigin}
+        onRecorded={retryRead}
       />
     )
   }
