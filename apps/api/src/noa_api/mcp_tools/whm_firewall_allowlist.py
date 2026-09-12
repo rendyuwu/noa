@@ -90,7 +90,12 @@ from core.integrations.whm.firewall_gate import run_on_usable_backends
 from core.integrations.whm.ssh import resolve_whm_ssh_config
 from core.remote_exec.types import SSHConnectionConfig
 from core.servers.whm_ref import resolve_whm_server_ref
-from noa_api.mcp_tools.change_gate import build_change_gate_response, open_change_request
+from noa_api.mcp_tools.change_gate import (
+    EVIDENCE_ASKED,
+    EVIDENCE_HEADLINE,
+    build_change_gate_response,
+    open_change_request,
+)
 from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.results import (
     ERROR_UNKNOWN,
@@ -276,6 +281,10 @@ async def whm_firewall_allowlist_remove(
         tool_name=TOOL_WHM_FIREWALL_ALLOWLIST_REMOVE,
         arguments={"server_ref": server_ref, "target": normalized_target},
         evidence={
+            EVIDENCE_HEADLINE: f"Remove an allow entry — {normalized_target}",
+            # An imperative, never a prediction. What the card shows beside it is the allow
+            # entry that exists today, read from the server, which is what the decision rests on.
+            EVIDENCE_ASKED: (f"remove {normalized_target} from the allow lists on {server_name}"),
             EVIDENCE_SERVER_ID: server_id,
             EVIDENCE_SERVER_NAME: server_name,
             EVIDENCE_TARGET: normalized_target,

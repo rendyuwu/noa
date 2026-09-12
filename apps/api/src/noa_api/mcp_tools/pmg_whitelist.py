@@ -62,7 +62,12 @@ from core.integrations.pmg.mynetworks import (
     normalize_cidr,
 )
 from core.integrations.pmg.pmgsh_cli import MYNETWORKS_PATH
-from noa_api.mcp_tools.change_gate import build_change_gate_response, open_change_request
+from noa_api.mcp_tools.change_gate import (
+    EVIDENCE_ASKED,
+    EVIDENCE_HEADLINE,
+    build_change_gate_response,
+    open_change_request,
+)
 from noa_api.mcp_tools.change_target import STATUS_NO_OP
 from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.pmg_read import (
@@ -255,7 +260,16 @@ def build_whitelist_evidence(
     no longer recognises. The endpoint names what was read, so a receipt records the config path
     rather than only that something answered.
     """
+    adding = action == ACTION_ADD
     return {
+        EVIDENCE_HEADLINE: (f"{'Allow' if adding else 'Stop'} email relay — {normalized_target}"),
+        # An imperative, never a prediction. The normalised spelling is what membership is
+        # decided on and what an add writes, so that is the one the operator authorises; the
+        # typed spelling rides beside it in the evidence for whoever compares the two.
+        EVIDENCE_ASKED: (
+            f"{'add' if adding else 'remove'} {normalized_target} "
+            f"{'to' if adding else 'from'} the mynetworks list on {read.server_name}"
+        ),
         EVIDENCE_SERVER_ID: read.server_id,
         EVIDENCE_SERVER_NAME: read.server_name,
         EVIDENCE_ACTION: action,

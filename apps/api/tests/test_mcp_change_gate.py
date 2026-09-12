@@ -85,8 +85,19 @@ CONVERSATION_ID = "1f0c2e5a-7b41-4d2e-9a3c-0b5d8e6f4a12"
 
 # A CHANGE call's arguments and the preflight those arguments produced. The evidence is what
 # the card shows as before-state — born in-process, never crossing a tool boundary.
+#
+# `headline` and `asked` are here because the gate requires them of every CHANGE tool: without
+# them the card has nothing to head itself with and falls back to a humanised tool name, which
+# reads like a heading and says nothing about what is being approved. `asked` is an imperative
+# and never a prediction.
 ARGUMENTS: dict[str, Any] = {"server_ref": "alpha", "account": "acmeco"}
-EVIDENCE: dict[str, Any] = {"account": "acmeco", "suspended": False, "domain": "acme.example"}
+EVIDENCE: dict[str, Any] = {
+    "headline": "Suspend an account — acmeco",
+    "asked": "suspend the acmeco account on alpha",
+    "account": "acmeco",
+    "suspended": False,
+    "domain": "acme.example",
+}
 
 
 async def open_gate(
@@ -365,6 +376,43 @@ async def test_a_gate_call_without_preflight_evidence_is_refused() -> None:
 
     with pytest.raises(ChangeEvidenceRequiredError):
         await open_gate(tools, evidence={})
+
+    assert tools.action_requests.requests == []
+
+
+@pytest.mark.parametrize("missing", ["headline", "asked"])
+async def test_a_gate_call_missing_a_card_key_is_refused_and_names_it(missing: str) -> None:
+    """Evidence that cannot head the card is refused, and the refusal says which key.
+
+    A tool that forgets one ships a card headed by a humanised tool name — a heading that reads
+    like a heading and tells an operator nothing about what they are approving — and nothing
+    errors. The guard sits at the one seam every CHANGE tool reaches, so a tool written later by
+    someone who read the tool beside it rather than the spec fails here instead.
+
+    The refusal names the key because "the evidence is wrong" sends the author reading the whole
+    dict.
+    """
+    tools = build_tool_context()
+    evidence = {key: value for key, value in EVIDENCE.items() if key != missing}
+
+    with pytest.raises(ChangeEvidenceRequiredError) as raised:
+        await open_gate(tools, evidence=evidence)
+
+    assert missing in str(raised.value)
+    assert tools.action_requests.requests == []
+
+
+async def test_a_blank_card_key_is_refused_the_same_as_an_absent_one() -> None:
+    """Whitespace is not a headline.
+
+    A present-but-empty key renders an empty heading, which is the same broken card as a missing
+    key with a cause nobody can find from the outside. Refused at the same door, so there is one
+    answer to "is this evidence usable" rather than two.
+    """
+    tools = build_tool_context()
+
+    with pytest.raises(ChangeEvidenceRequiredError):
+        await open_gate(tools, evidence={**EVIDENCE, "headline": "   "})
 
     assert tools.action_requests.requests == []
 

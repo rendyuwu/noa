@@ -61,7 +61,12 @@ from core.integrations.proxmox.nic import (
     list_nics,
 )
 from core.servers.proxmox_ref import resolve_proxmox_server_ref
-from noa_api.mcp_tools.change_gate import build_change_gate_response, open_change_request
+from noa_api.mcp_tools.change_gate import (
+    EVIDENCE_ASKED,
+    EVIDENCE_HEADLINE,
+    build_change_gate_response,
+    open_change_request,
+)
 from noa_api.mcp_tools.change_target import STATUS_NO_OP
 from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.proxmox_password import text_or_none, upstream_failure
@@ -241,6 +246,14 @@ async def proxmox_vm_nic(
             "net": requested_net,
         },
         evidence={
+            EVIDENCE_HEADLINE: (
+                f"{'Disable' if action == ACTION_DISABLE else 'Enable'} a network interface — "
+                f"{nic.key} on VM {vmid}"
+            ),
+            # An imperative, never a prediction. `up` / `down` are the words Proxmox itself uses
+            # and stay untranslated everywhere they appear, so the verb here is the operator's
+            # own `enable` / `disable` rather than a third spelling of the same thing.
+            EVIDENCE_ASKED: f"{action} {nic.key} on VM {vmid} ({normalized_node})",
             EVIDENCE_SERVER_ID: server_id,
             EVIDENCE_SERVER_NAME: server_name,
             EVIDENCE_NODE: normalized_node,

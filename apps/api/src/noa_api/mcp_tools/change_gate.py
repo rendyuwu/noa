@@ -99,6 +99,28 @@ FORBIDDEN_REASON_KEYS: Final[frozenset[str]] = frozenset(
     }
 )
 
+# The two operator-facing strings every CHANGE tool writes into its evidence, and the only two
+# keys the evidence dict is required to carry. They are constants for the reason
+# `build_approval_context`'s three are: a tool writes them into `approval_context` JSONB and the
+# card reads them back minutes later, and a misspelt key in JSONB reads as an absent one — which
+# on these two is a card that silently falls back to a humanised tool name nobody notices is
+# wrong.
+#
+# `headline` names the change in the operator's words; `asked` restates the request as what was
+# asked. Both are composed in Python, beside the sentence each runner already composes, because
+# the runner is the only party holding the family's own vocabulary — a table mapping each tool to
+# a phrasing in the renderer would be a second copy of six runners' vocabularies with nothing
+# reading it against them.
+#
+# `asked` is an **imperative**, never a prediction: "remove 203.0.113.24 from the deny lists" is
+# the arguments restated, and "203.0.113.24 will be unblocked" is a claim with nothing measured
+# behind it. The card refuses a predicted sentence, and the grammar is the whole difference.
+EVIDENCE_HEADLINE: Final = "headline"
+EVIDENCE_ASKED: Final = "asked"
+
+# Required on every gate call, checked at the one seam below rather than per tool.
+REQUIRED_EVIDENCE_KEYS: Final[tuple[str, ...]] = (EVIDENCE_HEADLINE, EVIDENCE_ASKED)
+
 # One structured event per opened request, so an operator asking "why is there a card waiting" is
 # answerable from the logs. Identifiers only — never the arguments, never the evidence.
 LOG_CHANGE_REQUEST_OPENED: Final = "mcp_change_request_opened"
@@ -190,6 +212,38 @@ def assert_no_reason_argument(arguments: Mapping[str, Any]) -> None:
         )
 
 
+def assert_evidence_usable(evidence: Mapping[str, Any], *, tool_name: str) -> None:
+    """Refuse a gate call whose evidence is missing or cannot describe the card.
+
+    Two refusals under one error, because they are one failure: a card that asks for
+    authorisation and describes nothing. Empty evidence is the original case. The two required
+    keys are the second — without them the card falls back to a humanised tool name, which is a
+    heading that reads like a heading and tells an operator nothing about what they are
+    approving, and nothing errors.
+
+    **At the mechanism, not per tool.** Every CHANGE tool reaches the gate through
+    `open_change_request`, so a tool built later by someone who read the tool beside it rather
+    than the spec fails here, with a sentence naming the key it forgot, rather than shipping a
+    card an operator reads a tool name off. A per-tool check is a check the next tool forgets.
+
+    Blank is missing: a key present with an empty or whitespace-only string renders as an empty
+    heading, which is the same card with a less findable cause.
+    """
+    if not evidence:
+        raise ChangeEvidenceRequiredError(
+            f"`{tool_name}` opened the gate with no preflight evidence"
+        )
+    missing = [
+        key
+        for key in REQUIRED_EVIDENCE_KEYS
+        if not isinstance(evidence.get(key), str) or not str(evidence.get(key)).strip()
+    ]
+    if missing:
+        raise ChangeEvidenceRequiredError(
+            f"`{tool_name}` opened the gate with no {' and no '.join(missing)} in its evidence"
+        )
+
+
 def build_approval_context(
     *,
     arguments: Mapping[str, Any],
@@ -258,10 +312,7 @@ async def open_change_request(
     the model the code that names the cause rather than a generic failure.
     """
     assert_no_reason_argument(arguments)
-    if not evidence:
-        raise ChangeEvidenceRequiredError(
-            f"`{tool_name}` opened the gate with no preflight evidence"
-        )
+    assert_evidence_usable(evidence, tool_name=tool_name)
 
     identity = current_mcp_identity()
     conversation_ref = read_conversation_ref()
@@ -452,14 +503,18 @@ async def _write_pending(
 __all__ = [
     "ACTIVE_CHANGE_GATE_BRANCH",
     "APPROVAL_CARD_PATH",
+    "EVIDENCE_ASKED",
+    "EVIDENCE_HEADLINE",
     "FORBIDDEN_REASON_KEYS",
     "LOG_CHANGE_GATE_WRITE_FAILED",
     "LOG_CHANGE_REQUEST_OPENED",
+    "REQUIRED_EVIDENCE_KEYS",
     "UI_RESOURCE_MIME_TYPE",
     "UI_RESOURCE_URI_PREFIX",
     "ChangeGateBranch",
     "PendingChangeRequest",
     "approval_card_url",
+    "assert_evidence_usable",
     "assert_no_reason_argument",
     "build_approval_context",
     "build_change_gate_response",

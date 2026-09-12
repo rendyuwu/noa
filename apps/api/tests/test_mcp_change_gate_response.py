@@ -266,7 +266,14 @@ async def test_the_response_carries_no_arguments_evidence_or_requester() -> None
         opened = await open_change_request(
             tool_name=CHANGE_TOOL,
             arguments={"server_ref": "alpha", "account": "acmeco-sentinel"},
-            evidence={"suspended": False, "domain": "evidence-sentinel.example"},
+            evidence={
+                # The two the gate requires of every CHANGE tool, so this call reaches the hop
+                # being measured rather than the guard standing in front of it.
+                "headline": "Suspend an account — acmeco-sentinel",
+                "asked": "suspend the acmeco-sentinel account on alpha",
+                "suspended": False,
+                "domain": "evidence-sentinel.example",
+            },
             context=tools.context,
         )
 

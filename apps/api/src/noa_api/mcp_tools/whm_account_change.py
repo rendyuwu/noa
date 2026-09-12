@@ -126,7 +126,12 @@ from pydantic import Field
 
 from core.db.lifecycle import ToolRisk
 from core.integrations.whm.accounts import WHMAccount, account_suspension_state
-from noa_api.mcp_tools.change_gate import build_change_gate_response, open_change_request
+from noa_api.mcp_tools.change_gate import (
+    EVIDENCE_ASKED,
+    EVIDENCE_HEADLINE,
+    build_change_gate_response,
+    open_change_request,
+)
 from noa_api.mcp_tools.change_target import (
     # Hoisted to `change_target` with the release-and-allow tool, when the firewall runner became
     # the second caller of the same refusals and the same status words. Re-exported below, so every
@@ -625,6 +630,16 @@ def _refused_preflight(payload: ToolPayload, *, tool_name: str, server_ref: str)
     return payload
 
 
+def _headline_verb(tool_name: str) -> str:
+    """`Suspend` or `Unsuspend`, off the tool that is opening the card.
+
+    Both account CHANGE tools reach the gate through one function, so the direction has to be
+    read from somewhere, and the tool name is the only thing that carries it at this point — the
+    direction record the runner uses lives on the far side of the approval.
+    """
+    return "Unsuspend" if tool_name == TOOL_WHM_UNSUSPEND_ACCOUNT else "Suspend"
+
+
 async def _open_account_change(
     *,
     tool_name: str,
@@ -677,6 +692,13 @@ async def _open_account_change(
         tool_name=tool_name,
         arguments={"server_ref": server_ref, "username": username},
         evidence={
+            EVIDENCE_HEADLINE: f"{_headline_verb(tool_name)} an account — {username}",
+            # An imperative, never a prediction. The server is named because an operator who
+            # runs the same account name on two boxes decides on this line.
+            EVIDENCE_ASKED: (
+                f"{_headline_verb(tool_name).lower()} the {username} account on "
+                f"{state.get(EVIDENCE_SERVER_NAME)}"
+            ),
             EVIDENCE_SERVER_ID: state.get(EVIDENCE_SERVER_ID),
             EVIDENCE_SERVER_NAME: state.get(EVIDENCE_SERVER_NAME),
             EVIDENCE_API_USERNAME: api_username,

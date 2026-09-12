@@ -40,7 +40,12 @@ from core.db.lifecycle import ToolRisk
 from core.integrations.proxmox.client import ProxmoxClient
 from core.integrations.proxmox.cloudinit import cloudinit_carries_password
 from core.servers.proxmox_ref import resolve_proxmox_server_ref
-from noa_api.mcp_tools.change_gate import build_change_gate_response, open_change_request
+from noa_api.mcp_tools.change_gate import (
+    EVIDENCE_ASKED,
+    EVIDENCE_HEADLINE,
+    build_change_gate_response,
+    open_change_request,
+)
 from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.results import (
     ERROR_UNKNOWN,
@@ -209,6 +214,14 @@ async def proxmox_reset_vm_password(
             "username": normalized_username,
         },
         evidence={
+            EVIDENCE_HEADLINE: f"Reset a password — {normalized_username} on VM {vmid}",
+            # An imperative, never a prediction. It names cloud-init because that is the
+            # credential this tool changes, and an operator deciding needs to know it is not the
+            # VM's own account database.
+            EVIDENCE_ASKED: (
+                f"reset the cloud-init password for {normalized_username} on VM {vmid} "
+                f"({normalized_node})"
+            ),
             EVIDENCE_SERVER_ID: server_id,
             EVIDENCE_SERVER_NAME: server_name,
             EVIDENCE_NODE: normalized_node,

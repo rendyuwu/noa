@@ -116,7 +116,12 @@ from core.integrations.whm.imunify_cli import parse_imunify_json_output, run_imu
 from core.integrations.whm.ssh import resolve_whm_ssh_config
 from core.remote_exec.types import SSHConnectionConfig
 from core.servers.whm_ref import resolve_whm_server_ref
-from noa_api.mcp_tools.change_gate import build_change_gate_response, open_change_request
+from noa_api.mcp_tools.change_gate import (
+    EVIDENCE_ASKED,
+    EVIDENCE_HEADLINE,
+    build_change_gate_response,
+    open_change_request,
+)
 from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.results import (
     ERROR_UNKNOWN,
@@ -300,6 +305,16 @@ async def whm_firewall_release_and_allow(
             "duration_minutes": duration_minutes,
         },
         evidence={
+            EVIDENCE_HEADLINE: f"Unblock an IP — {normalized_target}",
+            # An imperative, never a prediction: this is the arguments restated, and
+            # "`<address>` will be unblocked" would be a claim with nothing measured behind it.
+            # The duration is the firewall entry's window and is stated in the minutes the
+            # schema takes — the other clock on this card, how long there is to answer, is the
+            # approval window and is stated beside the buttons.
+            EVIDENCE_ASKED: (
+                f"remove {normalized_target} from the deny lists on {server_name} and allow it "
+                f"for {duration_minutes} minutes"
+            ),
             EVIDENCE_SERVER_ID: server_id,
             EVIDENCE_SERVER_NAME: server_name,
             EVIDENCE_TARGET: normalized_target,
