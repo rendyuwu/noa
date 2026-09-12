@@ -154,10 +154,11 @@ test('Approve posts from inside a frame whose sandbox omits allow-forms', async 
   // wiring this binds is the card handing the decision controls its own reader; the controls'
   // own suite proves the callback fires, which stays true against a reader that reads nothing.
   //
-  // Exactly 2, and the premise that makes it exact: this stub answers an id it does not
-  // recognise as PENDING forever, so the card's own interval stays at its pending value of 15
-  // seconds — longer than this assertion's budget, so no third read can race in and turn a
-  // greater-than into a pass the poll alone would have earned.
+  // Exactly 2, and the premise that makes it exact: the card's poll is a chained timeout re-armed
+  // on every state change (`card-view.tsx`), so this read restarts the wait rather than running
+  // down a clock started at mount. The stub answers an id it does not recognise as PENDING
+  // forever, so that wait is always the 15-second pending value and never the 2-second run one.
+  // A third read therefore needs the whole test to outlast 15 seconds from mount; it takes ~2.
   await expect
     .poll(async () => (await hits(page))[`GET /action-requests/${id}`])
     .toBe(2)
