@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 
+import { beforeStateRows, flattenValues } from '@/lib/approvals/before-state'
 import { type ApprovalCard, type ApprovalCardLoad, canDecide, statusLabel } from '@/lib/approvals/card'
 import { fetchApprovalCard, isRunning, isStalled, isTerminal, pollIntervalMs } from '@/lib/approvals/poll'
 import { buildSummary } from '@/lib/approvals/summary'
@@ -63,32 +64,6 @@ type LiveCard = {
   runPolls: number
 }
 
-/**
- * A nested payload as one row per leaf, keyed by its path.
- *
- * A nested object serialised into a single row is one line of JSON in a frame this narrow, which
- * is the least readable thing on the card and the reason the arguments block gets this treatment.
- * Lists are left whole: a firewall match list runs to twenty entries, and twenty rows would cost
- * more of the one screen this card gets than the list is worth.
- */
-function flattenValues(values: Record<string, unknown>, prefix = ''): Record<string, unknown> {
-  const flat: Record<string, unknown> = {}
-
-  for (const [key, value] of Object.entries(values)) {
-    const path = prefix ? `${prefix}.${key}` : key
-    const nested =
-      typeof value === 'object' && value !== null && !Array.isArray(value)
-        ? (value as Record<string, unknown>)
-        : null
-
-    // An empty object has no leaves, so it renders as itself rather than as no row at all.
-    if (nested && Object.keys(nested).length > 0) Object.assign(flat, flattenValues(nested, path))
-    else flat[path] = value
-  }
-
-  return flat
-}
-
 function KeyValues({ title, values }: { title: string; values: Record<string, unknown> }) {
   return (
     <section className={styles.section}>
@@ -108,9 +83,11 @@ function KeyValues({ title, values }: { title: string; values: Record<string, un
  * **Times are read the way an operator reads them.** "17 minutes ago" and "expires in 43 minutes"
  * are what a decision actually turns on; the exact instant is one hover away in `title` and, for
  * the operator who has to quote it to an administrator, in the copy summary. The LibreChat account
- * id and the conversation id left this block for the same reason: they identify the request to
- * NOA and to `/admin`, not to the person deciding it, and the copy summary carries both for the
- * operator who cannot open the admin panel.
+ * id and the conversation id left this block because they identify the request to NOA and to
+ * `/admin` rather than to the person deciding it — **and no surface carries them now**, so "they
+ * are one copy away" has stopped being part of that reason: the copied summary dropped both as
+ * well (`lib/approvals/summary.ts`), leaving the admin drawer. What that summary keeps for an
+ * operator who cannot open the drawer is the run id, the audit list being keyed on it.
  */
 function Provenance({ card }: { card: ApprovalCard }) {
   return (
@@ -139,6 +116,11 @@ function Provenance({ card }: { card: ApprovalCard }) {
  * operator does not, it costs a row of a card that has to fit one screen, and the copy summary
  * carries it for the operator who has to hand it to someone. The two timestamps are one duration
  * for the same reason: "took 41s" is the fact, and both instants are still on the row in `/admin`.
+ *
+ * **The run's envelope is not printed here either.** `result_summary` is a JSON dump of the payload
+ * the receipt's `after` half renders as labelled rows two blocks below, so a `Result` row was one
+ * value under two headings and the less readable of the two. The value is untouched in the database
+ * and still renders on `/admin`; only the surface printing it changed.
  */
 function Run({ card, stalled }: { card: ApprovalCard; stalled: boolean }) {
   if (card.run === null) return null
@@ -162,7 +144,6 @@ function Run({ card, stalled }: { card: ApprovalCard; stalled: boolean }) {
         ) : (
           <Fact label="Duration" value={duration} title={card.run.createdAt} />
         )}
-        {card.run.resultSummary ? <Fact label="Result" value={card.run.resultSummary} /> : null}
       </dl>
       {stalled ? (
         <p className={styles.empty} role="status">
@@ -170,62 +151,6 @@ function Run({ card, stalled }: { card: ApprovalCard; stalled: boolean }) {
         </p>
       ) : null}
     </section>
-  )
-}
-
-/**
- * The paths the before-state block does not print. Full paths, not leaf names.
- *
- * Two identifiers NOA needs and the operator does not — `server_id` is the machine's row, and
- * `api_username` the credential the preflight was read with — plus the identity fields of the
- * account record a WHM preflight carries.
- *
- * **What is hidden is identity, not the record.** This set used to name `account` whole, which
- * dropped the fields a suspend actually moves along with the six that name the account. The
- * panel then answered "who is this" under a heading promising the state the change is about, and on
- * a PENDING card — where the execution and outcome blocks do not exist yet — that left no mutable
- * state anywhere at the moment the operator decides. `suspended`, `suspendtime` and `is_locked`
- * stay; `is_locked` in particular is what blocks an unsuspend, so it is the answer to "will this
- * work" rather than a detail.
- *
- * `account.suspendreason` is hidden even though it moves with the change. WHM echoes the operator's
- * own typed NOA reason back into that field verbatim — measured against a live account read — so it
- * carries nothing a decision rests on, and it is a reason-bearing key on the API side
- * (`core/approvals/delta.py`).
- *
- * **Matching is on the full dotted path, and that is a correctness requirement rather than a
- * style.** `owner` exists twice in a WHM preflight: at the top level, where it is the reseller the
- * machine answers to and is shown, and as `account.owner`, which is the same identity repeated on
- * the record and is hidden. A leaf-name filter would kill both. Hence the flatten below happens
- * *before* the filter rather than at the call site, so the order cannot be got wrong by an edit
- * somewhere else.
- *
- * **These are admin-only by design, and the copy summary does not carry them.** That is the
- * difference between this block and the identifiers that left the provenance and execution
- * blocks: those are what an operator quotes into a ticket, so they ride in the copied summary,
- * while these answer an administrator's question and are reached through `/admin` (held by
- * `apps/api/tests/test_admin_action_request_routes.py`). They stay in the database and in the
- * API's body either way; what changes here is only which of the two surfaces prints them.
- *
- * **Hand-kept, and nothing binds it to the producer.** These paths are TypeScript and the nine
- * keys they filter come out of `normalize_whm_account_summary` in Python, so an identity field
- * added there renders on this card and reddens nothing here. Said rather than implied, the way
- * the tool list in `card-view-render.test.tsx` says it of itself.
- */
-const BEFORE_STATE_HIDDEN = new Set([
-  'server_id',
-  'api_username',
-  'account.user',
-  'account.domain',
-  'account.email',
-  'account.contactemail',
-  'account.owner',
-  'account.suspendreason',
-])
-
-function shown(values: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(flattenValues(values)).filter(([path]) => !BEFORE_STATE_HIDDEN.has(path)),
   )
 }
 
@@ -268,7 +193,7 @@ function Card({
             Nothing predicted joins it while the request is PENDING: the delta is written at
             execution time, so at this point nothing has measured what the change will do, and a
             templated after-column or sentence would be a claim with no measurement behind it. */}
-        <KeyValues title="Before state" values={shown(card.receipt?.before ?? card.evidence)} />
+        <KeyValues title="Before state" values={beforeStateRows(card.receipt?.before ?? card.evidence)} />
         <Run card={card} stalled={stalled} />
         {card.receipt ? <Outcome receipt={card.receipt} /> : null}
 

@@ -30,11 +30,12 @@ import {
  * nothing — and the spec went red naming the row it then found.
  *
  * **What is removed here is removed from a render and from nowhere else**, and it falls into two
- * groups that reach an operator by different routes. The four identifiers — the LibreChat account,
- * the conversation reference, the run id and the request id — ride in the copied summary
- * (`lib/approvals/summary.ts`), because those are the strings an operator quotes into a ticket and
- * the operator who requests a change may have no way into the admin panel. The before-state paths
- * are not in that summary and are not meant to be: `server_id` is a machine's row id,
+ * groups that reach an operator by different routes. Of the four identifiers — the LibreChat
+ * account, the conversation reference, the run id and the request id — the copied summary now
+ * carries the run id alone (`lib/approvals/summary.ts`), because the audit list is keyed on it and
+ * an operator who cannot open the admin panel needs one string to hand to somebody who can; the
+ * other three render in that panel's drawer and nowhere else. The before-state paths are in neither
+ * and are not meant to be: `server_id` is a machine's row id,
  * `api_username` the credential a preflight was read with, and the six `account.*` paths are the
  * identity fields of the WHM row — an administrator's question, answered on `/admin` (held by
  * `apps/api/tests/test_admin_action_request_routes.py`). Every one of them stays in the database
@@ -326,7 +327,11 @@ describe('CardView rendering', () => {
     // the one that answers "will this work" rather than "what is this" — a suspension lock refuses
     // `unsuspendacct` outright.
     expect(before['account.suspended']).toBe('false')
-    expect(before['account.suspendtime']).toBe('1789109810')
+    // Read as a time rather than as the epoch second WHM hands over, and with the zone on the
+    // value: this is the one stamp on the card with no relative rendering and no heading above it
+    // naming a zone, so a screenshot of it would otherwise reach a ticket meaning nothing in
+    // particular.
+    expect(before['account.suspendtime']).toBe('2026-09-11 13:56:50 WIB')
     expect(before['account.is_locked']).toBe('false')
 
     // The identity beside them, each asserted by path. NOA needs the first two and the operator
@@ -380,6 +385,33 @@ describe('CardView rendering', () => {
       expect(before['server_id']).toBeUndefined()
     },
   )
+
+  it('keeps the run’s envelope out of the Execution block', async () => {
+    // `result_summary` is a JSON dump of the payload the receipt's `after` half renders as labelled
+    // rows below it, so the row was one value under two headings and the less readable of the two.
+    // Asserted as a label by name and as the string itself: a check on only one of the two passes
+    // against a card that still prints the dump under some other word.
+    renderCardView(
+      load(
+        approvedBody({
+          status: 'COMPLETED',
+          completed_at: '2026-08-08T09:31:34+00:00',
+          result_summary: '{"ok": true, "message": "acmeco is suspended on alpha."}',
+        }),
+      ),
+    )
+
+    const execution = screen.getByRole('heading', { level: 2, name: 'Execution' }).parentElement
+    if (execution === null) throw new Error('the Execution heading has no block around it')
+    const labels = Array.from(execution.querySelectorAll('dt')).map((node) => node.textContent)
+
+    expect(labels).not.toContain('Result')
+    expect(screen.queryByText(/"ok": true/, CARD_ONLY)).toBeNull()
+    // The separating case: the block still renders, so the three assertions above are about one
+    // row leaving rather than about a section that stopped being drawn at all.
+    expect(labels).toContain('Status')
+    expect(screen.getByText('1m 34s')).toBeTruthy()
+  })
 
   it('renders a nested argument as rows rather than a line of JSON', async () => {
     renderCardView(

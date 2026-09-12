@@ -135,7 +135,10 @@ describe('CardView', () => {
 
     expect(polls.calls).toBe(1)
     expect(screen.getByText('COMPLETED')).toBeTruthy()
-    expect(screen.getByText(RESULT)).toBeTruthy()
+    // The envelope the poll carried is on the row and off the card: the run block stopped printing
+    // `result_summary`, which is a JSON dump of the payload the receipt renders as rows instead.
+    // The fixture still sends it, so this is the value arriving and not being printed.
+    expect(screen.queryByText(RESULT, CARD_ONLY)).toBeNull()
 
     // The half that matters: a terminal run ends the loop.
     await ticks(5, POLL_INTERVAL_RUN_MS)
@@ -223,7 +226,7 @@ describe('CardView', () => {
     // And the loop is live again — the retry is not a one-shot read that leaves a static card.
     await tick(POLL_INTERVAL_RUN_MS)
     expect(polls.calls).toBe(3)
-    expect(screen.getByText(RESULT)).toBeTruthy()
+    expect(screen.getByText('COMPLETED')).toBeTruthy()
   })
 
   it('keeps the 401 state when a retry cannot reach NOA', async () => {
@@ -286,7 +289,7 @@ describe('CardView', () => {
 
     await tick(POLL_INTERVAL_RUN_MS)
     expect(polls.calls).toBe(2)
-    expect(screen.getByText(RESULT)).toBeTruthy()
+    expect(screen.getByText('COMPLETED')).toBeTruthy()
   })
 
   it('renders both halves of a finished change, never one "done"', async () => {

@@ -303,7 +303,57 @@ function Delta({ delta }: { delta: ChangeDelta }): JSX.Element {
   )
 }
 
+/**
+ * The key every CHANGE runner composes its own sentence under.
+ *
+ * A runner answers `{"ok": ..., "message": ...}` and a failure carries one too, and the receipt's
+ * `after` half is that payload byte for byte (`core/approvals/execution.py`). So the sentence below
+ * is the runner's own, promoted out of the key list rather than re-derived from it here — the two
+ * readers of this key share the constant so they cannot drift onto different spellings of it.
+ */
+const RUNNER_MESSAGE_KEY = 'message'
+
+/**
+ * The `after` keys the blocks above already stated, computed off the delta being rendered.
+ *
+ * **Never a hand-kept list.** These key names come out of whichever of the runners answered, so a
+ * set typed in here would be five vocabularies copied into a file with nothing reading it against
+ * them — it would print a duplicate row the day a runner renames a field, and drop a real one the
+ * day it adds one. Every name below is read off the same delta this section renders, so there is
+ * nothing to keep in step.
+ *
+ * **`message` follows the sentence and nothing else.** `after` is `Record<string, unknown>`, so a
+ * runner answering `message: null` or a number is representable and the sentence declines to render
+ * it; a filter that dropped the key unconditionally would take that value off the card entirely.
+ * The `delete` is the load-bearing half of that: `message` is also a name a delta may carry in
+ * `identity` or in `changedFields`, and either would otherwise filter out the row by the other arm
+ * of the same condition.
+ *
+ * `ok`, `status` and `verified` stay in the block on purpose. They are stated above as sentences
+ * rather than as keys, so no key-name filter reaches them, and three restatements of one fact are
+ * cheaper than an operator who cannot find the byte the runner actually sent.
+ */
+function reported(receipt: ApprovalReceipt, sentenceShown: boolean): Record<string, unknown> {
+  const delta = receipt.delta
+  const stated = new Set([
+    ...Object.keys(delta?.identity ?? {}),
+    ...(delta?.changedFields ?? []).map((row) => row.field),
+    ...Object.keys(delta?.newValues ?? {}),
+  ])
+
+  if (sentenceShown) stated.add(RUNNER_MESSAGE_KEY)
+  else stated.delete(RUNNER_MESSAGE_KEY)
+
+  return Object.fromEntries(Object.entries(receipt.after).filter(([key]) => !stated.has(key)))
+}
+
 export function Outcome({ receipt }: { receipt: ApprovalReceipt }): JSX.Element {
+  // One variable, read by the paragraph and by the key list under it: whatever the sentence did
+  // with `message` is exactly what the list must do with it. An empty string is not a sentence —
+  // an empty paragraph is invisible, and the value would then be on neither surface.
+  const message = receipt.after[RUNNER_MESSAGE_KEY]
+  const sentence = typeof message === 'string' && message !== '' ? message : null
+
   return (
     <section className={styles.section}>
       <h2 className={styles.sectionTitle}>What the change did</h2>
@@ -317,6 +367,12 @@ export function Outcome({ receipt }: { receipt: ApprovalReceipt }): JSX.Element 
          */}
         {receipt.errorCode === null ? null : <Fact label="Error code" value={receipt.errorCode} />}
       </dl>
+
+      {/* The runner's own sentence, outside the fact list and in the body font: it is a sentence
+          and not a value, so it is not something an operator checks character by character against
+          a target system. It sits between the verdict word and the delta because it is what the
+          word above means, said in the runner's own terms at the moment the change ran. */}
+      {sentence === null ? null : <p className={styles.verification}>{sentence}</p>}
 
       {receipt.delta === null ? (
         // Not "nothing changed", and the difference is the whole rule: this is NOA having no
@@ -332,7 +388,7 @@ export function Outcome({ receipt }: { receipt: ApprovalReceipt }): JSX.Element 
 
       <div className={styles.deltaGroup}>
         <h3 className={styles.sectionTitle}>Reported by the runner</h3>
-        <FactList values={receipt.after} />
+        <FactList values={reported(receipt, sentence !== null)} />
       </div>
     </section>
   )
