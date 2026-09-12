@@ -428,43 +428,22 @@ def firewall_verdict_sentence(*, target: str, server: str, verdict: str) -> str:
     return f"{server} has no deny entry and no allow entry for {target}."
 
 
-# What a backend failure says when it carried no sentence of its own. Two of them, because the
-# blank case still has to answer the one question this whole path turns on: a backend that
-# refused said what it did, and a backend that never answered said nothing at all. Shared so the
-# two tools do not answer one blank message two ways.
-MESSAGE_BACKEND_REFUSED = "The firewall command did not run."
-MESSAGE_BACKEND_UNANSWERED = "The firewall command did not answer."
-
-
 def backend_refusal_sentence(*, name: str, server: str, refused: bool) -> str:
     """Which source could not be driven, and which of the two ways it could not.
 
     The distinction is the whole value of the line: a backend that **refused** answered, and what
     it answered is that it did not act — which makes a disagreeing read afterwards conclusive. A
-    backend that never answered said nothing, and nothing is known. `backend_failure_sentence`
-    keeps the same split for the backend's own words; this is that split in words an operator
-    reads, with the source named rather than left to the error code that no longer renders here.
+    backend that never answered said nothing, and nothing is known. This replaces the pair of
+    fallback strings the two runners used to splice a backend's own words into: those words are
+    an engineer's — they can quote a command — and they keep rendering in `/admin`, while the
+    source that could not be driven is named here rather than left to an error code the card no
+    longer shows.
     """
     if refused:
         return f"{BACKEND_DISPLAY_NAMES.get(name, name)} refused the command on {server}."
     return (
         f"{BACKEND_DISPLAY_NAMES.get(name, name)} did not answer when NOA ran the command "
         f"on {server}."
-    )
-
-
-def backend_failure_sentence(failure: WriteFailure) -> str:
-    """A backend failure as a sentence, with the right fallback behind a blank message.
-
-    **A fixed "did not run" is a claim, and on half this branch it is the one claim this path
-    refuses to make.** A backend whose message came back blank with `ssh_timeout` never told NOA
-    what it did, so an envelope saying the command did not run would contradict the delta beside
-    it, which says `unavailable` precisely because nothing is known. The four single-target
-    runners word their openers off `WriteFailure.verb` for the same reason; this is that one
-    fact, in the two words the firewall pair's sentence is built from.
-    """
-    return failure.sentence(
-        MESSAGE_BACKEND_REFUSED if failure.refused else MESSAGE_BACKEND_UNANSWERED
     )
 
 
@@ -516,26 +495,6 @@ def refused_backend_verdict(*, failure: WriteFailure, contradicted: bool) -> tup
     return VERIFICATION_UNAVAILABLE, failure.code
 
 
-def confirming_read_sentence(*, target: str, answer: str | None, unanswered: Sequence[str]) -> str:
-    """What the confirming read said, as a sentence to put beside a backend's refusal.
-
-    `answer` is `None` where the read itself could not answer, and that branch is the shared
-    part: the silent backends are **named** rather than counted, because a source that cannot
-    answer gets named beside the verdict and "one backend was silent" does not say which server
-    to go and look at.
-
-    Each tool supplies its own `answer`, because the fact each one confirms is different — a
-    release asks what the combined verdict is, and a removal asks whether any backend that
-    answered still holds an allow entry, which the combined verdict cannot say.
-    """
-    if answer is None:
-        return (
-            f"NOA could not confirm what the firewall holds for `{target}` either: "
-            f"{' and '.join(unanswered)} did not answer the confirming read."
-        )
-    return f"A fresh read of the firewall says {answer}."
-
-
 __all__ = [
     "BACKEND_DISPLAY_NAMES",
     "ERROR_EVIDENCE_UNUSABLE",
@@ -544,8 +503,6 @@ __all__ = [
     "EVIDENCE_SERVER_ID",
     "EVIDENCE_SERVER_NAME",
     "EVIDENCE_TARGET",
-    "MESSAGE_BACKEND_REFUSED",
-    "MESSAGE_BACKEND_UNANSWERED",
     "MESSAGE_EVIDENCE_UNUSABLE",
     "MESSAGE_SERVER_UNAVAILABLE",
     "STATUS_CHANGED",
@@ -555,11 +512,9 @@ __all__ = [
     "FirewallChangeTarget",
     "WriteFailure",
     "backend_change_failure",
-    "backend_failure_sentence",
     "backend_outcomes",
     "backend_refusal_sentence",
     "backend_write_failure",
-    "confirming_read_sentence",
     "evidence_bound",
     "evidence_verdict",
     "firewall_state",

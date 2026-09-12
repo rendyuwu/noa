@@ -143,6 +143,9 @@ async def test_the_two_outcomes_are_reported_apart(monkeypatch: pytest.MonkeyPat
     assert payload["released"] is True
     assert payload["allowlisted"] is True
     assert payload["verified"] is True
+    # The card's heading, written here rather than derived from the tool name: `Firewall Release
+    # And Allow` names the machinery, and this names what happened to the address.
+    assert payload["headline"] == f"IP unblocked — {TARGET}"
     assert payload["server"] == SERVER_NAME
     assert payload["target"] == TARGET
 
@@ -225,6 +228,7 @@ async def test_a_release_that_did_not_take_is_a_failure(
 
     assert payload["ok"] is False
     assert payload["error_code"] == ERROR_RELEASE_FAILED
+    assert payload["headline"] == f"IP still blocked — {TARGET}"
     assert payload["released"] is False
     assert payload["allowlisted"] is False
 
@@ -247,6 +251,9 @@ async def test_an_allow_that_did_not_take_is_a_different_failure(
 
     assert payload["ok"] is False
     assert payload["error_code"] == ERROR_ALLOW_FAILED
+    # `not_found` names nothing to a reader, so the heading says what was looked for and the
+    # sentence says what the token means. The raw word keeps rendering in `/admin`.
+    assert payload["headline"] == f"Nothing found for {TARGET}"
     assert payload["released"] is True
     assert payload["allowlisted"] is False
 
@@ -279,6 +286,13 @@ async def test_a_backend_that_did_not_answer_leaves_the_change_unverified(
     assert payload["verified"] is False
     assert payload["verification"] == VERIFICATION_UNAVAILABLE
     assert payload["unanswered_backends"] == ["imunify"]
+    # The heading is the confirmed one, because the commands were accepted — what is unconfirmed
+    # is stated in the sentence, and the corner reads it off the verification state.
+    assert payload["headline"] == f"IP unblocked — {TARGET}"
+    assert BACKEND_DISPLAY_NAMES["imunify"] in str(payload["message"])
+    # No expiry stamp here: a card that cannot confirm the change must not print a precise time
+    # for a window it cannot confirm is in force. The window stays on the delta and in `/admin`.
+    assert "(WIB)" not in str(payload["message"])
     # Neither claim is made, because neither was measured.
     assert "released" not in payload
     assert "allowlisted" not in payload
@@ -315,6 +329,7 @@ async def test_a_refused_backend_beside_a_silent_one_still_names_the_silent_one(
 
     assert payload["ok"] is False
     assert payload["error_code"] == SSH_SUDO_REQUIRED_CODE
+    assert payload["headline"] == f"Unblock failed — {TARGET}"
     assert payload["unanswered_backends"] == ["imunify"]
     # The sentence names the source in the words the product uses; the payload key beside it
     # keeps the raw name an administrator greps for. Named either way, never counted.

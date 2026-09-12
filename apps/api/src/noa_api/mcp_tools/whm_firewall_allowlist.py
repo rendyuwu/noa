@@ -123,13 +123,13 @@ from noa_api.mcp_tools.whm_firewall_change_common import (
     BackendChange,
     FirewallChangeTarget,
     backend_change_failure,
-    backend_failure_sentence,
     backend_outcomes,
+    backend_refusal_sentence,
     backend_write_failure,
-    confirming_read_sentence,
     evidence_bound,
     firewall_state,
     holds_allow_entry,
+    name_sources,
     refused_backend_verdict,
     resolve_firewall_change_target,
     tolerated_csf_step,
@@ -148,10 +148,6 @@ ERROR_ALLOWLIST_REMOVE_FAILED = "firewall_allowlist_remove_failed"
 MESSAGE_CHANGE_TARGET_NOT_IPV4 = (
     "Only a single IPv4 address can be removed from the allow lists. Networks, IPv6 addresses "
     "and hostnames can be checked with `whm_preflight_firewall_entries` but not changed."
-)
-MESSAGE_ALLOWLIST_REMOVE_FAILED = (
-    "The address is still on an allow list after the removal ran. Check the server's firewall "
-    "directly before asking again."
 )
 
 # One structured event per tolerated step, so "the entry was already gone" and "the command
@@ -548,8 +544,9 @@ def _removal_outcome(
             list_delta=list_delta,
         )
 
-    broken = next((changes[name] for name in sorted(changes) if not changes[name].ok), None)
-    if broken is not None:
+    broken_name = next((name for name in sorted(changes) if not changes[name].ok), None)
+    if broken_name is not None:
+        broken = changes[broken_name]
         # The verdict is consulted here now, and it used not to be — see
         # `refused_backend_verdict`, which holds why, and why `verified` stays unreachable on a
         # tool whose answer is per backend. The reading was already taken above.
@@ -562,23 +559,29 @@ def _removal_outcome(
         verification, cause = refused_backend_verdict(
             failure=failure, contradicted=survives is True
         )
+        # Where the reading itself could not answer, the silent sources are **named** in place of
+        # the second sentence — never a guess at what the allow lists still hold.
+        reading = (
+            f"NOA checked afterwards: {target.target} is "
+            f"{'still on an allow list' if survives else 'on no allow list'} on "
+            f"{target.server_name}."
+            if survives is not None
+            else (
+                f"{name_sources(unanswered)} did not answer when NOA checked afterwards, so NOA "
+                f"cannot say whether {target.target} is still allowed."
+            )
+        )
         return ChangeOutcome(
             payload={
                 **tool_failure(
                     failure.code,
-                    f"{backend_failure_sentence(failure)} "
-                    + confirming_read_sentence(
-                        target=target.target,
-                        answer=(
-                            None
-                            if survives is None
-                            else f"`{target.target}` is "
-                            f"{'still on an allow list' if survives else 'on no allow list'}"
-                        ),
-                        unanswered=unanswered,
-                    ),
+                    backend_refusal_sentence(
+                        name=broken_name, server=target.server_name, refused=failure.refused
+                    )
+                    + f" {reading}",
                 ),
                 **common,
+                "headline": f"Removal failed — {target.target}",
                 "unanswered_backends": unanswered,
             },
             delta=delta(verification=verification, verification_cause=cause),
@@ -595,14 +598,14 @@ def _removal_outcome(
         return ChangeOutcome(
             payload=tool_ok(
                 **common,
+                headline=f"Allow entry removed — {target.target}",
                 status=STATUS_CHANGED,
                 verified=False,
                 verification=VERIFICATION_UNAVAILABLE,
                 unanswered_backends=unanswered,
                 message=(
-                    f"`{target.target}` was removed from the allow lists on "
-                    f"{target.server_name}, but {' and '.join(unanswered)} did not answer the "
-                    "confirming read. Check the server's firewall directly."
+                    f"The removal ran on {target.server_name}. {name_sources(unanswered)} did "
+                    "not answer when NOA checked afterwards, so NOA cannot say it is gone."
                 ),
             ),
             # Named on `unanswered`, with no cause beside it: which source said nothing *is* the
@@ -613,8 +616,13 @@ def _removal_outcome(
     if holds_allow_entry(lookups):
         return ChangeOutcome(
             payload={
-                **tool_failure(ERROR_ALLOWLIST_REMOVE_FAILED, MESSAGE_ALLOWLIST_REMOVE_FAILED),
+                **tool_failure(
+                    ERROR_ALLOWLIST_REMOVE_FAILED,
+                    f"NOA checked afterwards: {target.target} is still on an allow list on "
+                    f"{target.server_name}.",
+                ),
                 **common,
+                "headline": f"Allow entry still there — {target.target}",
                 "removed": False,
             },
             # Measured and disagreeing, which is what earns the `false` beside it — and no list
@@ -625,11 +633,12 @@ def _removal_outcome(
     return ChangeOutcome(
         payload=tool_ok(
             **common,
+            headline=f"Allow entry removed — {target.target}",
             status=STATUS_CHANGED,
             removed=True,
             verified=True,
             unanswered_backends=unanswered,
-            message=(f"`{target.target}` is no longer on an allow list on {target.server_name}."),
+            message=f"{target.target} is no longer on an allow list on {target.server_name}.",
         ),
         delta=delta(
             verification=VERIFICATION_VERIFIED,
@@ -648,7 +657,6 @@ __all__ = [
     "LOG_REMOVE_NO_OP",
     "LOG_REMOVE_STEP_TOLERATED",
     "LOG_REMOVE_UNVERIFIED",
-    "MESSAGE_ALLOWLIST_REMOVE_FAILED",
     "MESSAGE_CHANGE_TARGET_NOT_IPV4",
     "STATUS_CHANGED",
     "STATUS_NO_OP",

@@ -51,6 +51,7 @@ from noa_api.mcp_tools.whm_firewall_allowlist import (
     build_whm_firewall_allowlist_remove_runner,
 )
 from noa_api.mcp_tools.whm_firewall_change_common import (
+    BACKEND_DISPLAY_NAMES,
     ERROR_EVIDENCE_UNUSABLE,
     ERROR_SERVER_UNAVAILABLE,
 )
@@ -133,6 +134,9 @@ async def test_a_confirmed_removal_says_so_once_and_names_the_server(
     assert payload["status"] == STATUS_CHANGED
     assert payload["removed"] is True
     assert payload["verified"] is True
+    # The card's heading, written here rather than derived from the tool name: `Firewall
+    # Allowlist Remove` names the machinery, and this names what happened to the address.
+    assert payload["headline"] == f"Allow entry removed — {TARGET}"
     assert payload["server"] == SERVER_NAME
     assert payload["target"] == TARGET
 
@@ -173,6 +177,7 @@ async def test_a_removal_that_did_not_take_is_a_failure(
 
     assert payload["ok"] is False
     assert payload["error_code"] == ERROR_ALLOWLIST_REMOVE_FAILED
+    assert payload["headline"] == f"Allow entry still there — {TARGET}"
     assert payload["removed"] is False
 
 
@@ -250,6 +255,10 @@ async def test_a_backend_that_did_not_answer_leaves_the_change_unverified(
     assert payload["verified"] is False
     assert payload["verification"] == VERIFICATION_UNAVAILABLE
     assert payload["unanswered_backends"] == ["imunify"]
+    # The heading is the confirmed one, because the commands were accepted — what is unconfirmed
+    # is stated in the sentence, and the corner reads it off the verification state.
+    assert payload["headline"] == f"Allow entry removed — {TARGET}"
+    assert BACKEND_DISPLAY_NAMES["imunify"] in str(payload["message"])
     # The claim is not made, because it was not measured.
     assert "removed" not in payload
 
@@ -287,7 +296,10 @@ async def test_a_refused_backend_beside_a_silent_one_still_names_the_silent_one(
     assert payload["ok"] is False
     assert payload["error_code"] == SSH_SUDO_REQUIRED_CODE
     assert payload["unanswered_backends"] == ["imunify"]
-    assert "imunify" in str(payload["message"])
+    assert payload["headline"] == f"Removal failed — {TARGET}"
+    # The sentence names the source in the words the product uses; the payload key beside it
+    # keeps the raw name an administrator greps for. Named either way, never counted.
+    assert BACKEND_DISPLAY_NAMES["imunify"] in str(payload["message"])
     assert "removed" not in payload
 
 
