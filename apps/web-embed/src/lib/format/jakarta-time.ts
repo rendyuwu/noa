@@ -43,7 +43,6 @@ const STAMP = new Intl.DateTimeFormat('en-US', {
   minute: '2-digit',
   second: '2-digit',
   hourCycle: 'h23',
-  timeZoneName: 'longOffset',
 })
 
 const RELATIVE = new Intl.RelativeTimeFormat('en', { numeric: 'always' })
@@ -56,7 +55,7 @@ const UNITS: readonly (readonly [Intl.RelativeTimeFormatUnit, number])[] = [
   ['day', 86_400_000],
 ]
 
-type Stamp = { date: string; time: string; offset: string }
+type Stamp = { date: string; time: string }
 
 /** The pieces of one instant in Jakarta, or `null` when the string is not an instant. */
 function jakartaStamp(iso: string): Stamp | null {
@@ -70,28 +69,27 @@ function jakartaStamp(iso: string): Stamp | null {
   return {
     date: `${read('year')}-${read('month')}-${read('day')}`,
     time: `${read('hour')}:${read('minute')}:${read('second')}`,
-    // `GMT+07:00` as the formatter gives it, minus the prefix. Read off the same formatter rather
-    // than written here as a literal: the offset then cannot drift from the zone above, whatever
-    // Indonesia does to its clocks later.
-    offset: read('timeZoneName').replace('GMT', ''),
   }
 }
 
 /**
- * `2026-09-09 13:48:01 +07:00`, for anything that leaves this frame.
+ * `2026-09-09 13:48:01`, for anything that leaves this frame.
  *
- * The offset is not decoration. A bare wall-clock time pasted into a ticket is read by whoever
- * opens it in whatever zone they are in, and the copied summary is meant to still be true a year
- * from now in another office.
+ * **A bare stamp may leave the frame only under a heading that names the zone**, and the copied
+ * summary block is the one surface that does it: `lib/approvals/summary.ts` groups its three stamps
+ * under a heading reading "all times Jakarta (WIB)" and prints them bare beneath it. The zone is
+ * stated once where a reader meets it rather than repeated on every line, but it is still stated —
+ * a wall-clock time with nothing around it is read by whoever opens the ticket in whatever zone
+ * they are in.
  *
- * There is deliberately no offset-less variant. There was one, and the card shipped without ever
- * calling it: on screen the times are relative, with the ISO in a `title`, and everything that
- * leaves the frame needs the offset by the rule above. A second stamp function existing only to be
- * the tempting shorter call is how a bare wall-clock time reaches a ticket.
+ * There is deliberately still exactly one stamp function, which is what keeps the rule enforceable:
+ * a second, shorter variant beside this one would be the tempting call, and there would then be a
+ * stamp that can reach a ticket with neither an offset nor a heading above it. There is nowhere for
+ * one to escape from, because there is only this.
  */
-export function formatJakartaOffset(iso: string): string {
+export function formatJakarta(iso: string): string {
   const stamp = jakartaStamp(iso)
-  return stamp === null ? iso : `${stamp.date} ${stamp.time} ${stamp.offset}`
+  return stamp === null ? iso : `${stamp.date} ${stamp.time}`
 }
 
 /** `4 minutes ago`, `in 11 minutes`, `just now`. */
@@ -135,10 +133,13 @@ export function formatCountdown(iso: string, now: Date = new Date()): string {
  * or the end sits before the start. A run whose host clock stepped backwards mid-execution has not
  * taken a negative amount of time, and clamping it to zero would state a measurement nobody made.
  *
- * Staying quiet loses nothing an audit needs, because the copied summary prints both absolute
- * stamps whatever this answers (`lib/approvals/summary.ts`). It is not a claim about every caller:
- * the card collapses the two stamps into one row and keeps the start in that row's `title`, so a
- * `null` there costs the reader the elapsed time until they reach the copied block.
+ * **That silence now costs the reader the elapsed time outright**, and the guard stays anyway. The
+ * copied summary used to print the run's start beside its finish, so a `null` there lost nothing;
+ * it prints the finish alone now (`lib/approvals/summary.ts`), and the card collapses the two
+ * stamps into one row with the start in that row's `title`. So on a run where the two stamps
+ * disagree about direction, how long it took is on neither surface, and the two raw stamps on the
+ * run row are where it is left. Rare rather than impossible: a clock that steps mid-run is exactly
+ * the case this refuses to average away.
  */
 export function formatDuration(startIso: string, endIso: string | null): string | null {
   if (endIso === null) return null

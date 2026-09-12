@@ -2,63 +2,64 @@
  * The whole approval, as one block of text an operator can paste into a ticket.
  *
  * **Evidence has to be able to leave the frame, and it leaves as text.** Measured on the pinned
- * host: no image reaches the clipboard from inside the frame by any route, so a screenshot is not
- * an option and the copied block is the only durable record an operator can carry out. That is why
- * this builder states more than the card renders — the LibreChat account, the conversation
- * reference, the run id and every timestamp in absolute form. A field the card drops because it is
- * noise on screen is exactly the field a ticket needs six months later.
+ * host: no image reaches the clipboard from inside the frame by any route, so this block is the
+ * only durable record an operator can carry out. What it carries is what a ticket is opened for a
+ * year later — what the change did to which machine, when, and the one identifier an administrator
+ * can look the run up by.
  *
- * **Two flavours, one builder.** `text` and `html` ride on a single copy, and the two must say the
- * same thing: a reader who pastes into a plain-text field and a reader who pastes into a rich one
- * are quoting the same record in a dispute. Producing them from one section list rather than from
- * two writers is what keeps that true — a fact added to one and forgotten in the other cannot
- * happen here, because there is nowhere to add it to only one.
+ * **The headline states two facts and never one.** The status is the decision an operator made; the
+ * verdict beside it (`lib/approvals/verdict.ts`) is what the change then did, read off the
+ * verification state rather than off the call's return. A receipt NOA could not verify, pasted as
+ * "Approved" alone, folds a non-answer into the benign value; an approved request with no receipt
+ * at all states that nothing has recorded what the change did, rather than pasting as an approval
+ * over an empty result.
  *
- * **Every timestamp carries `+07:00`** (`lib/format/jakarta-time.ts`). A bare wall-clock time in a
- * ticket is read in whatever zone the reader is in, and this block is meant to be a durable
- * reference rather than a note to somebody sitting in the same office this afternoon. English
- * regardless of the language of the conversation the frame is rendered inside, for the same
- * reason: the audit trail is not translated.
+ * **The sentence under it is the runner's own, reused rather than authored.** Every CHANGE runner
+ * composes a plain-English `message` in its payload and it survives byte for byte into the
+ * receipt's `after` half, so line two is that string when there is one and absent when there is
+ * not. Nothing here writes a sentence per tool: a table mapping each tool to a phrasing would be a
+ * second copy of five runners' vocabularies with nothing reading it against them — a blank the day
+ * a runner is added, a stale phrase the day one is reworded. The same argument covers the identity
+ * line: the runner's own record, in the insertion order it wrote, which already leads with the
+ * machine.
  *
- * **The identity line is the runner's own record, printed as it stands.** Each family fills
- * `delta.identity` with the keys that name its own subject — the account pair sends the server and
- * the username, the interface change sends server, node, vmid, net and action, the mail gateway
- * sends its target both raw and normalised — and the insertion order it arrives in already leads
- * with the machine. A table here mapping each tool to the keys it is expected to carry would be a
- * second copy of five runners' vocabularies with nothing reading it against them: it would print a
- * blank the day a runner adds a key, and print `unknown` for a key it never had. So the record is
- * rendered rather than interpreted, and the per-family shape comes from the party that has it.
+ * **Two flavours, one builder.** `text` and `html` ride on a single copy and must say the same
+ * thing: a reader who pastes into a plain-text field and a reader who pastes into a rich one are
+ * quoting the same record in a dispute. One section list rather than two writers is what keeps that
+ * true — there is nowhere to add a fact to only one of them.
+ *
+ * **The zone is named once, in a heading, and the stamps under it are bare**
+ * (`lib/format/jakarta-time.ts`). A bare wall-clock time in a ticket is otherwise read in whatever
+ * zone the reader sits in, so the zone is stated — once, above the stamps it governs, rather than
+ * on every line until it reads as furniture. English regardless of the language of the conversation
+ * the frame is rendered inside, for the same reason: an audit trail is not translated.
  *
  * **`changedFields: null` and `changedFields: []` say different things and are never folded
  * together.** `null` is "nothing was measured" — the write may have landed and no confirming read
- * answered. `[]` is "the runner compared, and nothing moved". Rendering the first as the second
- * tells an operator a machine is untouched on the evidence that NOA failed to look. The same
- * distinction runs through `unanswered`, and there a silent source is named by name: "one backend
- * did not answer" does not say which server to go and look at.
- *
- * Those two facets print in all three states — measured, measured-as-nothing, not measured —
- * where every other absent facet is simply left out. The difference is what the absence means: a
- * missing `listDelta` says this family's change is not list membership, which is nothing to
- * report, while a missing field diff or a missing source accounting is a hole in the measurement
- * of the change itself, and the benign reading of that hole is the one that misleads.
+ * answered; `[]` is "the runner compared, and nothing moved". Rendering the first as the second
+ * tells an operator a machine is untouched on the evidence that NOA failed to look. `unanswered`
+ * carries the same split, and there a silent source is named: "one backend did not answer" does not
+ * say which server to go and look at. Both print in all three states — measured,
+ * measured-as-nothing, not measured — where every other absent facet is simply left out, because a
+ * hole in the measurement is not the same thing as nothing to report.
  *
  * **A delivered credential is stated and its link is not.** The delivery URL opens once; pasting
- * it into a ticket hands the credential to whoever reads the ticket first and burns it for the
- * operator who needs it. The summary records that one was delivered, which is the fact an audit
- * needs, and the link stays on the card.
+ * it into a ticket burns it for the operator who needs it. That one was delivered is the fact an
+ * audit needs, and the link stays on the card.
  *
  * **No reason field, here or anywhere near here.** The operator's reason is typed at decision time
  * and travels outward only; the card carries none back and this builder has nowhere to put one.
  *
- * **Every value is HTML-escaped on its way into the `html` flavour**, at one point in
- * `renderHtml`, because the component that copies it hands the string to `dangerouslySetInnerHTML`
- * and the values in it are API-supplied strings.
+ * **Every value is HTML-escaped on its way into the `html` flavour**, at one point in `renderHtml`,
+ * because the component that copies it hands the string to `dangerouslySetInnerHTML`.
  */
 
 import type { ApprovalCard, ApprovalReceipt } from '@/lib/approvals/card'
 import { statusLabel } from '@/lib/approvals/card'
 import type { ChangeDelta } from '@/lib/approvals/delta'
-import { formatDuration, formatJakartaOffset } from '@/lib/format/jakarta-time'
+import { humanizeToolName } from '@/lib/approvals/tool-name'
+import { outcomeText, verificationText } from '@/lib/approvals/verdict'
+import { formatJakarta } from '@/lib/format/jakarta-time'
 
 /** The one copy, in both flavours the clipboard carries. */
 export type Summary = { text: string; html: string }
@@ -67,64 +68,63 @@ export type Summary = { text: string; html: string }
 type Section = { heading: string; lines: string[] }
 
 const TITLE = 'NOA approval record'
+/** The one line in the whole block that names the zone. Every stamp below it is bare. */
+const WHEN_HEADING = 'When — all times Jakarta (WIB)'
 
 function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
 /**
- * One value, as a ticket should read it.
+ * One value, as a ticket should read it, for every family of key — identity pairs, arguments, field
+ * diffs and resolved values all arrive here, because the alternative is a second renderer answering
+ * differently for the same byte. `true` is `yes`: `suspended: false → true` is a line about a
+ * boolean rather than about an account.
  *
- * The empty string is called out rather than printed as nothing: the card parser's fallback for a
- * missing string field is `''`, and a line reading `username=` looks like a rendering bug where it
- * is actually a field the API did not send.
+ * The three-way split below is a different distinction and is load-bearing — `null` is a value the
+ * target system holds, `undefined` is a key the payload never carried, and folding either into the
+ * other states a reading nobody took. The empty string is called out for the same reason: the card
+ * parser's fallback for a missing string field is `''`, and `username=` looks like a render bug.
  */
 function renderValue(value: unknown): string {
   if (value === null) return 'null'
   if (value === undefined) return 'not recorded'
+  if (typeof value === 'boolean') return value ? 'yes' : 'no'
   if (typeof value === 'string') return value === '' ? '(empty)' : value
   if (typeof value === 'object') return JSON.stringify(value) ?? String(value)
   return String(value)
 }
 
-/**
- * A record as `key=value` pairs, in the order it arrived.
- *
- * Not sorted. The order a runner writes its identity in is the order that reads well — the machine
- * first, then what sits on it — and alphabetising would lead an interface change with `action`.
- */
+/** `key=value` pairs in the order they arrived — never sorted, for the reason above. */
 function renderPairs(record: Record<string, unknown>): string {
   const entries = Object.entries(record)
   if (entries.length === 0) return 'not recorded'
   return entries.map(([key, value]) => `${key}=${renderValue(value)}`).join(', ')
 }
 
-function changeSection(card: ApprovalCard, delta: ChangeDelta | null): Section {
+/** Label-and-value rows, padded so a reader scanning the values reads down one column. */
+function renderRows(rows: readonly (readonly [string, string])[]): string[] {
+  const width = Math.max(...rows.map(([label]) => label.length))
+  return rows.map(([label, value]) => `${label.padEnd(width)} ${value}`)
+}
+
+/**
+ * The two facts, and the runner's own sentence under them. The sentence is taken only when it is a
+ * non-empty string: `after` is a `Record<string, unknown>`, so a `null` or a number under that key
+ * is representable, and a value that is not a sentence gets no line rather than an invented one.
+ */
+function headlineSection(card: ApprovalCard, receipt: ApprovalReceipt | null): Section {
+  const verdict = receipt === null ? '' : `, ${outcomeText(receipt.delta, receipt.ok)}`
+  const message = receipt === null ? undefined : receipt.after['message']
   return {
-    heading: 'Change',
-    lines: [
-      `Tool: ${renderValue(card.toolName)}`,
-      `Status: ${statusLabel(card.status)}`,
-      // With no delta there is no measured subject, and the arguments are the only statement of
-      // what was aimed at. Labelled as requested rather than as fact: a denied or expired request
-      // never ran, and this line must not read as a machine that was touched.
-      delta === null
-        ? `Target, as requested: ${renderPairs(card.arguments)}`
-        : `Target: ${renderPairs(delta.identity)}`,
-    ],
+    heading: `${humanizeToolName(card.toolName)} — ${statusLabel(card.status)}${verdict}`,
+    lines: typeof message === 'string' && message.trim() !== '' ? [message] : [],
   }
 }
 
-function movedSection(delta: ChangeDelta | null): Section {
-  if (delta === null) {
-    return {
-      heading: 'What moved',
-      lines: ['Not measured. No runner published a delta for this request.'],
-    }
-  }
-
-  const cause = delta.verificationCause === null ? '' : ` (${delta.verificationCause})`
-  const lines = [`Verification: ${delta.verification}${cause}`]
+/** What the runner measured, from the subject it names to the reading it took afterwards. */
+function measuredLines(delta: ChangeDelta): string[] {
+  const lines = [renderPairs(delta.identity)]
 
   if (delta.changedFields === null) {
     lines.push('Field changes: not measured. Nothing here says that nothing moved.')
@@ -138,10 +138,10 @@ function movedSection(delta: ChangeDelta | null): Section {
 
   const list = delta.listDelta
   if (list !== null) {
-    const added = list.added.length === 0 ? 'none' : list.added.join(', ')
-    const removed = list.removed.length === 0 ? 'none' : list.removed.join(', ')
-    lines.push(`List entries added: ${added}`)
-    lines.push(`List entries removed: ${removed}`)
+    lines.push(`List entries added: ${list.added.length === 0 ? 'none' : list.added.join(', ')}`)
+    lines.push(
+      `List entries removed: ${list.removed.length === 0 ? 'none' : list.removed.join(', ')}`,
+    )
     lines.push(
       list.totalEntries === null
         ? 'List size: not measured. The runner read only the lines matching its target.'
@@ -158,18 +158,16 @@ function movedSection(delta: ChangeDelta | null): Section {
     )
   }
 
-  return { heading: 'What moved', lines }
+  const cause = delta.verificationCause === null ? '' : ` (${delta.verificationCause})`
+  lines.push(`${verificationText(delta.verification)}${cause}`)
+  return lines
 }
 
-function resultSection(receipt: ApprovalReceipt | null, delta: ChangeDelta | null): Section {
-  if (receipt === null) {
-    return { heading: 'Result', lines: ['Nothing has recorded what this change did.'] }
-  }
+/** Which sources were driven, which went quiet, and how much of the list the claim rests on. */
+function sourceLines(delta: ChangeDelta): string[] {
+  const lines: string[] = []
 
-  const lines = [receipt.ok ? 'The change completed.' : 'The change did not complete.']
-  if (receipt.errorCode !== null) lines.push(`Error code: ${receipt.errorCode}`)
-
-  for (const backend of delta?.backends ?? []) {
+  for (const backend of delta.backends ?? []) {
     const verdict = backend.verdict === null ? '' : `, verdict ${backend.verdict}`
     const error = backend.errorCode === null ? '' : `, error ${backend.errorCode}`
     lines.push(
@@ -178,74 +176,87 @@ function resultSection(receipt: ApprovalReceipt | null, delta: ChangeDelta | nul
     )
   }
 
-  if (delta !== null) {
-    if (delta.unanswered === null) {
-      lines.push('Unanswered sources: not measured.')
-    } else if (delta.unanswered.length === 0) {
-      lines.push('Unanswered sources: none. Every source answered.')
-    } else {
-      // By name. A count tells an operator that something is wrong and not where to go.
-      lines.push(`Unanswered sources: ${delta.unanswered.join(', ')}`)
-    }
-
-    if (delta.bound !== null) {
-      lines.push(
-        delta.bound.truncated
-          ? `Evidence bound: ${delta.bound.total} entries, truncated — the claim above rests ` +
-              'on a capped reading, not on the whole list.'
-          : `Evidence bound: ${delta.bound.total} entries, complete.`,
-      )
-    }
+  if (delta.unanswered === null) {
+    lines.push('Unanswered sources: not measured.')
+  } else if (delta.unanswered.length === 0) {
+    lines.push('Unanswered sources: none. Every source answered.')
+  } else {
+    // By name. A count tells an operator that something is wrong and not where to go.
+    lines.push(`Unanswered sources: ${delta.unanswered.join(', ')}`)
   }
 
-  return { heading: 'Result', lines }
+  if (delta.bound !== null) {
+    lines.push(
+      delta.bound.truncated
+        ? `Evidence bound: ${delta.bound.total} entries, truncated — the claim above rests ` +
+            'on a capped reading, not on the whole list.'
+        : `Evidence bound: ${delta.bound.total} entries, complete.`,
+    )
+  }
+
+  return lines
 }
 
-function timingSection(card: ApprovalCard): Section {
-  const lines = [
-    `Requested: ${formatJakartaOffset(card.createdAt)}`,
-    `Approval window ends: ${formatJakartaOffset(card.expiresAt)}`,
-    card.decidedAt === null
-      ? 'Decided: no decision recorded'
-      : `Decided: ${formatJakartaOffset(card.decidedAt)}`,
-  ]
+function changedSection(card: ApprovalCard, receipt: ApprovalReceipt | null): Section {
+  const delta = receipt?.delta ?? null
+  // With no delta there is no measured subject, and the arguments are the only statement of what
+  // was aimed at. Labelled as requested rather than as fact: a denied or expired request never ran,
+  // and the line must not read as a machine that was touched.
+  const lines =
+    delta === null
+      ? [
+          `Target, as requested: ${renderPairs(card.arguments)}`,
+          receipt === null
+            ? 'Nothing has recorded what this change did.'
+            : 'Not measured. No runner published a delta for this request.',
+        ]
+      : measuredLines(delta)
 
-  const run = card.run
-  if (run === null) {
-    lines.push('Run: none started')
-    return { heading: 'Timing', lines }
-  }
+  if (receipt?.errorCode != null) lines.push(`Error code: ${receipt.errorCode}`)
+  if (delta !== null) lines.push(...sourceLines(delta))
 
-  const elapsed = formatDuration(run.createdAt, run.completedAt)
-  lines.push(`Run status: ${renderValue(run.status)}`)
-  lines.push(`Run started: ${formatJakartaOffset(run.createdAt)}`)
-  lines.push(
-    run.completedAt === null
-      ? 'Run completed: still running when this was copied'
-      : `Run completed: ${formatJakartaOffset(run.completedAt)}${elapsed === null ? '' : ` (${elapsed})`}`,
-  )
-
-  return { heading: 'Timing', lines }
+  return { heading: 'What changed', lines }
 }
 
 /**
- * The identifiers the card itself no longer shows.
- *
- * All four are here because all four are what a ticket is searched by later, and none of them is
- * worth the space on a card an operator is reading to make one decision right now.
+ * Three stamps: asked for, decided, finished. `Approval window ends` prints on a PENDING request
+ * and nowhere else, and the gate is the status rather than a missing decision stamp — the expiry
+ * sweep writes `decided_at` when it flips a row (`core/approvals/expiry.py`; an expiry is a
+ * decision the clock made), so a `decidedAt === null` condition would drop the line from exactly
+ * the state it exists for.
  */
-function referenceSection(card: ApprovalCard): Section {
+function timingSection(card: ApprovalCard): Section {
+  const rows: [string, string][] = [['Requested:', formatJakarta(card.createdAt)]]
+  if (card.status === 'PENDING') rows.push(['Approval window ends:', formatJakarta(card.expiresAt)])
+  rows.push([
+    'Decided:',
+    card.decidedAt === null ? 'no decision recorded' : formatJakarta(card.decidedAt),
+  ])
+
+  const run = card.run
+  if (run === null) rows.push(['Finished:', 'nothing ran'])
+  else if (run.completedAt === null) rows.push(['Finished:', 'still running when this was copied'])
+  else rows.push(['Finished:', formatJakarta(run.completedAt)])
+
+  return { heading: WHEN_HEADING, lines: renderRows(rows) }
+}
+
+/**
+ * Who to ask, and the one identifier to quote — rather than the four this block used to carry. The
+ * action-request id, the conversation reference and the LibreChat account all render in the admin
+ * drawer (`apps/admin-web/src/components/admin/audit/action-request-detail-drawer.tsx`) for whoever
+ * can open it, and the audit list is keyed on the run id. So the run id is the one string that gets
+ * an operator who cannot open that panel an answer from somebody who can. The raw tool name sits
+ * here for the same reason: an administrator greps for it, the headline's reader wants the label.
+ */
+function supportSection(card: ApprovalCard): Section {
   return {
-    heading: 'Reference',
-    lines: [
-      `Request id: ${renderValue(card.actionRequestId)}`,
-      card.run === null ? 'Run id: none' : `Run id: ${renderValue(card.run.toolRunId)}`,
-      `LibreChat account: ${renderValue(card.requester.email)} ` +
-        `(user ${renderValue(card.requester.librechatUserId)})`,
-      card.conversationRef === null
-        ? 'Conversation: not recorded'
-        : `Conversation: ${renderValue(card.conversationRef)}`,
-    ],
+    heading: 'For support',
+    lines: renderRows([
+      ['Requested by:', renderValue(card.requester.email)],
+      ['Run id:', card.run === null ? 'none' : renderValue(card.run.toolRunId)],
+      ['Tool:', renderValue(card.toolName)],
+    ]),
   }
 }
 
@@ -257,20 +268,19 @@ function renderText(sections: Section[]): string {
 }
 
 /**
- * The same sections as markup.
- *
- * A list per section rather than a `<pre>`: the flavour exists so a rich-text field renders it as
- * structure, and a `<pre>` pasted into one arrives as a monospace wall no worse and no better than
- * the plain flavour beside it — which would make the second flavour pointless.
+ * The same sections as markup. A list per section rather than a `<pre>`: the flavour exists so a
+ * rich-text field renders it as structure, and a `<pre>` pasted into one arrives as a monospace
+ * wall no better than the plain flavour beside it, which would make the second flavour pointless.
  *
  * Escaping is here, once, on the whole line. Every line is assembled from a literal label and
- * API-supplied values, so escaping the finished line covers both, and there is no second place to
+ * API-supplied values, so escaping the finished line covers both and there is no second place to
  * forget.
  */
 function renderHtml(sections: Section[]): string {
   const blocks = sections.map((section) => {
     const items = section.lines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')
-    return `<p><strong>${escapeHtml(section.heading)}</strong></p><ul>${items}</ul>`
+    const list = items === '' ? '' : `<ul>${items}</ul>`
+    return `<p><strong>${escapeHtml(section.heading)}</strong></p>${list}`
   })
   return `<div><p><strong>${escapeHtml(TITLE)}</strong></p>${blocks.join('')}</div>`
 }
@@ -278,14 +288,11 @@ function renderHtml(sections: Section[]): string {
 /** The whole record, in both flavours, from one pass over one card. */
 export function buildSummary(card: ApprovalCard): Summary {
   const receipt = card.receipt
-  const delta = receipt?.delta ?? null
-
   const sections = [
-    changeSection(card, delta),
-    movedSection(delta),
-    resultSection(receipt, delta),
+    headlineSection(card, receipt),
+    changedSection(card, receipt),
     timingSection(card),
-    referenceSection(card),
+    supportSection(card),
   ]
 
   return { text: renderText(sections), html: renderHtml(sections) }

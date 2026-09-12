@@ -16,7 +16,7 @@ process.env.TZ = 'America/New_York'
 
 import { describe, expect, it } from 'vitest'
 
-import { formatCountdown, formatDuration, formatJakartaOffset, formatRelative } from './jakarta-time'
+import { formatCountdown, formatDuration, formatJakarta, formatRelative } from './jakarta-time'
 
 /** 13:48:01 in Jakarta, 02:48 the same morning in New York. */
 const MIDDAY = '2026-09-09T06:48:01.500Z'
@@ -35,31 +35,31 @@ describe('the process zone this file runs under', () => {
 })
 
 /*
- * The stamp assembly is asserted through the offset variant, which is the one with callers. There
- * was a bare `formatJakarta` beside it; it was deleted once the card shipped without ever calling
- * it, and its cases moved here rather than going with it — both ran through the same `jakartaStamp`
- * helper, so the date assembly, the midnight crossing and the passthrough are all still measured.
+ * One stamp function, and these are its cases. The zone it renders in is named by the heading the
+ * copied summary prints it under, never by the string itself, so the assertions below are exact
+ * whole values: a stamp that grew a suffix would be a second statement of the zone with nothing
+ * saying the two agree.
  */
-describe('formatJakartaOffset', () => {
-  it('renders the wall clock in Jakarta, with the offset', () => {
-    expect(formatJakartaOffset(MIDDAY)).toBe('2026-09-09 13:48:01 +07:00')
+describe('formatJakarta', () => {
+  it('renders the wall clock in Jakarta, and carries no offset', () => {
+    expect(formatJakarta(MIDDAY)).toBe('2026-09-09 13:48:01')
   })
 
   it('rolls the date forward when Jakarta is already on the next day', () => {
-    expect(formatJakartaOffset(OVER_MIDNIGHT)).toBe('2026-09-10 00:00:00 +07:00')
+    expect(formatJakarta(OVER_MIDNIGHT)).toBe('2026-09-10 00:00:00')
   })
 
   it('renders midnight as hour 00, never 24', () => {
     // `hour12: false` is allowed to answer `24` on some builds, which is a timestamp no log search
     // will ever match. The formatter asks for `h23` for this reason.
-    expect(formatJakartaOffset(OVER_MIDNIGHT).slice(11, 13)).toBe('00')
+    expect(formatJakarta(OVER_MIDNIGHT).slice(11, 13)).toBe('00')
   })
 
   it('hands back an unparseable value rather than throwing', () => {
     // Reachable: the card parser's fallback for a missing string field is the empty string, and
     // `Intl` answers a RangeError for an invalid Date. A blank iframe is never the better outcome.
-    expect(formatJakartaOffset('')).toBe('')
-    expect(formatJakartaOffset('whenever')).toBe('whenever')
+    expect(formatJakarta('')).toBe('')
+    expect(formatJakarta('whenever')).toBe('whenever')
   })
 })
 
@@ -116,8 +116,8 @@ describe('formatDuration', () => {
 
   it('has no answer when the end precedes the start', () => {
     // A host clock that stepped backwards mid-run did not take a negative amount of time, and
-    // clamping to zero would print a measurement nobody made. Both absolute stamps are printed
-    // beside this, so staying quiet loses nothing.
+    // clamping to zero would print a measurement nobody made. The elapsed time is then on no
+    // surface at all — the copied block prints the finish alone — and that is the cheaper loss.
     expect(formatDuration('2026-09-09T06:48:03Z', '2026-09-09T06:48:01Z')).toBeNull()
   })
 

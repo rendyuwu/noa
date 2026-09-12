@@ -1,15 +1,23 @@
 /**
- * The block an operator pastes into a ticket.
+ * The block an operator pastes into a ticket, as a record: its headline, its sentence, its stamps
+ * and the identifier it is answered from.
  *
- * The first case asserts the **whole** text output, line for line. Everything after it asserts
- * whole lines rather than substrings, because the distinctions this builder exists to preserve are
- * distinctions between two sentences sharing most of their words: "none, the runner compared" and
- * "not measured" both contain the word a substring match would find.
+ * What the block says about the **measurement** — the field diffs, the list, the per-backend
+ * accounting, the sources that went quiet — is `summary-measurements.test.ts` beside this file.
+ * Two files because one ran past this package's 300-line ceiling for a `.ts`, and the seam is the
+ * one the builder already has: this file asserts the shape a reader meets, that one asserts what a
+ * runner measured.
  *
- * Timestamps are compared as rendered strings, offset included — safe, because the instants are
- * fixtures and this file reads the wall clock nowhere. The process zone is moved off Jakarta for
- * the reason `lib/format/jakarta-time.test.ts` moves it: a stamp matching on a machine already in
- * the zone proves nothing about a fixed one.
+ * The first case asserts the **whole** text output, line for line, column padding included — so the
+ * alignment is measured once, here, and every case after it may ignore it. Everything after asserts
+ * whole lines rather than substrings, because the distinctions this builder draws are distinctions
+ * between sentences sharing most of their words.
+ *
+ * Timestamps are compared as rendered strings — safe, because the instants are fixtures and this
+ * file reads the wall clock nowhere. The process zone is moved off Jakarta for the reason
+ * `lib/format/jakarta-time.test.ts` moves it: a stamp matching on a machine already in the zone
+ * proves nothing about a fixed one. The stamps carry no offset, so the zone is named by the heading
+ * above them, and a case below asserts that it is named exactly once.
  */
 
 process.env.TZ = 'America/New_York'
@@ -23,10 +31,11 @@ import { buildSummary } from './summary'
 
 const REQUEST_ID = '9f1c2b7e-0000-4000-8000-000000000000'
 const RUN_ID = '7c2f0a11-0000-4000-8000-000000000001'
+const LIBRECHAT_USER_ID = '65f1a0c3d9e4b2a7f0c1d2e3'
+const CONVERSATION_REF = 'conv-2f8a41'
 const CREATED = '2026-09-09T06:48:01Z'
 const EXPIRES = '2026-09-09T07:03:01Z'
 const DECIDED = '2026-09-09T06:52:10Z'
-const RUN_STARTED = '2026-09-09T06:52:11Z'
 const RUN_DONE = '2026-09-09T06:52:13.400Z'
 
 function card(overrides: Partial<ApprovalCard> = {}): ApprovalCard {
@@ -34,8 +43,8 @@ function card(overrides: Partial<ApprovalCard> = {}): ApprovalCard {
     actionRequestId: REQUEST_ID,
     toolName: 'whm_suspend_account',
     status: 'APPROVED',
-    conversationRef: 'conv-2f8a41',
-    requester: { email: 'ops@example.com', librechatUserId: '65f1a0c3d9e4b2a7f0c1d2e3' },
+    conversationRef: CONVERSATION_REF,
+    requester: { email: 'ops@example.com', librechatUserId: LIBRECHAT_USER_ID },
     arguments: { server: 'whm-lab-1', username: 'alice' },
     evidence: {},
     createdAt: CREATED,
@@ -45,17 +54,13 @@ function card(overrides: Partial<ApprovalCard> = {}): ApprovalCard {
       toolRunId: RUN_ID,
       status: 'COMPLETED',
       resultSummary: '{"ok": true}',
-      createdAt: RUN_STARTED,
+      createdAt: '2026-09-09T06:52:11Z',
       completedAt: RUN_DONE,
     },
     receipt: null,
     csrf: null,
     ...overrides,
   }
-}
-
-function receipt(delta: ChangeDelta | null, over: Partial<ApprovalReceipt> = {}): ApprovalReceipt {
-  return { ok: true, before: {}, after: {}, errorCode: null, delta, ...over }
 }
 
 function delta(overrides: Partial<ChangeDelta> = {}): ChangeDelta {
@@ -74,225 +79,187 @@ function delta(overrides: Partial<ChangeDelta> = {}): ChangeDelta {
   }
 }
 
+/** One card carrying a receipt, which is the ordinary case every assertion here reads. */
+function recorded(after: Record<string, unknown> = {}, over: Partial<ApprovalReceipt> = {}) {
+  const receipt = { ok: true, before: {}, after, errorCode: null, delta: delta(), ...over }
+  return buildSummary(card({ receipt })).text
+}
+
 /** Whole-line membership. A substring match cannot separate the sentences this builder draws. */
 function expectLine(text: string, line: string): void {
   expect(text.split('\n')).toContain(`  ${line}`)
 }
 
-it('renders an approved account change exactly, whole output', () => {
-  expect(buildSummary(card({ receipt: receipt(delta()) })).text).toBe(
+/** The same, with the column padding collapsed: alignment is asserted once, by the first case. */
+function expectRow(text: string, row: string): void {
+  expect(text.split('\n').map((line) => line.replace(/\s+/g, ' ').trim())).toContain(row)
+}
+
+/** A heading sits at the left margin. Membership here is also the claim that it is one. */
+function expectHeading(text: string, heading: string): void {
+  expect(text.split('\n')).toContain(heading)
+}
+
+it('renders a completed account change exactly, whole output', () => {
+  expect(recorded({ message: '`alice` is now suspended.' })).toBe(
     [
       'NOA approval record',
       '',
-      'Change',
-      '  Tool: whm_suspend_account',
-      '  Status: Approved',
-      '  Target: server=whm-lab-1, username=alice',
+      'Suspend Account — Approved, Completed',
+      '  `alice` is now suspended.',
       '',
-      'What moved',
-      '  Verification: verified',
-      '  suspended: false → true',
-      '',
-      'Result',
-      '  The change completed.',
+      'What changed',
+      '  server=whm-lab-1, username=alice',
+      '  suspended: no → yes',
+      '  Confirmed: NOA looked afterwards and the change is there.',
       '  Unanswered sources: not measured.',
       '',
-      'Timing',
-      '  Requested: 2026-09-09 13:48:01 +07:00',
-      '  Approval window ends: 2026-09-09 14:03:01 +07:00',
-      '  Decided: 2026-09-09 13:52:10 +07:00',
-      '  Run status: COMPLETED',
-      '  Run started: 2026-09-09 13:52:11 +07:00',
-      '  Run completed: 2026-09-09 13:52:13 +07:00 (2.4s)',
+      'When — all times Jakarta (WIB)',
+      '  Requested: 2026-09-09 13:48:01',
+      '  Decided:   2026-09-09 13:52:10',
+      '  Finished:  2026-09-09 13:52:13',
       '',
-      'Reference',
-      '  Request id: 9f1c2b7e-0000-4000-8000-000000000000',
-      '  Run id: 7c2f0a11-0000-4000-8000-000000000001',
-      '  LibreChat account: ops@example.com (user 65f1a0c3d9e4b2a7f0c1d2e3)',
-      '  Conversation: conv-2f8a41',
+      'For support',
+      '  Requested by: ops@example.com',
+      '  Run id:       7c2f0a11-0000-4000-8000-000000000001',
+      '  Tool:         whm_suspend_account',
     ].join('\n'),
   )
 })
 
-describe('buildSummary, a firewall change driven through several backends', () => {
-  const summary = buildSummary(
-    card({
-      toolName: 'whm_firewall_release_and_allow',
-      arguments: { server: 'whm-lab-1', target: '203.0.113.44' },
-      receipt: receipt(
-        delta({
-          identity: { server: 'whm-lab-1', target: '203.0.113.44' },
-          verification: 'unavailable',
-          verificationCause: 'postflight_partial',
-          changedFields: null,
-          backends: [
-            { name: 'csf', driven: true, answered: true, verdict: 'allowed', errorCode: null },
-            {
-              name: 'firewalld',
-              driven: true,
-              answered: false,
-              verdict: null,
-              errorCode: 'ssh_sudo_required',
-            },
-          ],
-          unanswered: ['firewalld'],
-          newValues: { expires_at: '2026-09-09T08:03:01Z' },
-          bound: { total: 20, truncated: true },
-        }),
-        { ok: false, errorCode: 'postflight_partial' },
-      ),
-    }),
-  )
+describe('buildSummary, the headline', () => {
+  it('never states the decision without what the change then did', () => {
+    // A receipt NOA could not verify, pasted as "Approved", folds the non-answer into the benign
+    // value — and the headline is the line a ticket is skimmed for.
+    const unverified = recorded({}, { ok: false, delta: delta({ verification: 'unavailable' }) })
 
-  it('states each backend on its own line', () => {
-    expectLine(summary.text, 'Backend csf: driven, answered, verdict allowed')
-    expectLine(summary.text, 'Backend firewalld: driven, no answer, error ssh_sudo_required')
+    expectHeading(recorded(), 'Suspend Account — Approved, Completed')
+    expectHeading(unverified, 'Suspend Account — Approved, Outcome unknown')
   })
 
-  it('names the source that did not answer, never counts it', () => {
-    expectLine(summary.text, 'Unanswered sources: firewalld')
-    expect(summary.text).not.toContain('1 source')
+  it('says nothing was recorded when an approved request has no receipt at all', () => {
+    // The executor died, or the reaper has not written one yet. "Approved" over an empty result
+    // reads as a change that happened.
+    const summary = buildSummary(card({ receipt: null })).text
+
+    expectHeading(summary, 'Suspend Account — Approved')
+    expectLine(summary, 'Nothing has recorded what this change did.')
+    expect(summary).not.toContain('Completed')
   })
 
-  it('carries the bound the claim rests on, and says it was cut', () => {
-    expectLine(
-      summary.text,
-      'Evidence bound: 20 entries, truncated — the claim above rests on a capped reading, ' +
-        'not on the whole list.',
-    )
-  })
+  it('separates a receipt carrying no delta from no receipt at all', () => {
+    const summary = recorded({}, { delta: null, errorCode: 'timeout' })
 
-  it('does not report a failed change as completed', () => {
-    expectLine(summary.text, 'The change did not complete.')
-    expectLine(summary.text, 'Error code: postflight_partial')
-    expectLine(summary.text, 'Verification: unavailable (postflight_partial)')
-  })
-
-  it('states the resolved values that have no before twin', () => {
-    expectLine(summary.text, 'New values: expires_at=2026-09-09T08:03:01Z')
+    expectLine(summary, 'Not measured. No runner published a delta for this request.')
+    expectLine(summary, 'Error code: timeout')
+    expect(summary).not.toContain('Nothing has recorded')
   })
 })
 
-describe('buildSummary, a mail gateway list change', () => {
-  const summary = buildSummary(
-    card({
-      toolName: 'pmg_whitelist',
-      receipt: receipt(
-        delta({
-          identity: {
-            server: 'pmg-lab-1',
-            action: 'add',
-            target: '203.0.113.0/24',
-            normalized_target: '203.0.113.0/24',
-          },
-          changedFields: [],
-          listDelta: { added: ['203.0.113.0/24'], removed: [], totalEntries: 47 },
-        }),
-      ),
-    }),
-  )
+describe('buildSummary, the sentence under the headline', () => {
+  it('prints the runner’s own message verbatim, never a phrasing of its own', () => {
+    const message = 'Account `alice` on `whm-lab-1` is suspended. 3 sessions were closed.'
 
-  it('prints the identity in the order the runner wrote it, machine first', () => {
-    expectLine(
-      summary.text,
-      'Target: server=pmg-lab-1, action=add, target=203.0.113.0/24, ' +
-        'normalized_target=203.0.113.0/24',
-    )
+    expectLine(recorded({ message, exit_code: 0 }), message)
   })
 
-  it('states what entered and what left, and the size it was measured against', () => {
-    expectLine(summary.text, 'List entries added: 203.0.113.0/24')
-    expectLine(summary.text, 'List entries removed: none')
-    expectLine(summary.text, 'List size: 47 entries')
+  it('has no line at all when the payload carried no message, or carried no sentence', () => {
+    // `after` is a `Record<string, unknown>`, so a number, a `null` or blank space under that key
+    // is representable and none of them is a sentence. The headline is unaffected either way — the
+    // verdict is measured rather than written.
+    for (const after of [{}, { message: 42 }, { message: null }, { message: '  ' }]) {
+      const lines = recorded(after).split('\n')
+
+      expect(lines[2]).toBe('Suspend Account — Approved, Completed')
+      expect(lines[3]).toBe('')
+    }
   })
 })
 
-describe('buildSummary, the two ways a measurement can be empty', () => {
-  const compared = buildSummary(card({ receipt: receipt(delta({ changedFields: [] })) }))
-  const unmeasured = buildSummary(card({ receipt: receipt(delta({ changedFields: null })) }))
+describe('buildSummary, the three stamps and the one zone', () => {
+  it('names the zone exactly once, in a heading, and leaves every stamp bare', () => {
+    const zoned = recorded()
+      .split('\n')
+      .filter((line) => /Jakarta|WIB|\+07/.test(line))
 
-  it('says nothing moved only when the runner has grounds for saying so', () => {
-    expectLine(compared.text, 'Field changes: none. The runner compared, and nothing moved.')
-    expectLine(unmeasured.text, 'Field changes: not measured. Nothing here says that nothing moved.')
+    expect(zoned).toEqual(['When — all times Jakarta (WIB)'])
   })
 
-  it('renders the two as different text', () => {
-    // The separating case. Without it, both lines above pass against a builder that folds the
-    // non-answer into the benign one.
-    expect(compared.text).not.toBe(unmeasured.text)
+  it('carries three stamps and nothing derived from them', () => {
+    const summary = recorded()
+    const stamps = summary.split('\n').filter((line) => /\d{4}-\d\d-\d\d \d\d:\d\d:\d\d/.test(line))
+
+    expect(stamps).toHaveLength(3)
+    expect(summary).not.toContain('Run status')
+    expect(summary).not.toContain('Run started')
+    // The elapsed time was a second victim of two hosts' clocks disagreeing, and it is stated on
+    // neither flavour now.
+    expect(summary).not.toContain('2.4s')
   })
 
-  it('separates a list that did not move from a list nobody sized', () => {
-    const summary = buildSummary(
-      card({
-        receipt: receipt(
-          delta({ listDelta: { added: [], removed: [], totalEntries: null }, unanswered: [] }),
-        ),
-      }),
-    )
+  it('states the approval window while the request is pending', () => {
+    const pending = buildSummary(
+      card({ status: 'PENDING', decidedAt: null, run: null, csrf: 'token' }),
+    ).text
 
-    expectLine(summary.text, 'List entries added: none')
-    expectLine(
-      summary.text,
-      'List size: not measured. The runner read only the lines matching its target.',
-    )
-    expectLine(summary.text, 'Unanswered sources: none. Every source answered.')
+    expect(pending).toContain('Approval window ends: 2026-09-09 14:03:01')
+    expectRow(pending, 'Decided: no decision recorded')
+    expectRow(pending, 'Finished: nothing ran')
+  })
+
+  it('drops the window from an expired request, which carries a decision stamp of its own', () => {
+    // The gate is the status, never a missing `decidedAt`: the expiry sweep writes one when it
+    // flips a row, so that condition would drop the line from the one state it exists for.
+    const expired = buildSummary(card({ status: 'EXPIRED', run: null })).text
+
+    expect(expired).not.toContain('Approval window ends')
+    expectRow(expired, 'Decided: 2026-09-09 13:52:10')
   })
 })
 
-it('records a delivered credential and leaves its one-open link out of the paste', () => {
-  const url = 'https://yopass.example.com/#/s/8f2a-one-open'
-  const summary = buildSummary(
-    card({
-      toolName: 'proxmox_reset_vm_password',
-      receipt: receipt(delta({ changedFields: null, deliveredCredential: url })),
-    }),
-  )
+it('carries the identifier an operator quotes, and leaves the three an admin looks up', () => {
+  // The audit list is keyed on the run id, so it is the one string that gets an answer out of
+  // somebody who can open the admin panel. The request id, the conversation reference and the
+  // LibreChat account all render in that panel's drawer and are not what a ticket needs.
+  const summary = recorded()
 
-  // The link opens once. In a ticket it is spent by whoever reads the ticket first, and the
-  // operator who needs it finds a dead URL.
-  expect(summary.text).toContain('A credential was delivered by one-open link')
-  expect(summary.text).not.toContain(url)
-  expect(summary.html).not.toContain('yopass')
-})
-
-describe('buildSummary, a request nothing ran', () => {
-  const summary = buildSummary(card({ status: 'DENIED', receipt: null, run: null }))
-
-  // A denied request never ran, and nothing here may read as a machine that was reached.
-  it('names the target as requested, and every absence as an absence', () => {
-    expectLine(summary.text, 'Target, as requested: server=whm-lab-1, username=alice')
-    expectLine(summary.text, 'Status: Denied')
-    expectLine(summary.text, 'Nothing has recorded what this change did.')
-    expectLine(summary.text, 'Not measured. No runner published a delta for this request.')
-    expectLine(summary.text, 'Run: none started')
-    expectLine(summary.text, 'Run id: none')
-  })
-
-  it('still carries the timestamps and the request id a ticket is searched by', () => {
-    expectLine(summary.text, 'Requested: 2026-09-09 13:48:01 +07:00')
-    expectLine(summary.text, `Request id: ${REQUEST_ID}`)
-  })
+  expectRow(summary, 'Run id: 7c2f0a11-0000-4000-8000-000000000001')
+  expectRow(summary, 'Requested by: ops@example.com')
+  expectRow(summary, 'Tool: whm_suspend_account')
+  for (const value of [REQUEST_ID, CONVERSATION_REF, LIBRECHAT_USER_ID]) {
+    expect(summary).not.toContain(value)
+    expect(buildSummary(card({ receipt: null })).html).not.toContain(value)
+  }
 })
 
 describe('buildSummary, the html flavour', () => {
   it('says the same things as the text flavour', () => {
-    const summary = buildSummary(card({ receipt: receipt(delta()) }))
+    const summary = buildSummary(
+      card({ receipt: { ok: true, before: {}, after: {}, errorCode: null, delta: delta() } }),
+    ).html
 
-    const headings = ['Change', 'What moved', 'Result', 'Timing', 'Reference']
-    for (const head of headings) expect(summary.html).toContain(`<strong>${head}</strong>`)
-    expect(summary.html).toContain('<li>suspended: false → true</li>')
-    expect(summary.html).toContain('<li>Requested: 2026-09-09 13:48:01 +07:00</li>')
+    const headings = [
+      'Suspend Account — Approved, Completed',
+      'What changed',
+      'When — all times Jakarta (WIB)',
+      'For support',
+    ]
+    for (const head of headings) expect(summary).toContain(`<strong>${head}</strong>`)
+    expect(summary).toContain('<li>suspended: no → yes</li>')
+    expect(summary).toContain('<li>Requested: 2026-09-09 13:48:01</li>')
   })
 
   it('escapes API-supplied values, which the copy component injects as markup', () => {
+    const message = '<img src=x onerror="alert(1)">&'
     const summary = buildSummary(
-      card({ conversationRef: '<img src=x onerror="alert(1)">&', receipt: receipt(delta()) }),
+      card({
+        receipt: { ok: true, before: {}, after: { message }, errorCode: null, delta: delta() },
+      }),
     )
 
     expect(summary.html).toContain('&lt;img src=x onerror="alert(1)"&gt;&amp;')
     expect(summary.html).not.toContain('<img')
     // The text flavour is never markup, so it carries the value as typed.
-    expectLine(summary.text, 'Conversation: <img src=x onerror="alert(1)">&')
+    expectLine(summary.text, message)
   })
 })
