@@ -5,7 +5,12 @@ import type { ChangeDelta } from '@/lib/approvals/delta'
 // The headline and the verification sentence live in `lib/` rather than here because the copied
 // summary block prints the same two, and a second copy of a sentence about a measurement is a
 // second answer to "did this work".
-import { outcomeText, verificationText } from '@/lib/approvals/verdict'
+import {
+  RUNNER_MESSAGE_KEY,
+  outcomeText,
+  runnerSentence,
+  verificationText,
+} from '@/lib/approvals/verdict'
 
 import styles from './card.module.css'
 
@@ -304,16 +309,6 @@ function Delta({ delta }: { delta: ChangeDelta }): JSX.Element {
 }
 
 /**
- * The key every CHANGE runner composes its own sentence under.
- *
- * A runner answers `{"ok": ..., "message": ...}` and a failure carries one too, and the receipt's
- * `after` half is that payload byte for byte (`core/approvals/execution.py`). So the sentence below
- * is the runner's own, promoted out of the key list rather than re-derived from it here — the two
- * readers of this key share the constant so they cannot drift onto different spellings of it.
- */
-const RUNNER_MESSAGE_KEY = 'message'
-
-/**
  * The `after` keys the blocks above already stated, computed off the delta being rendered.
  *
  * **Never a hand-kept list.** These key names come out of whichever of the runners answered, so a
@@ -349,10 +344,12 @@ function reported(receipt: ApprovalReceipt, sentenceShown: boolean): Record<stri
 
 export function Outcome({ receipt }: { receipt: ApprovalReceipt }): JSX.Element {
   // One variable, read by the paragraph and by the key list under it: whatever the sentence did
-  // with `message` is exactly what the list must do with it. An empty string is not a sentence —
-  // an empty paragraph is invisible, and the value would then be on neither surface.
-  const message = receipt.after[RUNNER_MESSAGE_KEY]
-  const sentence = typeof message === 'string' && message !== '' ? message : null
+  // with `message` is exactly what the list must do with it. The rule for what counts as a
+  // sentence lives in `lib/approvals/verdict.ts` because the copied summary block asks the same
+  // question, and when the two spelled it out separately they disagreed on whitespace — a blank
+  // paragraph is invisible, and the key list then dropped the row because the paragraph had
+  // rendered, so the value was on neither surface.
+  const sentence = runnerSentence(receipt.after)
 
   return (
     <section className={styles.section}>

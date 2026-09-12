@@ -117,6 +117,22 @@ describe('Outcome, what the runner reported', () => {
     expect(paragraph(container, '42')).toBeUndefined()
     unmount()
 
+    // Whitespace-only is the fourth of those, and it is the one that used to fall between the two
+    // surfaces: the paragraph rendered and was invisible, and the key list dropped the row because
+    // the paragraph had rendered. The value was then on no surface at all. Both halves are asserted
+    // here — no paragraph, and the row survives — because either alone passes against the bug.
+    const blank = renderOutcome({ after: { ok: false, message: '  ' } })
+    // By count first, then by text. A paragraph holding only spaces prints as empty in a DOM dump,
+    // so the text assertion alone reads as the weaker of the two even though both catch this. The
+    // verification sentence is the one paragraph this section always has, and it is identified by
+    // its marker rather than by its words so the count stays exact if that wording changes.
+    const paragraphs = Array.from(blank.container.querySelectorAll('p'))
+    expect(paragraphs).toHaveLength(1)
+    expect(paragraphs[0]?.hasAttribute('data-noa-verification')).toBe(true)
+    expect(paragraph(blank.container, '  ')).toBeUndefined()
+    expect(Object.keys(reportedRows(blank.container))).toContain('message')
+    blank.unmount()
+
     // The collision the condition has to survive, and the reason "the sentence rendered" is one
     // variable read by both: `message` is a name a delta may itself carry, and filtering by the
     // delta's key names alone would take this row off the card by the other arm of the condition

@@ -58,7 +58,7 @@ import type { ApprovalCard, ApprovalReceipt } from '@/lib/approvals/card'
 import { statusLabel } from '@/lib/approvals/card'
 import type { ChangeDelta } from '@/lib/approvals/delta'
 import { humanizeToolName } from '@/lib/approvals/tool-name'
-import { outcomeText, verificationText } from '@/lib/approvals/verdict'
+import { outcomeText, runnerSentence, verificationText } from '@/lib/approvals/verdict'
 import { formatJakarta } from '@/lib/format/jakarta-time'
 
 /** The one copy, in both flavours the clipboard carries. */
@@ -109,16 +109,16 @@ function renderRows(rows: readonly (readonly [string, string])[]): string[] {
 }
 
 /**
- * The two facts, and the runner's own sentence under them. The sentence is taken only when it is a
- * non-empty string: `after` is a `Record<string, unknown>`, so a `null` or a number under that key
- * is representable, and a value that is not a sentence gets no line rather than an invented one.
+ * The two facts, and the runner's own sentence under them. What counts as a sentence is decided in
+ * `lib/approvals/verdict.ts` and not here, because the card asks the same question of the same key
+ * and the two must not answer it differently — see that file for what a blank one costs.
  */
 function headlineSection(card: ApprovalCard, receipt: ApprovalReceipt | null): Section {
   const verdict = receipt === null ? '' : `, ${outcomeText(receipt.delta, receipt.ok)}`
-  const message = receipt === null ? undefined : receipt.after['message']
+  const sentence = receipt === null ? null : runnerSentence(receipt.after)
   return {
     heading: `${humanizeToolName(card.toolName)} — ${statusLabel(card.status)}${verdict}`,
-    lines: typeof message === 'string' && message.trim() !== '' ? [message] : [],
+    lines: sentence === null ? [] : [sentence],
   }
 }
 

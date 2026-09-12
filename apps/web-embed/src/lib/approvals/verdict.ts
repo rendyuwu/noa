@@ -110,3 +110,45 @@ export function outcomeText(delta: ChangeDelta | null, ok: boolean): string {
       return ok ? 'Completed' : 'Did not complete'
   }
 }
+
+/**
+ * The key every CHANGE runner composes its own sentence under.
+ *
+ * A runner answers `{"ok": ..., "message": ...}` and a failure carries one too, and the receipt's
+ * `after` half is that payload byte for byte (`core/approvals/execution.py`). So the sentence is
+ * the runner's own, promoted out of the key list rather than re-derived — and the readers of this
+ * key share the constant so they cannot drift onto different spellings of it.
+ *
+ * `lib/approvals/decide.ts` also reads a `message`, and deliberately not this one: that is the
+ * decision endpoint's error body, a different payload with a different owner.
+ */
+export const RUNNER_MESSAGE_KEY = 'message'
+
+/**
+ * The runner's sentence, or `null` when the runner did not write one.
+ *
+ * **One definition, because two surfaces ask the question and they must not answer differently.**
+ * The card renders this as a paragraph (`app/approvals/[id]/outcome-view.tsx`) and then filters
+ * the key out of the raw-key list underneath on the strength of having rendered it; the copied
+ * summary block (`lib/approvals/summary.ts`) prints it under the headline. When the two disagreed,
+ * a whitespace-only `message` rendered an invisible paragraph on the card AND was dropped from the
+ * key list under it — the byte reached no surface at all, while the summary got it right.
+ *
+ * **Whitespace-only is not a sentence.** `after` is a `Record<string, unknown>`, so `null`, a
+ * number and `'  '` are all representable, and none of them is something to print at an operator
+ * as the runner's own words.
+ *
+ * **It answers `message`, never `message.trim()`.** The runner's own leading and trailing spaces
+ * are the runner's wording, and rewriting them would change what both surfaces show on every input
+ * that has any — which is a different change from this one.
+ *
+ * **Known ceiling**: a whitespace-only `message` now survives into the raw-key rows on both
+ * surfaces, where it renders as a legible key with a blank-looking value — `factText` on the card
+ * and `renderValue` in the summary both pass a whitespace string through as itself. The byte
+ * reaches a surface and its key is findable, which is the part that was broken; making the value
+ * itself legible is a second change to what an operator sees and is not made here.
+ */
+export function runnerSentence(after: Record<string, unknown>): string | null {
+  const message = after[RUNNER_MESSAGE_KEY]
+  return typeof message === 'string' && message.trim() !== '' ? message : null
+}
