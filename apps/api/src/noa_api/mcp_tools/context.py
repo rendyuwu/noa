@@ -116,6 +116,18 @@ class McpToolContext:
     # Required for `pending_ttl_seconds`' reason: a default here would be a second answer to a
     # question settings already answer, and the copy that drifts is the one nobody edits.
     secret_password_length: int
+    # `YOPASS_ONE_TIME` and `YOPASS_SECRET_EXPIRATION_SECONDS`, resolved here for the reason the
+    # scalars above are: there is no settings singleton to reach for. `secret_delivery` binds the
+    # same two values into the delivery hop, and these are the same two facts said to the operator
+    # rather than to the service — how long the link a runner hands over keeps working, and whether
+    # opening it spends it. Named after the seam rather than after yopass, because the tool context
+    # does not know which service delivers (`core.secrets.delivery`).
+    #
+    # Held rather than written into a sentence: a runner that spelled the duration out would be
+    # true for one deployment and silently false the day either variable is changed, which is
+    # exactly the correction that put them here.
+    secret_delivery_one_time: bool
+    secret_delivery_expiration_seconds: int
     authorization_repository_factory: Callable[[AsyncSession], AuthorizationRepository] = (
         SQLAuthorizationRepository
     )
@@ -192,6 +204,8 @@ def build_mcp_tool_context(
     result_table_max_rows: int,
     secret_delivery: SecretDelivery,
     secret_password_length: int,
+    secret_delivery_one_time: bool,
+    secret_delivery_expiration_seconds: int,
     whm_read_timeout_seconds: float,
 ) -> McpToolContext:
     """Production wiring (`create_app`, beside `build_mcp_auth_context`, at the FastMCP mount)."""
@@ -204,6 +218,8 @@ def build_mcp_tool_context(
         result_table_max_rows=result_table_max_rows,
         secret_delivery=secret_delivery,
         secret_password_length=secret_password_length,
+        secret_delivery_one_time=secret_delivery_one_time,
+        secret_delivery_expiration_seconds=secret_delivery_expiration_seconds,
         # The configured WHM read deadline, bound onto the factory once here rather than passed
         # at each tool's call site: every tool asks for a client the same way, so binding it at
         # the seam is what keeps one deployment from waiting two different lengths. The default

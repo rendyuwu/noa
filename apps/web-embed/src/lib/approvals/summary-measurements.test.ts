@@ -242,17 +242,20 @@ describe('one renderer for every family of value', () => {
   })
 })
 
-it('records a delivered credential and leaves its one-open link out of the paste', () => {
-  const url = 'https://yopass.example.com/#/s/8f2a-one-open'
+it('records a delivered credential and leaves its link out of the paste', () => {
+  const url = 'https://yopass.example.com/#/s/8f2a-fetchable'
   const summary = measured(
     { changedFields: null, deliveredCredential: url },
     {},
     { toolName: 'proxmox_reset_vm_password' },
   )
 
-  // The link opens once. In a ticket it is spent by whoever reads the ticket first, and the
-  // operator who needs it finds a dead URL.
-  expect(summary.text).toContain('A credential was delivered by one-open link')
+  // Whoever reads the ticket first can use the link: on a one-time deployment they spend it and
+  // the operator who needs it finds a dead URL, and on this one — `YOPASS_ONE_TIME` is off — they
+  // and everyone after them can read the password out of it until it expires. The line says the
+  // half that is true under both, because nothing on this side can read which one it is.
+  expect(summary.text).toContain('A credential was delivered by link')
+  expect(summary.text).not.toContain('one-open')
   expect(summary.text).not.toContain(url)
   expect(summary.html).not.toContain('yopass')
 })

@@ -114,20 +114,36 @@ MESSAGE_EVIDENCE_UNUSABLE: Final = (
 
 # The write was accepted and the confirming read says the password on the VM is a different one.
 ERROR_POSTFLIGHT_FAILED: Final = "postflight_failed"
-MESSAGE_POSTFLIGHT_FAILED: Final = (
-    "Proxmox accepted the password change, but the VM's cloud-init data still shows a different "
-    "password. The link below holds the password NOA generated; check the VM before using it."
-)
 
 # The config write's own task did not reach a terminal state in time.
 ERROR_TASK_TIMEOUT: Final = "task_timeout"
-MESSAGE_TASK_TIMEOUT: Final = (
-    "Proxmox accepted the password change but its task had not finished when NOA stopped "
-    "waiting. The link below holds the password NOA generated; check the VM before using it."
-)
 
 # The task reached a terminal state and it was a failure.
 ERROR_TASK_FAILED: Final = "task_failed"
+
+# The one "do this next" sentence that survives on an operator's card, and it survives because it
+# states NOA's own permission boundary rather than giving advice: no tool here starts, stops or
+# reboots a VM, so a restart is something the operator has to go and do elsewhere. The owner
+# supplied both halves; `docs/integrations/proxmox.md` records the fact under the caveats for the
+# tools that use Proxmox, which is what keeps this sentence citable.
+#
+# It rides only where the VM may carry the new password. On a measured mismatch a restart would
+# change nothing, so telling an operator to perform one would be advice NOA has already disproved.
+MESSAGE_RESTART_REQUIRED: Final = (
+    "The old password keeps working until the VM is restarted. NOA cannot restart a VM — restart "
+    "it from the customer portal or from Proxmox."
+)
+
+# How long the delivered link keeps working, largest unit first. The duration is stated in the
+# largest unit that divides the configured expiry **exactly**, so it is never rounded: a rounded
+# figure would be a second false clause of the kind this sentence was corrected for, and every
+# value divides whole by one second.
+_LINK_LIFETIME_UNITS: Final[tuple[tuple[int, str], ...]] = (
+    (86400, "day"),
+    (3600, "hour"),
+    (60, "minute"),
+    (1, "second"),
+)
 
 # One structured event per outcome an operator may have to act on. Identifiers and codes only,
 # never the password and never the yopass URL — a URL in a log is a credential in a
@@ -160,6 +176,47 @@ class ProxmoxChangeTarget:
     vmid: int
     username: str
 
+    @property
+    def subject(self) -> str:
+        """`ubuntu on VM 110` — the account and VM every heading and every sentence names."""
+        return f"{self.username} on VM {self.vmid}"
+
+    @property
+    def where(self) -> str:
+        """`ubuntu on VM 110 (pve-cluster)` — the subject with the endpoint it sits on."""
+        return f"{self.subject} ({self.server_name})"
+
+    @property
+    def applied_headline(self) -> str:
+        """The card's heading for a change Proxmox took, whether or not NOA confirmed it.
+
+        Written here rather than derived from the tool name, which yields
+        `Proxmox Reset Vm Password` — the machinery, not what happened to the VM. Three branches
+        share it: the confirmed reset, the reset NOA could not compare against, and the reset
+        whose later step Proxmox never finished. What is unconfirmed on the last two is stated in
+        their sentences and again by the status corner beside the heading, so no verdict word
+        belongs in the heading itself.
+        """
+        return f"Password reset — {self.subject}"
+
+    @property
+    def unchanged_headline(self) -> str:
+        """The heading for a reset NOA **measured** did not take, or never started.
+
+        Separate from `failed_headline` below: this one claims the VM still has the password it
+        had, which is a reading, and only a branch holding one may say it.
+        """
+        return f"Password not changed — {self.subject}"
+
+    @property
+    def failed_headline(self) -> str:
+        """The heading where the change failed and NOA cannot say what the VM carries.
+
+        A step Proxmox accepted and then did not finish leaves the generated password possibly
+        live, so `Password not changed` would be a claim nobody measured.
+        """
+        return f"Password change failed — {self.subject}"
+
 
 @dataclass(frozen=True)
 class StepFailure:
@@ -168,11 +225,25 @@ class StepFailure:
     `password_may_be_live` is the field that decides whether the yopass URL ships (see the module
     docstring). It is carried on the failure rather than worked out by the caller, because the
     step that failed is the only thing that knows whether Proxmox had already accepted the write.
+
+    `message` is the remote's own words where Proxmox gave any and `None` where it did not, which
+    is `WriteFailure`'s meaning for the same field rather than a second one — the sentence an
+    operator reads is composed at the branch that reports it, never here.
     """
 
     error_code: str
-    message: str
+    message: str | None
     password_may_be_live: bool
+
+    @property
+    def write(self) -> WriteFailure:
+        """This step in the vocabulary every CHANGE runner shares.
+
+        `refused` against `did not answer` is one distinction spelled one way across six runners,
+        and it is the distinction this tool's sentences turn on — so it is read off the shared
+        type rather than re-derived from the code here.
+        """
+        return WriteFailure(code=self.error_code, message=self.message)
 
 
 def build_proxmox_reset_vm_password_runner(
@@ -195,6 +266,10 @@ def build_proxmox_reset_vm_password_runner(
     — and this runner never touches it. Cloud-init has no note field, so nothing the reason rule
     keeps from the LLM leaves NOA here; no path back to a model has an instance on this tool.
     """
+    # Resolved once, here, for the reason the tool context holds the two settings at all: the
+    # sentence states how long the operator's link keeps working, and both halves of that are
+    # configuration rather than facts about this change.
+    link_note = _link_note(context)
 
     async def run(request: ChangeExecutionRequest) -> ChangeOutcome:
         """Reset this approved request's VM password, and say what happened.
@@ -230,7 +305,19 @@ def build_proxmox_reset_vm_password_runner(
                 error_code=exc.error_code,
             )
             return ChangeOutcome(
-                payload={**tool_failure(exc.error_code, exc.message), **_common(target)},
+                payload={
+                    # The delivery hop's own words stay on the envelope's `error_code`, where an
+                    # administrator looks: `yopass_not_configured` names a deployment to fix and
+                    # names nothing to the operator reading the card, whose one question is
+                    # whether the VM moved.
+                    **tool_failure(
+                        exc.error_code,
+                        f"NOA could not deliver a new password for {target.where}, so nothing was "
+                        "changed on the VM.",
+                    ),
+                    **_common(target),
+                    "headline": target.unchanged_headline,
+                },
                 # No `delivered_credential`, and the absence is the claim: the store came before
                 # any write, so the VM is untouched and there is no copy of the new password to
                 # hand anybody. The URL does not exist to withhold.
@@ -249,7 +336,7 @@ def build_proxmox_reset_vm_password_runner(
                 # password is live nowhere, which is what `password_may_be_live` is saying. A
                 # crypt compare here could only agree, and ten seconds of polling for that
                 # answer is ten seconds an operator waits for one already known.
-                return _failure_payload(target, failure, yopass_url=yopass_url)
+                return _failure_payload(target, failure, yopass_url=yopass_url, link_note=link_note)
 
             # The write *was* accepted — its task never finished, or the drive rewrite failed —
             # so what the VM carries is an open question and the verify below is the only thing
@@ -263,11 +350,8 @@ def build_proxmox_reset_vm_password_runner(
             request=request,
             verification=verification,
             yopass_url=yopass_url,
-            write_failure=(
-                None
-                if failure is None
-                else WriteFailure(code=failure.error_code, message=failure.message)
-            ),
+            link_note=link_note,
+            write_failure=None if failure is None else failure.write,
         )
 
     return run
@@ -281,6 +365,44 @@ def build_proxmox_password_runners(*, context: McpToolContext) -> dict[str, Chan
 
 
 # --- Internals ---
+
+
+def _link_note(context: McpToolContext) -> str:
+    """What the operator is told about the link they are handed, read off configuration.
+
+    **Both facts in this sentence are settings, which is why neither is written into it.** This
+    tool used to ship `it opens once`, and that was false: `YOPASS_ONE_TIME` is off in this
+    deployment, so a delivered link is re-fetchable until it expires. Correcting it to a literal
+    `7 days` would have been the same bug with a new number —
+    `YOPASS_SECRET_EXPIRATION_SECONDS` is overridable too, so a spelled-out duration is true for
+    today's deployment and silently false the day either variable changes. A one-time deployment
+    gets the one-open wording back here, honestly, because the flag says so rather than because a
+    sentence assumed it.
+
+    The duration is the largest unit that divides the configured expiry exactly and is never
+    rounded, so an expiry of an hour reads as an hour rather than as no days at all.
+    """
+    if context.secret_delivery_one_time:
+        return "Give the operator the link; it opens once."
+    seconds = context.secret_delivery_expiration_seconds
+    size, unit = next(pair for pair in _LINK_LIFETIME_UNITS if seconds % pair[0] == 0)
+    count = seconds // size
+    plural = "" if count == 1 else "s"
+    return f"Give the operator the link; it works for {count} {unit}{plural}."
+
+
+def _step_failed_sentence(target: ProxmoxChangeTarget, failure: WriteFailure) -> str:
+    """How a step of this change that did not work is said to an operator.
+
+    `refused` against `did not answer` is the distinction every branch below turns on, and it is
+    the shared type's word rather than this module's. Proxmox's own message rides along where it
+    gave one, because on a refusal it is frequently the only thing naming a remedy; its error
+    code does not, and stays on the envelope where an administrator looks for it.
+    """
+    return (
+        f"Proxmox {failure.verb} a step of the password change for {target.where}. "
+        f"{failure.sentence('Proxmox did not say why.')}"
+    )
 
 
 async def _resolve_change_target(
@@ -357,7 +479,10 @@ async def _apply_password(target: ProxmoxChangeTarget, *, password: str) -> Step
     if set_result.get("ok") is not True:
         return StepFailure(
             error_code=str(set_result.get("error_code") or ERROR_UNKNOWN),
-            message=str(set_result.get("message") or "Proxmox cloud-init password update failed"),
+            # Proxmox's own words, unwrapped: the branch that reports this builds the sentence
+            # around them, and `WriteFailure.sentence` supplies the words for a remote that gave
+            # none — one fallback rather than one per construction site.
+            message=text_or_none(set_result.get("message")),
             password_may_be_live=False,
         )
 
@@ -371,9 +496,7 @@ async def _apply_password(target: ProxmoxChangeTarget, *, password: str) -> Step
     if regenerate_result.get("ok") is not True:
         return StepFailure(
             error_code=str(regenerate_result.get("error_code") or ERROR_UNKNOWN),
-            message=str(
-                regenerate_result.get("message") or "Proxmox cloud-init regeneration failed"
-            ),
+            message=text_or_none(regenerate_result.get("message")),
             # The password write already landed; only the drive rewrite did not.
             password_may_be_live=True,
         )
@@ -406,10 +529,9 @@ async def _wait_for_terminal_task(target: ProxmoxChangeTarget, *, upid: str) -> 
                 return None
             return StepFailure(
                 error_code=ERROR_TASK_FAILED,
-                message=(
-                    f"Proxmox rejected the password change: its task finished with exit status "
-                    f"'{task_exit_status}'."
-                ),
+                # Proxmox's answer rather than NOA's reading of it: the exit status is the whole
+                # of what the task said, and it is what an operator quotes into a ticket.
+                message=f"Its task finished with exit status '{task_exit_status}'.",
                 # A terminal non-OK task is Proxmox saying it did not apply the write.
                 password_may_be_live=False,
             )
@@ -419,7 +541,10 @@ async def _wait_for_terminal_task(target: ProxmoxChangeTarget, *, upid: str) -> 
 
     return StepFailure(
         error_code=ERROR_TASK_TIMEOUT,
-        message=MESSAGE_TASK_TIMEOUT,
+        # No words: Proxmox never answered, and a sentence here would be NOA's account of the
+        # silence rather than the remote's of itself. The branches that report this one compose
+        # from `did not answer`, which is what the silence means.
+        message=None,
         password_may_be_live=True,
     )
 
@@ -504,6 +629,7 @@ def _reset_outcome(
     request: ChangeExecutionRequest,
     verification: CloudInitPasswordVerification,
     yopass_url: str,
+    link_note: str,
     write_failure: WriteFailure | None = None,
 ) -> ChangeOutcome:
     """What the change did, read off the crypt compare.
@@ -540,26 +666,35 @@ def _reset_outcome(
     The `yopass_url` is the only thing here derived from the secret. Nothing read out
     of the cloud-init dump reaches this payload: it becomes `result_summary`, and
     `noa_get_action_result` hands that to a model.
+
+    **No verdict word in any sentence below.** `confirmed` is the status corner's job on the card
+    and `verification` is an engineer's noun; saying either here as well trains a reader to skip
+    both. What each sentence carries instead is the fact NOA holds.
     """
     common = _common(target)
-    where = f"`{target.username}` on VM {target.vmid} ({target.server_name})"
+    where = target.where
     if verification.verdict is CryptVerdict.MATCH:
         return ChangeOutcome(
             payload=tool_ok(
                 **common,
+                headline=target.applied_headline,
                 status=STATUS_CHANGED,
                 verified=True,
                 yopass_url=yopass_url,
                 message=(
                     (
-                        f"The cloud-init password for {where} was changed and confirmed. "
+                        f"The cloud-init password for {where} was changed. "
                         if write_failure is None
-                        else f"Proxmox {write_failure.verb} a step of the cloud-init password "
-                        f"change for {where} (`{write_failure.code}`), so NOA compared the "
-                        "password it generated against the VM: the VM carries it. "
+                        # The write's own code is off the sentence and stays on the envelope,
+                        # where an administrator looks: it names a remedy to an engineer and
+                        # names nothing to the operator, whose question is what the VM carries
+                        # now. The step is still named in words, so a confirmation is never read
+                        # as a call that answered.
+                        else f"Proxmox {write_failure.verb} a step of the password change for "
+                        f"{where}, so NOA compared the password it generated against the VM: "
+                        "the VM carries it. "
                     )
-                    + "Give the operator the link; it opens once. The guest reads the new "
-                    "password when its cloud-init drive is next read."
+                    + f"{MESSAGE_RESTART_REQUIRED} {link_note}"
                 ),
             ),
             delta=_reset_delta(
@@ -585,27 +720,35 @@ def _reset_outcome(
             payload=(
                 tool_ok(
                     **common,
+                    headline=target.applied_headline,
                     status=STATUS_CHANGED,
                     verified=False,
                     verification=VERIFICATION_UNAVAILABLE,
                     verification_cause=verification.cause,
                     yopass_url=yopass_url,
                     message=(
-                        f"Proxmox accepted the new cloud-init password for {where}, but NOA "
-                        "could not confirm it took. Give the operator the link and check the VM "
-                        "before relying on it."
+                        # `could not check` rather than `could not read`, because the three
+                        # causes that reach here are not one thing: a host with no libcrypt read
+                        # the VM fine and had nothing to compare with, while an unreadable dump
+                        # never got that far. What they share is that no comparison happened.
+                        f"Proxmox accepted the new password for {where}. NOA could not check "
+                        f"whether the VM carries it. {MESSAGE_RESTART_REQUIRED} {link_note}"
                     ),
                 )
                 if write_failure is None
                 else {
                     **tool_failure(
                         write_failure.code,
-                        f"Proxmox {write_failure.verb} a step of the cloud-init password change "
-                        f"for {where} (`{write_failure.code}`), and NOA could not compare the "
-                        "password against the VM either. Give the operator the link and check "
-                        "the VM before relying on it.",
+                        f"Proxmox {write_failure.verb} a step of the password change for {where}, "
+                        "and NOA could not compare the password against the VM either, so it "
+                        f"cannot say what the VM carries now. {MESSAGE_RESTART_REQUIRED} "
+                        f"{link_note}",
                     ),
                     **common,
+                    # A failed envelope, so the heading names the failure — but not `not changed`:
+                    # Proxmox accepted the write, which is why the link ships, and claiming the VM
+                    # is untouched is exactly what nobody measured.
+                    "headline": target.failed_headline,
                     "verified": False,
                     "yopass_url": yopass_url,
                 }
@@ -626,12 +769,15 @@ def _reset_outcome(
             payload={
                 **tool_failure(
                     write_failure.code,
-                    f"Proxmox did not answer a step of the cloud-init password change for "
-                    f"{where} (`{write_failure.code}`), and the VM does not carry the new "
-                    "password yet. Give the operator the link and check the VM before relying "
-                    "on it.",
+                    f"Proxmox did not answer a step of the password change for {where}, and the "
+                    f"VM does not carry the new password yet. {MESSAGE_RESTART_REQUIRED} "
+                    f"{link_note}",
                 ),
                 **common,
+                # `not changed` is withheld for the branch above's reason and one more: the
+                # reading here disagrees, and a document that has not been re-rendered yet reads
+                # exactly like one that never will.
+                "headline": target.failed_headline,
                 "verified": False,
                 "yopass_url": yopass_url,
             },
@@ -645,8 +791,17 @@ def _reset_outcome(
 
     return ChangeOutcome(
         payload={
-            **tool_failure(ERROR_POSTFLIGHT_FAILED, MESSAGE_POSTFLIGHT_FAILED),
+            **tool_failure(
+                ERROR_POSTFLIGHT_FAILED,
+                # A reading, said as one. No restart clause rides here: the VM does not carry
+                # this password, so a restart would not put it there and naming one would be
+                # advice NOA has already disproved.
+                f"NOA checked afterwards: {where} does not carry the new password. {link_note}",
+            ),
             **common,
+            # The one branch that may say `not changed`, because it is the one holding a reading
+            # that says so.
+            "headline": target.unchanged_headline,
             "verified": False,
             "yopass_url": yopass_url,
         },
@@ -661,7 +816,7 @@ def _reset_outcome(
 
 
 def _failure_payload(
-    target: ProxmoxChangeTarget, failure: StepFailure, *, yopass_url: str
+    target: ProxmoxChangeTarget, failure: StepFailure, *, yopass_url: str, link_note: str
 ) -> ChangeOutcome:
     """A failed step, with the link attached exactly when the password may already be live.
 
@@ -670,11 +825,27 @@ def _failure_payload(
     audit surface, a model reading `noa_get_action_result` — can act on that difference.
 
     The delta beside it takes the same decision from the same field, so the two cannot disagree
-    about whether a credential was delivered.
+    about whether a credential was delivered. **The sentence and the heading come off that field
+    too**, for the same reason: a card whose words said the VM is untouched over a receipt
+    shipping a live credential would be two answers to one question.
     """
     payload: ToolPayload = {
-        **tool_failure(failure.error_code, failure.message),
+        **tool_failure(
+            failure.error_code,
+            _step_failed_sentence(target, failure.write)
+            + (
+                f" {link_note}"
+                if failure.password_may_be_live
+                # The one branch that can say this, and it is the whole reason the flag exists:
+                # Proxmox took nothing, so the old credentials still work and the password NOA
+                # generated is live nowhere.
+                else " No new password was delivered."
+            ),
+        ),
         **_common(target),
+        "headline": (
+            target.failed_headline if failure.password_may_be_live else target.unchanged_headline
+        ),
     }
     if failure.password_may_be_live:
         payload["yopass_url"] = yopass_url
@@ -708,9 +879,8 @@ __all__ = [
     "LOG_RESET_DELIVERY_FAILED",
     "LOG_RESET_UNVERIFIED",
     "MESSAGE_EVIDENCE_UNUSABLE",
-    "MESSAGE_POSTFLIGHT_FAILED",
+    "MESSAGE_RESTART_REQUIRED",
     "MESSAGE_SERVER_UNAVAILABLE",
-    "MESSAGE_TASK_TIMEOUT",
     "TASK_POLL_ATTEMPTS",
     "TASK_POLL_DELAY_SECONDS",
     "VERIFICATION_POLL_ATTEMPTS",

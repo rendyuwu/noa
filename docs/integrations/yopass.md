@@ -88,6 +88,26 @@ Set via environment (pydantic-settings, no prefix). See `.env.example`; fields l
 `NOA_SECRET_ENCRYPTION_KEY` is a different mechanism: Fernet encryption of stored server
 credentials at rest. It has nothing to do with yopass delivery.
 
+### What the operator surfaces may say about a delivered link
+
+Both rows above are read by the approval card as well as by the store call, and the rule is that
+**no surface spells either value into a sentence**. The reset runner shipped `it opens once` for
+as long as `YOPASS_ONE_TIME` has been `false`, which was simply untrue, and replacing it with a
+literal `7 days` would have been the same defect with a new number — the expiry is a setting too,
+so a spelled-out duration is true for today's deployment and silently false the day someone
+overrides it. The runner composes that clause from both settings instead
+(`apps/api/src/noa_api/mcp_tools/proxmox_password_runner.py`), so a one-time deployment gets the
+one-open wording back because the flag says so, and everyone else is told how long the link
+actually lives. The duration is stated in the largest unit that divides the configured expiry
+exactly, so an hour reads as an hour rather than rounding away to nothing.
+
+The copied ticket block says neither. It is rendered in the web app, which cannot read these
+variables at all, so it states only what holds under both settings: the link is left out of the
+paste because whoever reads the ticket can use it. **The link stays on the card and never in the
+copied block**, and with `one_time=false` the reason is the stronger one — a fetchable link in a
+ticket hands the password to every reader of that ticket until it expires, rather than merely
+being spent by the first.
+
 ## Residual risk (accepted)
 
 The yopass URL contains the decryption key in its fragment, so the URL itself is a secret. The

@@ -103,6 +103,15 @@ SECRET_PASSWORD_LENGTH = 31
 # asserting the link reaches the operator is asserting the thing that is actually handed over.
 YOPASS_URL = "https://yopass.noa.test/#/s/2f1c0b4a-0000-4000-8000-00000000beef/PassPhrase123"
 
+# How long a delivered link lives, and whether opening it spends it, as these fixtures hand them
+# to the tool path. Two days rather than `Settings`' seven, for the reason none of the values above
+# is its production default: a sentence asserted against the configured number cannot separate a
+# runner that read it from one that spelled today's deployment into a string — which is the bug
+# this pair exists to make catchable, since the sentence it feeds used to claim the link opens
+# once against a deployment whose links are reusable for a week.
+SECRET_DELIVERY_ONE_TIME = False
+SECRET_DELIVERY_EXPIRATION_SECONDS = 172800
+
 
 def whm_server(
     name: str,
@@ -371,6 +380,8 @@ def build_tool_context(
     result_table_ttl_seconds: int = RESULT_TABLE_TTL_SECONDS,
     result_table_max_rows: int = RESULT_TABLE_MAX_ROWS,
     secret_password_length: int = SECRET_PASSWORD_LENGTH,
+    secret_delivery_one_time: bool = SECRET_DELIVERY_ONE_TIME,
+    secret_delivery_expiration_seconds: int = SECRET_DELIVERY_EXPIRATION_SECONDS,
     secret_delivery: RecordingSecretDelivery | None = None,
     cipher: SecretCipher | None = None,
     whm_transport: httpx.AsyncBaseTransport | None = None,
@@ -456,6 +467,8 @@ def build_tool_context(
             result_table_max_rows=result_table_max_rows,
             secret_delivery=delivery,
             secret_password_length=secret_password_length,
+            secret_delivery_one_time=secret_delivery_one_time,
+            secret_delivery_expiration_seconds=secret_delivery_expiration_seconds,
             authorization_repository_factory=lambda _session: authorization_repository,
             whm_server_repository_factory=lambda _session: server_repository,
             pmg_server_repository_factory=lambda _session: pmg_repository,
@@ -494,6 +507,8 @@ __all__ = [
     "RESULT_TABLE_MAX_ROWS",
     "RESULT_TABLE_TTL_SECONDS",
     "SECRETS",
+    "SECRET_DELIVERY_EXPIRATION_SECONDS",
+    "SECRET_DELIVERY_ONE_TIME",
     "SECRET_PASSWORD_LENGTH",
     "SSH_PASSWORD",
     "SSH_PRIVATE_KEY",

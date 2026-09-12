@@ -424,5 +424,15 @@ entry that is already in the file.
 Two things a delta must never put in this block. **A reason**: the operator's justification is
 typed at decision time and travels outward only, and the builder has nowhere to put one because the
 card carries none back. **A credential's delivery link**: a delivered credential is *stated* in the
-copied block and its one-open URL is not, because a link pasted into a ticket is spent by whoever
-reads the ticket first. The link stays on the card.
+copied block and its URL is not, because whoever reads the ticket it was pasted into can use the
+link. The link stays on the card.
+
+That rule has not changed and the reason given for it used to be false. It read "a link pasted into
+a ticket is spent by whoever reads the ticket first", which describes a one-time link — and whether
+a link is one-time is a deployment setting (`YOPASS_ONE_TIME`), off in this one. What actually
+happens here is worse rather than milder: the link stays fetchable until it expires, so a ticket
+carrying it hands the password to everyone who reads that ticket for as long as it lives. Neither
+the copied block nor this document states which setting is in force, because both would then be
+true for one deployment and silently false for the next; the runner's own sentence says how long
+the link keeps working, composed where the settings are legible, and
+`docs/integrations/yopass.md` holds the variables themselves.

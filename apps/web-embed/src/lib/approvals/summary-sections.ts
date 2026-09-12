@@ -26,9 +26,16 @@
  * measured-as-nothing, not measured — where every other absent facet is simply left out, because a
  * hole in the measurement is not the same thing as nothing to report.
  *
- * **A delivered credential is stated and its link is not.** The delivery URL opens once; pasting
- * it into a ticket burns it for the operator who needs it. That one was delivered is the fact an
- * audit needs, and the link stays on the card.
+ * **A delivered credential is stated and its link is not.** The rule is unchanged; its reason was
+ * false. The delivery URL does not open once — whether it does is a deployment setting
+ * (`YOPASS_ONE_TIME`, off in this one), and so is how long it lives — and the true reason is the
+ * stronger one: a link that stays fetchable until it expires is readable by everyone who reads
+ * the ticket it was pasted into. The rendered line states neither setting, because this side
+ * cannot read either and a sentence that named one would be true for one deployment and silently
+ * false for the next; what it says instead holds under both, since the first reader of a ticket
+ * can use the link either way. How long it keeps working is said by the runner's own sentence,
+ * which is composed where those settings are legible. That one was delivered is the fact an audit
+ * needs, and the link itself stays on the card.
  *
  * **No reason field, here or anywhere near here.** The operator's reason is typed at decision time
  * and travels outward only; the card carries none back and these builders have nowhere to put one.
@@ -131,8 +138,8 @@ function measuredLines(delta: ChangeDelta): string[] {
 
   if (delta.deliveredCredential !== null) {
     lines.push(
-      'A credential was delivered by one-open link. The link is deliberately not in this ' +
-        'summary — opening it spends it, and a ticket is read by more people than one.',
+      'A credential was delivered by link. The link is deliberately not in this summary — a ' +
+        'ticket is read by more people than one, and whoever reads it there can use it.',
     )
   }
 

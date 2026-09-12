@@ -75,6 +75,25 @@ from support.proxmox_password import (
 )
 from support.servers import SECRET_PASSWORD_LENGTH, SECRETS, YOPASS_URL, RecordingSecretDelivery
 
+# What every heading and every sentence on this tool names: the account and VM, and the same with
+# the endpoint it sits on.
+SUBJECT = f"{USERNAME} on VM {VMID}"
+WHERE = f"{SUBJECT} ({SERVER_NAME})"
+
+# The owner's own sentence, spelled out here rather than imported from the runner. It is the one
+# "do this next" line that survives on a card — it states NOA's permission boundary rather than
+# giving advice — and an assertion that imported the constant would go on passing through any
+# rewording of the words the owner actually supplied.
+RESTART = (
+    "The old password keeps working until the VM is restarted. NOA cannot restart a VM — restart "
+    "it from the customer portal or from Proxmox."
+)
+
+# What this fixture's delivery configuration renders to (`SECRET_DELIVERY_*` in `support.servers`:
+# two days, and re-fetchable within them). Two days rather than `Settings`' seven on purpose, so a
+# runner that spelled this deployment's expiry into a string fails here instead of reading it.
+LINK = "Give the operator the link; it works for 2 days."
+
 
 def no_crypt_library() -> CDLL | None:
     """A host with no libcrypt — the crypt verdict's subject, injected rather than patched."""
@@ -104,6 +123,11 @@ async def test_an_approved_reset_changes_the_password_and_confirms_it() -> None:
     whatever is actually POSTed, so `verified: true` here means the runner's own generated
     password is the one the rendered user-data now carries — not that a canned fixture agreed
     with itself.
+
+    The sentence is asserted whole rather than by substring, so a clause appearing where none
+    belongs fails as loudly as one going missing — and no verdict word may appear in it, because
+    the card states the verdict in its status corner and a sentence saying it too teaches a
+    reader to skip both.
     """
     fixture, vm = reset_context()
     before = vm.password_hash
@@ -118,6 +142,10 @@ async def test_an_approved_reset_changes_the_password_and_confirms_it() -> None:
     assert payload["node"] == NODE
     assert payload["vmid"] == VMID
     assert payload["username"] == USERNAME
+    assert payload["headline"] == f"Password reset — {SUBJECT}"
+    assert payload["message"] == (
+        f"The cloud-init password for {WHERE} was changed. {RESTART} {LINK}"
+    )
     assert vm.password_hash != before
 
 
@@ -242,6 +270,14 @@ async def test_a_delivery_failure_aborts_before_any_config_write(error: Exceptio
     assert payload["error_code"] == error.error_code  # type: ignore[attr-defined]
     # Nothing was stored, so there is no link to hand over and none is invented.
     assert "yopass_url" not in payload
+    assert payload["headline"] == f"Password not changed — {SUBJECT}"
+    # The delivery hop's own words — `yopass_base_url is not configured` names a deployment to
+    # fix — ride on the envelope's `error_code` where an administrator looks, and not in the
+    # sentence, whose reader has one question: did the VM move.
+    assert payload["message"] == (
+        f"NOA could not deliver a new password for {WHERE}, so nothing was changed on the VM."
+    )
+    assert str(error) not in str(payload["message"])
 
 
 async def test_the_delivery_hop_runs_before_the_write_in_the_happy_path_too() -> None:
@@ -275,6 +311,15 @@ async def test_a_refused_config_write_withholds_the_link() -> None:
     assert payload["ok"] is False
     assert payload["error_code"] == "permission_denied"
     assert "yopass_url" not in payload
+    # The heading and the last sentence are the same claim the absent link is: Proxmox took
+    # nothing, so the old credentials still work and the generated password is live nowhere.
+    # Proxmox's own words stay in the middle, because on a refusal they are frequently the only
+    # thing naming a remedy; its error code does not, and rides on the envelope instead.
+    assert payload["headline"] == f"Password not changed — {SUBJECT}"
+    assert payload["message"] == (
+        f"Proxmox refused a step of the password change for {WHERE}. Proxmox permission denied: "
+        "boom. No new password was delivered."
+    )
     # Delivery still happened — that is the ordering, and it is why this case exists at all.
     assert len(fixture.secret_delivery.calls) == 1
     assert vm.password_hash == crypt_password(OLD_PASSWORD, SALT)
@@ -291,6 +336,13 @@ async def test_a_task_that_finished_badly_withholds_the_link(
 
     assert payload["error_code"] == ERROR_TASK_FAILED
     assert "yopass_url" not in payload
+    assert payload["headline"] == f"Password not changed — {SUBJECT}"
+    # The exit status is the whole of what Proxmox said, so it travels; `task_failed` names the
+    # remedy to an engineer and stays on the envelope.
+    assert payload["message"] == (
+        f"Proxmox refused a step of the password change for {WHERE}. Its task finished with exit "
+        "status 'unable to parse'. No new password was delivered."
+    )
 
 
 async def test_a_task_that_never_finishes_ships_the_link(
@@ -314,6 +366,14 @@ async def test_a_task_that_never_finishes_ships_the_link(
     assert payload["ok"] is False
     assert payload["error_code"] == ERROR_TASK_TIMEOUT
     assert payload["yopass_url"] == YOPASS_URL
+    # Not `Password not changed`: Proxmox accepted the write, which is why the link ships, so a
+    # heading claiming the VM is untouched would state what nobody measured. `yet` carries the
+    # same asymmetry in the sentence — the read may simply be earlier than the change.
+    assert payload["headline"] == f"Password change failed — {SUBJECT}"
+    assert payload["message"] == (
+        f"Proxmox did not answer a step of the password change for {WHERE}, and the VM does not "
+        f"carry the new password yet. {RESTART} {LINK}"
+    )
     assert len([path for _m, path in vm.requests if "/tasks/" in path]) == TASK_POLL_ATTEMPTS
 
 
@@ -335,9 +395,17 @@ async def test_a_task_that_never_finishes_on_a_vm_that_took_it_reports_the_reset
     assert payload["ok"] is True
     assert payload["verified"] is True
     assert payload["yopass_url"] == YOPASS_URL
+    assert payload["headline"] == f"Password reset — {SUBJECT}"
     # The step that failed is still named, so a confirmation is never read as a call that
-    # answered.
-    assert ERROR_TASK_TIMEOUT in str(payload["message"])
+    # answered — in words rather than by its code, which names a remedy to an engineer and
+    # nothing to the operator. There is no `error_code` on this envelope to carry it either, and
+    # nothing distinguishable goes with it: every failure that can reach this branch and still
+    # match is one Proxmox never answered for.
+    assert payload["message"] == (
+        f"Proxmox did not answer a step of the password change for {WHERE}, so NOA compared the "
+        f"password it generated against the VM: the VM carries it. {RESTART} {LINK}"
+    )
+    assert ERROR_TASK_TIMEOUT not in str(payload["message"])
 
 
 async def test_a_failed_regeneration_ships_the_link() -> None:
@@ -356,6 +424,12 @@ async def test_a_failed_regeneration_ships_the_link() -> None:
 
     assert payload["ok"] is False
     assert payload["yopass_url"] == YOPASS_URL
+    # A refusal with a reading behind it is a measurement, so this lands on the mismatch branch
+    # and gets the one heading allowed to say the VM still has what it had.
+    assert payload["headline"] == f"Password not changed — {SUBJECT}"
+    assert payload["message"] == (
+        f"NOA checked afterwards: {WHERE} does not carry the new password. {LINK}"
+    )
 
 
 async def test_a_synchronous_write_polls_no_task() -> None:
@@ -399,6 +473,16 @@ async def test_a_host_without_libcrypt_reports_changed_but_unverified() -> None:
     assert payload["verification"] == VERIFICATION_UNAVAILABLE
     assert payload["verification_cause"] == CAUSE_CRYPT_LIBRARY_UNAVAILABLE
     assert payload["yopass_url"] == YOPASS_URL
+    # The confirmed heading, because Proxmox took the write; what is unconfirmed belongs in the
+    # sentence and in the status corner beside the heading. `could not check` rather than `could
+    # not read`: this host read the VM perfectly well and had nothing to compare with, and the
+    # unreadable-dump branch below never got that far — what they share is that nothing was
+    # compared.
+    assert payload["headline"] == f"Password reset — {SUBJECT}"
+    assert payload["message"] == (
+        f"Proxmox accepted the new password for {WHERE}. NOA could not check whether the VM "
+        f"carries it. {RESTART} {LINK}"
+    )
 
 
 async def test_a_host_without_libcrypt_does_not_poll(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -463,6 +547,16 @@ async def test_a_vm_still_carrying_another_password_is_a_failure(
     # Not the unavailable shape: this one was measured.
     assert "verification" not in payload
     assert payload["yopass_url"] == YOPASS_URL
+    assert payload["headline"] == f"Password not changed — {SUBJECT}"
+    # **The restart clause is absent here and that is the assertion.** Everywhere the VM may
+    # carry the new password it rides, because a restart is what makes the password take. Here
+    # NOA measured that the VM does not carry it, so a restart would change nothing and telling
+    # an operator to perform one is advice this very reading disproves. Stated before the whole
+    # message below, which would catch the same fold as an unreadable diff of two long strings.
+    assert RESTART not in str(payload["message"])
+    assert payload["message"] == (
+        f"NOA checked afterwards: {WHERE} does not carry the new password. {LINK}"
+    )
 
 
 async def test_a_dump_that_cannot_be_read_is_unavailable(
@@ -479,6 +573,48 @@ async def test_a_dump_that_cannot_be_read_is_unavailable(
     assert payload["ok"] is True
     assert payload["verified"] is False
     assert payload["verification"] == VERIFICATION_UNAVAILABLE
+
+
+# --- What the operator is told about the link ---
+
+
+@pytest.mark.parametrize(
+    ("one_time", "expiration_seconds", "clause"),
+    [
+        pytest.param(True, 604800, "it opens once", id="one-open-deployment"),
+        pytest.param(False, 3600, "it works for 1 hour", id="an-hour-and-singular"),
+        pytest.param(False, 259200, "it works for 3 days", id="three-days"),
+        pytest.param(False, 5400, "it works for 90 minutes", id="an-hour-and-a-half"),
+    ],
+)
+async def test_the_link_clause_is_read_off_the_delivery_configuration(
+    one_time: bool, expiration_seconds: int, clause: str
+) -> None:
+    """**Both facts in that sentence are settings, so neither may be written into it.**
+
+    This tool shipped `it opens once` against a deployment whose `YOPASS_ONE_TIME` is off, which
+    was simply false — and correcting it to a literal `7 days` would have been the same bug with
+    a new number, because the expiry is a setting too. So the cases below are deliberately *not*
+    this deployment's values: a one-time deployment gets the one-open wording back because the
+    flag says so, and every other case reads its duration off
+    `YOPASS_SECRET_EXPIRATION_SECONDS`.
+
+    The two that do not divide into whole days are the ones a `// 86400` would get wrong — an
+    hour would render as no days at all — and they are here because the rounding this avoids
+    would be a second false clause of exactly the kind being corrected. The singular rides on the
+    same case.
+    """
+    fixture, _ = reset_context(
+        secret_delivery_one_time=one_time,
+        secret_delivery_expiration_seconds=expiration_seconds,
+    )
+
+    payload = await build_runner(fixture)(execution_request(server_id=server_id(fixture)))
+
+    assert payload["message"] == (
+        f"The cloud-init password for {WHERE} was changed. {RESTART} Give the operator the "
+        f"link; {clause}."
+    )
 
 
 # --- The runner acts on the evidence, never on the arguments ---

@@ -297,8 +297,12 @@ what the missing methods were for.
 ## Caveats for the tools that will use this
 
 - A cloud-init password change is **not** an immediate in-guest reset. The guest reads its
-  cloud-init drive at next boot, and the password-reset tool's result message says so; the card
-  carries the VM's run state so an operator can see whether a restart is owed.
+  cloud-init drive at next boot, so **the old password keeps working until the VM is restarted**,
+  and **NOA cannot restart a VM** — no tool here starts, stops or reboots one, so the restart is
+  done from the customer portal or from Proxmox. The reset tool's result message says exactly
+  that, in those words; this entry is what keeps that sentence citable rather than remembered.
+  The preflight evidence carries the VM's run state (`run_status`), so an operator deciding can
+  see whether a restart is owed.
 - NIC selection: when a VM has exactly one NIC, preflight may infer it; otherwise it must return
   the NIC list and refuse to guess — ambiguous identifier resolves to candidates, never a guess.
   The CHANGE then uses the concrete `netN` key. **Built with the NIC tool**, and the inference is

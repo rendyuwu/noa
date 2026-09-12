@@ -155,6 +155,12 @@ def build_runtime(settings: Settings) -> AppRuntime:
         # The generated-password length, resolved here rather than read inside the generator, so the
         # two places that could answer "how long is a NOA-generated password" stay one.
         secret_password_length=settings.secret_password_length,
+        # The same two settings the delivery hop above was built with, handed to the tool path as
+        # values: the runner that delivers a credential tells the operator how long the link keeps
+        # working, and both halves of that sentence are configuration. A runner spelling either one
+        # out would answer for today's deployment and go on answering after the variable changed.
+        secret_delivery_one_time=settings.yopass_one_time,
+        secret_delivery_expiration_seconds=settings.yopass_secret_expiration_seconds,
         # How long WHM may stay silent before a call is abandoned, resolved here for the reason
         # every line above is resolved here: a second `get_settings()` caller inside the WHM
         # factory is how one deployment ends up waiting two different lengths for one server.

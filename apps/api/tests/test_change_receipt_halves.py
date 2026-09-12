@@ -24,11 +24,14 @@ is the only alternative:
   here from `test_change_delta_runners.py`, and not for room: the size question had ended up
   split across two files, one pinning a single payload and the other measuring all seven, which
   is one claim in two places. Which tool renders longest is a **measurement and moves with the
-  wording**: it was `proxmox_reset_vm_password` while the runners answered in their old strings,
-  and it is `whm_firewall_release_and_allow` now that each branch carries a heading and its
-  sentence names the expiry in words. What does not move is which payload the pin belongs on —
-  the release tool is the largest *once a delta is folded in*, because it fills four facets in
-  one answer, and that is what the pin is actually guarding. Both orderings are asserted below.
+  wording**, and it has now moved twice: `proxmox_reset_vm_password` led while the runners
+  answered in their old strings, `whm_firewall_release_and_allow` took it when each branch gained
+  a heading and its sentence named the expiry in words, and the password tool leads again now
+  that its branches carry the owner's restart sentence and say how long the delivered link keeps
+  working. What does not move is which payload the pin belongs on — the release tool is the
+  largest *once a delta is folded in*, because it fills four facets in one answer, and that is
+  what the pin is actually guarding. Both orderings are asserted below, and they no longer name
+  the same tool, which is the whole reason both are asserted.
 
 `test_every_change_tool_is_covered_here` reads the case list against `build_change_runners`, so
 the eighth CHANGE tool fails here until somebody states its halves rather than quietly not being
@@ -145,8 +148,11 @@ FIXED_FRIENDLY_STAMP = "12 Sep 2026, 8:26 PM (WIB)"
 # free. It was 391 before each branch gained a heading and the expiry moved into the sentence in
 # words, so the whole wording pass cost 35 characters of a column with 1600 to spare.
 #
-# `test_which_payload_the_summary_pin_belongs_on` below asserts which payload this pin belongs
-# on, and that ordering is re-measured rather than assumed.
+# **This is no longer the longest payload bare, and it is still the one to pin.** The password
+# tool's branches now carry the owner's restart sentence and the life of the delivered link, which
+# takes them past this one unfolded — and leaves them short of it folded, which is the measure the
+# cut is about. `test_which_payload_the_summary_pin_belongs_on` below asserts both orderings, so
+# neither is assumed and a wording pass that reverses either fails there rather than here.
 #
 # Pinned rather than bounded, because what it is guarding is *growth*: the delta doubles this
 # figure the moment it enters the payload (857 characters, asserted below), and a `<= 2000`
@@ -457,10 +463,11 @@ async def test_which_payload_the_summary_pin_belongs_on(
     """Two superlatives, and they are not the same tool. Measured, because one was assumed.
 
     Which tool renders longest is a measurement, and it moves with the wording — it was
-    `proxmox_reset_vm_password` while the runners answered in their old strings, and it is
-    `whm_firewall_release_and_allow` now that each branch carries a heading and names its expiry
-    in words. So it is asserted rather than assumed, and re-measured whenever a runner is
-    reworded.
+    `proxmox_reset_vm_password` while the runners answered in their old strings, then
+    `whm_firewall_release_and_allow` once each branch carried a heading and named its expiry in
+    words, and it is the password tool again now that its branches carry the owner's restart
+    sentence and how long the delivered link keeps working. So it is asserted rather than
+    assumed, and re-measured whenever a runner is reworded.
 
     What the pin is actually guarding does not move with the wording, and this is the assertion
     that says so. The cut it exists for is the one a **delta folded into the payload** would push
@@ -480,28 +487,37 @@ async def test_which_payload_the_summary_pin_belongs_on(
         bare[tool] = len(result_summary(halves.payload) or "")
         folded[tool] = len(result_summary({**halves.payload, RECEIPT_DELTA_KEY: delta}) or "")
 
-    assert max(bare, key=lambda tool: bare[tool]) == TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW
+    assert max(bare, key=lambda tool: bare[tool]) == TOOL_PROXMOX_RESET_VM_PASSWORD
     assert max(folded, key=lambda tool: folded[tool]) == TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW
     # Not a tie on either: a `max` over equal values answers whichever came first.
     assert sorted(bare.values())[-1] > sorted(bare.values())[-2]
     assert sorted(folded.values())[-1] > sorted(folded.values())[-2]
 
 
-async def test_the_largest_change_payload_stays_where_it_was(
+async def test_the_payload_the_pin_guards_stays_where_it_was(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The `result_summary` pin, and the reason the delta rides beside the payload.
 
-    Two claims. The payload carries exactly the twelve keys it carried before a delta existed —
-    asserted on the key set, which is the clock-safe form of byte identity here, since two of the
-    values are timestamps. And its rendered summary is 391 characters of the 2000 the
-    column holds, leaving 1609 free.
+    Two claims. The payload carries exactly the thirteen keys asserted below — the twelve it
+    carried before a delta existed, plus the heading the wording pass added — asserted on the key
+    set, which is the clock-safe form of byte identity here, since two of the values are
+    timestamps. And its rendered summary is 426 characters of the 2000 the column holds, leaving
+    1574 free.
 
     The negative control is the whole argument: folding the delta into the payload takes the same
-    summary to 822 characters. Nothing would fail — `result_summary` cuts the tail and marks it
+    summary to 857 characters. Nothing would fail — `result_summary` cuts the tail and marks it
     with an ellipsis — so the loss would land silently on the audit trail, on the card's
     execution-result line and on `noa_get_action_result`, and a byte-identity test on `before`
     and `after` would never see it.
+
+    **Every figure above is the one the assertions under it read**, which is the correction this
+    docstring is carrying: it went on stating 391, 1609 and 822 after the numbers below had moved
+    to 426, 1574 and 857, and a docstring disagreeing with the assertion three lines under it is
+    how a reader takes the wrong measurement out of the file kept to hold the right one. This is
+    no longer the longest payload rendered bare — `proxmox_reset_vm_password` is — and it is
+    still the largest once a delta is folded in, which is the measure the 2000-character cut is
+    about and the reason the pin sits here.
     """
     fixture, _ = release_context(monkeypatch, box=released_box())
     runner = build_whm_firewall_release_runner(context=fixture.context)
