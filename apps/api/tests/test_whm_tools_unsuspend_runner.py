@@ -295,7 +295,13 @@ async def test_a_change_whm_accepted_but_could_not_confirm_says_unverified() -> 
     # the change is unconfirmed, and the sentence says why.
     assert payload["headline"] == f"Account unsuspended — {ACCOUNT}"
     assert "NOA could not read the account back afterwards" in str(payload["message"])
-    assert "NOA has no reading of what it was before." in str(payload["message"])
+    # No comparison was made and the clause says only that. The reading the operator approved
+    # against is still on the evidence and is named in this direction's own vocabulary —
+    # `suspended`, which is what an unsuspension starts from — because this is the branch that
+    # sends them to WHM to check by hand, and a card that claimed NOA held nothing would
+    # contradict the one they approved from.
+    assert "It was suspended when NOA last read it." in str(payload["message"])
+    assert "before this ran" not in str(payload["message"])
     assert len(api.requests_to(UNSUSPENDACCT_PATH)) == 1
 
 

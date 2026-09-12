@@ -148,8 +148,14 @@ def _context(endpoint: _WHMEndpoint) -> ToolFixture:
     return build_tool_context(servers=[row], cipher=cipher, whm_transport=endpoint.transport)
 
 
-def _request(server_id: UUID) -> ChangeExecutionRequest:
-    """What the executor hands the suspend runner for an approved, not-yet-suspended account."""
+def _request(server_id: UUID, *, account: dict[str, Any] | None = None) -> ChangeExecutionRequest:
+    """What the executor hands the suspend runner for an approved, not-yet-suspended account.
+
+    `account` is the gate-time summary, and every row above shares the default: the operator
+    approved against an account WHM said was not suspended. Overridden in one place only, to
+    arrange the *absence* of the `suspended` key — which is why it is replaced whole rather than
+    merged into.
+    """
     return ChangeExecutionRequest(
         action_request_id=uuid4(),
         tool_run_id=uuid4(),
@@ -159,17 +165,17 @@ def _request(server_id: UUID) -> ChangeExecutionRequest:
             EVIDENCE_SERVER_ID: str(server_id),
             EVIDENCE_SERVER_NAME: SERVER_NAME,
             EVIDENCE_OWNER: OWNER,
-            EVIDENCE_ACCOUNT: {"user": ACCOUNT, "suspended": False},
+            EVIDENCE_ACCOUNT: account or {"user": ACCOUNT, "suspended": False},
         },
         reason=REASON,
     )
 
 
-async def _run(endpoint: _WHMEndpoint) -> Any:
+async def _run(endpoint: _WHMEndpoint, *, account: dict[str, Any] | None = None) -> Any:
     fixture = _context(endpoint)
     return await outcome_of(
         build_whm_suspend_runner(context=fixture.context),
-        _request(fixture.servers.servers[0].id),
+        _request(fixture.servers.servers[0].id, account=account),
     )
 
 
@@ -230,7 +236,13 @@ async def test_a_write_that_never_answered_over_a_change_that_did_not_land_is_un
     # sentence keeps the change itself open, which is the asymmetry this row exists for.
     assert outcome.payload["headline"] == f"Account not suspended — {ACCOUNT}"
     assert "may still land" in str(outcome.payload["message"])
-    assert "NOA has no reading of what it was before." in str(outcome.payload["message"])
+    # No *comparison* was made, and the clause says only that. It does not say NOA holds no
+    # reading: the account read `not suspended` on the card this was approved from, that reading
+    # is on the evidence, and this is the branch that sends an operator to WHM to look for
+    # themselves — so it is the branch where they most need something to compare what they find
+    # against. "when NOA last read it" claims a reading and no comparison; "before this ran" one
+    # test up claims the comparison. The grammar is the whole distinction.
+    assert "It was not suspended when NOA last read it." in str(outcome.payload["message"])
     assert outcome.delta is not None
     assert outcome.delta.verification == VERIFICATION_UNAVAILABLE
     assert outcome.delta.verification_cause == ERROR_TIMEOUT
@@ -288,7 +300,10 @@ async def test_a_write_the_remote_refused_over_a_state_that_matches_is_not_a_cha
     # The reading agrees with what was asked for, so the heading states it. What the sentence
     # withholds is the attribution, not the state.
     assert outcome.payload["headline"] == f"Account suspended — {ACCOUNT}"
-    assert "NOA has no reading of what it was before." in str(outcome.payload["message"])
+    # NOA withholds the attribution, not the reading. Something other than this change put the
+    # account where it is, and the gate-time reading is what an operator needs in order to work
+    # out what that something did.
+    assert "It was not suspended when NOA last read it." in str(outcome.payload["message"])
     assert outcome.delta is not None
     assert outcome.delta.verification == VERIFICATION_UNAVAILABLE
     assert outcome.delta.verification_cause == "whm_api_error"
@@ -311,10 +326,65 @@ async def test_a_confirming_read_that_fails_names_its_own_cause_and_not_the_writ
     # measurement — the corner beside it is what says the change is unconfirmed.
     assert outcome.payload["headline"] == f"Account suspended — {ACCOUNT}"
     assert "NOA could not read the account back afterwards" in str(outcome.payload["message"])
+    # Neither call answered, and the gate-time reading survives both: it was taken before either
+    # of them, so nothing that went wrong afterwards can take it away.
+    assert "It was not suspended when NOA last read it." in str(outcome.payload["message"])
     assert outcome.delta is not None
     assert outcome.delta.verification == VERIFICATION_UNAVAILABLE
     assert outcome.delta.verification_cause == "http_error"
     assert outcome.delta.changed_fields is None
+
+
+# --------------------------------------------------------------------------------------
+# What the card says it knew before — a comparison and a reading are two claims
+# --------------------------------------------------------------------------------------
+
+# The two grammars, and the whole distinction rides on them: the first claims NOA held both sides
+# and is naming the one it started from, the second claims NOA held only the gate-time side. The
+# third is the sentence for evidence that carried no side at all.
+COMPARED = "It was not suspended before this ran."
+READ_ONLY = "It was not suspended when NOA last read it."
+NO_READING = "NOA has no reading of what it was before."
+
+
+async def test_a_reading_noa_could_not_confirm_is_still_a_reading() -> None:
+    """Three runs off one recorded `suspended: False`, and no two of them may say the same thing.
+
+    The first two rows of this file's table differ in exactly one thing — what the postflight
+    found — and that decides whether NOA *compared*, not whether NOA *has a reading*. Both were
+    approved against the same card, displaying the same `not suspended`. A runner answering
+    `NO_READING` on the second contradicts that card, on the one branch where an operator has to
+    go to WHM and check by hand, which is precisely the branch where they need an anchor to
+    compare what they find against.
+
+    The third run is the separating case and the reason the other two cannot be trusted alone: the
+    same unconfirmed branch with the `suspended` key taken off the evidence, where `NO_READING` is
+    true and is the only honest thing to say. Each sentence asserted alone passes against a runner
+    that prints that one sentence always; asserted as three mutually exclusive spellings off two
+    endpoints, none of them can.
+
+    **`False` is a reading.** The middle run is what proves it: a guard written on falsiness
+    rather than on `is None` sends this account's perfectly good `not suspended` down the
+    no-reading path, and the defect comes back wearing the new sentence's clothes.
+    """
+    compared = str((await _run(_WHMEndpoint(suspended_after=True))).payload["message"])
+    unconfirmed = str((await _run(_WHMEndpoint(suspended_after=False))).payload["message"])
+    unrecorded = str(
+        (await _run(_WHMEndpoint(suspended_after=False), account={"user": ACCOUNT})).payload[
+            "message"
+        ]
+    )
+
+    assert COMPARED in compared
+    assert READ_ONLY not in compared and NO_READING not in compared
+
+    assert READ_ONLY in unconfirmed
+    # "before this ran" rather than the whole of `COMPARED`: what must not appear is the claim
+    # that a comparison happened, in any account-state wording it could be made in.
+    assert "before this ran" not in unconfirmed and NO_READING not in unconfirmed
+
+    assert NO_READING in unrecorded
+    assert READ_ONLY not in unrecorded and "before this ran" not in unrecorded
 
 
 # --------------------------------------------------------------------------------------

@@ -192,6 +192,12 @@ async def test_a_suspension_whose_confirming_read_is_unreadable_is_unverified_no
     # that never answered, and the negative half is what keeps the two from folding.
     assert "WHM did not say whether it is suspended" in str(outcome.payload["message"])
     assert "could not read the account back" not in str(outcome.payload["message"])
+    # The *confirming* read is what came back unreadable. The gate-time one did not: it is `False`
+    # on this request's evidence, and `False` is a reading. An absence test written on falsiness
+    # rather than on `is None` sends it down the no-reading path, which is this file's own defect
+    # — a benign value standing in for unknown — reappearing on the card instead of in the facet.
+    assert "It was not suspended when NOA last read it." in str(outcome.payload["message"])
+    assert "NOA has no reading" not in str(outcome.payload["message"])
     assert outcome.delta is not None
     assert outcome.delta.verification == VERIFICATION_UNAVAILABLE
     assert outcome.delta.verification_cause == ERROR_SUSPENSION_STATE_UNREADABLE
@@ -225,6 +231,10 @@ async def test_an_unsuspension_that_could_not_be_read_is_never_a_verified_succes
     # The sentence refuses the claim as well: it says what NOA cannot say, and the state word it
     # names is the one the change asked for rather than a reading nobody took.
     assert "so it cannot say the account is no longer suspended" in str(outcome.payload["message"])
+    # The other direction's gate-time reading, and the word turns with it: an unsuspension starts
+    # from `suspended`. The pair with the test above is what makes this a claim about the reading
+    # rather than about a constant — one `True`, one `False`, two different sentences.
+    assert "It was suspended when NOA last read it." in str(outcome.payload["message"])
     # The confirmed branch is the one that states the field it moved. Neither half may say so.
     assert "suspended" not in outcome.payload
     assert outcome.delta is not None

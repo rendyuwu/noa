@@ -137,9 +137,10 @@ ERROR_TASK_FAILED: Final = "task_failed"
 # be. Distinct from the unavailable case above it: this is a measurement.
 ERROR_POSTFLIGHT_FAILED: Final = "postflight_failed"
 
-# The third of the before-clause's three spellings, and the only one with no value in it. Named
-# because two branches reach for it: the confirming read that could not answer, and the failed
-# write whose reading says nothing about what this change did.
+# The one before-clause spelling with no value in it, and it means exactly one thing: the evidence
+# carried no usable `link_state`, so there is no gate-time reading to name. Not the sentence for a
+# postflight that could not confirm — that branch still holds the reading the operator approved
+# against, and `_before_clause` names it.
 MESSAGE_NO_BEFORE_READING: Final = "NOA has no reading of what it was before."
 
 # One structured event per outcome an operator may have to act on. Identifiers and codes only
@@ -198,6 +199,12 @@ class NICChangeTarget:
         flip, the flip NOA could not read back, and the flip Proxmox never answered for. What is
         unconfirmed on the last two is stated in their sentences and again by the status corner
         beside the heading, so no verdict word belongs in the heading itself.
+
+        **No surface reads this key yet.** The completed card still derives its heading from the
+        tool name, so today this value reaches `tool_runs.result_summary` and nothing a person
+        sees. It is written ahead of its reader because the embed cannot be rewritten before the
+        values it renders exist — and because the fallback to a humanised tool name has to survive
+        anyway, for every row opened before the key did.
 
         The verb is the operator's own `enable` / `disable` rather than `up` / `down`, which are
         Proxmox's words for the link and stay untranslated wherever they name the link's state.
@@ -559,9 +566,12 @@ async def _verify_link_state(
         )
         # The cause names the **confirming read** on both paths: it answers why NOA holds no
         # measurement, while the write's own code sits on the envelope where a reader looks for
-        # what failed. Neither path holds a reading, so both print the no-comparison spelling of
-        # the before-clause — the same claim `changed_fields=None` makes in the delta below, said
-        # once in words here so the two halves of one answer cannot drift apart.
+        # what failed. Neither path compared anything, which is the same claim `changed_fields=None`
+        # makes in the delta below — but "no comparison" is not "no reading". The link state the
+        # operator approved against is still on the evidence, and this is the branch where they
+        # have to go and check the interface by hand, so the clause names it as the thing to check
+        # against.
+        before = _before_clause(None, evidence=request.evidence)
         return ChangeOutcome(
             payload=(
                 tool_ok(
@@ -574,7 +584,7 @@ async def _verify_link_state(
                     message=(
                         f"Proxmox accepted the change to {target.where}. NOA could not read the "
                         "interface back afterwards, so it cannot say the link is "
-                        f"{target.desired_link_state}. {MESSAGE_NO_BEFORE_READING}"
+                        f"{target.desired_link_state}.\n{before}"
                     ),
                 )
                 if write_failure is None
@@ -586,7 +596,7 @@ async def _verify_link_state(
                         write_failure.code,
                         f"Proxmox {write_failure.verb} the change to {target.where}, and NOA "
                         "could not read the interface back afterwards either, so it cannot say "
-                        f"what the link is now. {MESSAGE_NO_BEFORE_READING}",
+                        f"what the link is now.\n{before}",
                     ),
                     **_common(target),
                     "headline": f"Interface change failed — {target.subject}",
@@ -637,8 +647,8 @@ async def _verify_link_state(
                 # Two facts and no verdict word: `confirmed` is the status corner's job on the
                 # card, and saying it here as well trains a reader to skip both.
                 message=(
-                    f"{target.where} is {fresh.nic.link_state}. "
-                    f"{_before_clause(changed, measured=fresh.nic.link_state)}"
+                    f"{target.where} is {fresh.nic.link_state}.\n"
+                    f"{_before_clause(changed, evidence=request.evidence)}"
                 ),
             ),
             delta=_nic_delta(target, verification=VERIFICATION_VERIFIED, changed_fields=changed),
@@ -661,8 +671,8 @@ async def _verify_link_state(
                 verified=True,
                 message=(
                     f"{opener}, so NOA read the interface back: {target.subject} is "
-                    f"{fresh.nic.link_state}. "
-                    f"{_before_clause(changed, measured=fresh.nic.link_state)}"
+                    f"{fresh.nic.link_state}.\n"
+                    f"{_before_clause(changed, evidence=request.evidence)}"
                 ),
             ),
             delta=_nic_delta(target, verification=VERIFICATION_VERIFIED, changed_fields=changed),
@@ -671,7 +681,8 @@ async def _verify_link_state(
     # Proxmox refused and the reading agrees with the refusal: both sides say nothing moved, so
     # the sentence below is itself the measurement and prints no before-clause. Everywhere else on
     # this branch NOA holds no comparison — an unanswered write may still land, and a link already
-    # in the desired state after a refusal was not put there by this change.
+    # in the desired state after a refusal was not put there by this change — but it still holds
+    # the gate-time reading, which is what the clause names there.
     measured_unmoved = verification == VERIFICATION_MISMATCH
     sentence = confirmed_verification_sentence(
         opener=opener,
@@ -684,7 +695,9 @@ async def _verify_link_state(
         payload={
             **tool_failure(
                 write_failure.code,
-                sentence if measured_unmoved else f"{sentence} {MESSAGE_NO_BEFORE_READING}",
+                sentence
+                if measured_unmoved
+                else f"{sentence}\n{_before_clause(None, evidence=request.evidence)}",
             ),
             **_common(target),
             # `unchanged` only where the reading earns it. A refusal NOA could still not measure
@@ -735,31 +748,61 @@ def _link_state_change(
     return (FieldChange(field="link_state", old=old, new=measured),)
 
 
-def _before_clause(changed_fields: tuple[FieldChange, ...] | None, *, measured: str) -> str:
-    """What the interface read before this ran, in three spellings that never fold into one.
+def _before_clause(
+    changed_fields: tuple[FieldChange, ...] | None, *, evidence: Mapping[str, Any]
+) -> str:
+    """What the interface read before this ran, in four spellings that never fold into one.
 
     Composed here rather than left to whatever renders the answer, because this runner is the only
     party holding both the reading and the card's own `old` side, and a renderer given an empty
-    list and a missing one would have to guess which of the two it was looking at. The three:
+    list and a missing one would have to guess which of the two it was looking at.
 
-    - **one row** — the ordinary confirmed flip, and the `old` side is the card's.
+    **The grammar carries the distinction, and that is the point of the wording rather than a
+    style choice.** "before this ran" claims a *comparison* — NOA holds both sides and is naming
+    the one it started from. "when NOA last read it" claims only a *reading* — NOA holds the
+    gate-time side and has nothing to set against it. Neither may be spelled the other way, and the
+    two middle cases are the ones a later simplification would fold together:
+
+    - **one row** — the two sides were read and they differ, the ordinary confirmed flip. The
+      `old` side quoted is the card's own, read off the same tuple the delta beside it is built
+      from, so the line an operator reads and the field change an administrator opens cannot state
+      two different before-values.
     - **`()`** — both sides were read and they match. Not nothing-known: NOA compared, and the
       interface reads today what the card said it read then.
-    - **`None`** — no comparison was made at all, so the sentence says exactly that rather than
-      naming a value. An `old` side nobody recorded is not an `old` side of `up`, and an empty
-      diff rendered here would tell an operator the interface was checked and had not moved.
+    - **`None` and the evidence has a usable `link_state`** — the postflight could not confirm, so
+      no *change* can be claimed; the gate-time reading exists all the same, and it is named. This
+      is the branch an operator has to go and check the interface by hand on, which makes it
+      exactly the branch where they need something to compare what they find against — and it is
+      the branch whose card they read a minute earlier, displaying that same reading.
+    - **`None` and no usable `link_state`** — the evidence genuinely carried nothing, so the
+      sentence says that rather than naming a value. An `old` side nobody recorded is not an `old`
+      side of `up`.
 
-    `measured` is only spoken on the middle one, where it is also the `old` side: the two sides
-    are equal there by definition, so quoting the reading quotes both.
+    **The absence test is `is None`, never falsiness.** `_evidence_link_state` already refuses the
+    empty string, so anything it hands back is a state somebody read on a card; a guard written
+    `if not gate_reading:` would send a real reading down the no-reading path and put the defect
+    back under a new spelling.
+
+    The gate reading answers the `()` case too, and it may: `_link_state_change` produces an empty
+    tuple only where that reading equals the postflight's, so quoting it there quotes both sides.
 
     Two branches deliberately print no clause at all and do not call this — the no-op and the
     measured mismatch — because each one's own sentence is the emptiness in words, and a second
     line restating it would read as a second fact.
+
+    **Joined to the sentence before it with a newline, never a space**, the same way every other
+    CHANGE runner joins its second sentence. This is a separate fact about a separate moment, and
+    a space would run the two together into one paragraph on a card that renders the runner's
+    bytes with no transformation. One spelling across every family, so the surface that renders
+    these has one thing to handle rather than a per-tool guess.
     """
-    if changed_fields is None:
+    gate_reading = _evidence_link_state(evidence)
+    if gate_reading is None:
         return MESSAGE_NO_BEFORE_READING
+    if changed_fields is None:
+        return f"It was {gate_reading} when NOA last read it."
     if not changed_fields:
-        return f"It already read {measured} before this ran."
+        return f"It already read {gate_reading} before this ran."
     return f"It was {changed_fields[0].old} before this ran."
 
 

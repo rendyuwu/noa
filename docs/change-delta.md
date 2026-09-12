@@ -130,6 +130,22 @@ said about a change the postflight has just watched happen. Three runners take t
 `whm_account_change_runner.py`, `proxmox_nic_runner.py` and `whm_firewall_change.py` — and all
 three answer `None`.
 
+**`None` covers two facts, and the sentence on the card tells them apart even though this field
+cannot.** A delta says `None` both where the evidence carried no reading at all and where a
+perfectly good gate-time reading exists but the postflight could not confirm a change against it.
+For the delta those collapse correctly — neither one can state a field change. For a person they
+do not: the first means NOA knows nothing about the prior state, and the second means NOA knows
+exactly what the operator approved against and simply could not re-check it. So the runners that
+compose an operator-facing before-clause spell those two differently, and the grammar carries it:
+*"It was `<old>` when NOA last read it"* claims only a reading, while *"It was `<old>` before this
+ran"* claims a comparison. Only a genuinely absent `old` earns *"NOA has no reading of what it was
+before."*
+
+The trap when writing a new runner is testing that `old` side for truthiness. `suspended: false`
+and an absent `suspended` are two different facts, and `if not old:` sends the first down the
+second's path — which is how an unconfirmed card came to tell an operator NOA held no reading
+while the reading sat in `approval_context`. Test `is None`.
+
 The worked case is `proxmox_vm_nic` (`proxmox_nic_runner.py`). Its `no_op` branch answers
 `verified: true` having written nothing, so a naive before→after diff of its payload renders the
 identity fields as new values and describes a change to an interface nothing touched. That branch

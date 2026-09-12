@@ -37,9 +37,17 @@ stated at all: an `old` side nobody recorded is not an `old` side of `false`, an
 before-value was invented is the fabrication refused one surface over.
 
 **Every sentence and heading an operator reads for this family is composed here.** The approval
-card renders the runner's own bytes unchanged and no LLM authors any of them, so whatever this
-module writes into `headline` and `message` is literally what a person reads off the completed
-card and pastes into a ticket. Two consequences that shape the wording below: the words state
+card is to render the runner's own bytes unchanged and no LLM authors any of them, so whatever
+this module writes into `headline` and `message` is what a person reads off the completed card and
+pastes into a ticket.
+
+One half of that is not true yet, and saying so here is cheaper than a reader discovering it:
+**nothing renders `headline` today.** The completed card still builds its heading from the tool
+name, so this family's card currently reads `Whm Suspend Account`. The key is written ahead of its
+reader on purpose — the surfaces cannot be rewritten before the values they render exist, and
+every row opened before that rewrite has to keep rendering — but until the embed reads it, a
+`headline` here is a value in `tool_runs.result_summary` and nothing a person sees. Two
+consequences that shape the wording below: the words state
 facts rather than verdicts, because the card's status corner already states the verdict off the
 delta's verification; and the raw error code stays on the envelope's `error_code` rather than
 inside a sentence, because it names a remedy to an engineer and names nothing to the operator
@@ -441,27 +449,49 @@ def _state_words(suspended: bool) -> str:
 
 
 def _before_clause(
-    changed_fields: tuple[FieldChange, ...] | None, *, direction: _AccountChangeDirection
+    changed_fields: tuple[FieldChange, ...] | None,
+    *,
+    target: _ChangeTarget,
+    direction: _AccountChangeDirection,
 ) -> str:
     """What the account read before the change ran, in the one spelling that branch earned.
 
-    Read off the **same** tuple the delta beside it is built from, so the line an operator reads
-    on the card and the field change an administrator opens in the audit drawer cannot state two
-    different before-values.
+    The value-bearing spellings are read off the **same** material the delta beside them is built
+    from — the confirmed row off the tuple, the rest off the gate-time reading that tuple is
+    derived from — so the line an operator reads on the card and the field change an administrator
+    opens in the audit drawer cannot state two different before-values.
 
-    Three spellings, and they never fold into one, because the three claims behind them differ:
+    **The grammar carries the distinction, and that is the point of the wording rather than a
+    style choice.** "before this ran" claims a *comparison* — NOA holds both sides and is naming
+    the one it started from. "when NOA last read it" claims only a *reading* — NOA holds the
+    gate-time side and has nothing to set against it. Neither may be spelled the other way, and the
+    two middle cases are the ones a later simplification would fold together:
 
     - one row — both sides were read and they differ. The ordinary confirmed change.
     - `()` — both sides were read and they match: measured, and nothing moved. Only reachable
       where the gate-time reading already equalled what the change asked for, which is the value
       the line therefore names.
-    - `None` — nothing was compared at all, so the line says NOA holds no reading rather than
-      naming a value. An `old` side nobody recorded is not an `old` side of `false`, and printing
-      "it was not suspended" off an absent reading is exactly the fabrication the facet's three
-      states exist to keep apart.
+    - `None` and a gate-time reading on the evidence — the postflight could not confirm, so no
+      *change* can be claimed; the reading the operator authorised against exists all the same,
+      and it is named. This is the branch that sends an operator to WHM to check the account by
+      hand, which makes it exactly the branch where they need something to compare what they find
+      against — and it is the branch whose approval card, read a minute earlier, displayed that
+      same reading.
+    - `None` and no gate-time reading — the evidence genuinely carried none, so the line says NOA
+      holds no reading rather than naming a value. An `old` side nobody recorded is not an `old`
+      side of `false`, and printing "it was not suspended" off an absent reading is exactly the
+      fabrication the facet's three states exist to keep apart.
+
+    **The absence test is `is None`, never falsiness.** `suspended_before` is a three-state value
+    and `False` is one of its two readings; a guard written `if not target.suspended_before:`
+    would send a live account's perfectly good reading down the no-reading path and put the defect
+    back under a new spelling. `account_suspension_state` is what keeps absence distinguishable
+    from a read `false`, and this is the last surface that distinction has to survive to.
     """
-    if changed_fields is None:
+    if target.suspended_before is None:
         return "NOA has no reading of what it was before."
+    if changed_fields is None:
+        return f"It was {_state_words(target.suspended_before)} when NOA last read it."
     if not changed_fields:
         return f"It already read {_state_words(direction.target_suspended)} before this ran."
     return f"It was {_state_words(bool(changed_fields[0].old))} before this ran."
@@ -553,15 +583,19 @@ async def _verify_account_state(
         # is why NOA holds no measurement, and the write's own code is on the envelope beside it
         # where a reader looks for what failed. Two questions, two fields.
         #
-        # `None` is the before-clause this branch takes, and it is a literal in both places rather
-        # than a value that happens to arrive as one: the line below and the delta at the foot of
-        # this return are each handed `None` outright. The measured-empty spelling cannot reach
-        # here at all, because the only thing that produces it is `_suspension_change`, and every
-        # call to it sits past this return where a reading exists to compare against. An empty
-        # tuple here would tell an operator NOA compared and found nothing moved, about a change
-        # nothing was read for.
+        # `None` is the changed-fields answer this branch takes, and it is a literal in both places
+        # rather than a value that happens to arrive as one: the line below and the delta at the
+        # foot of this return are each handed `None` outright. That is the whole reason the
+        # measured-empty spelling cannot appear here — nothing is passed through that could carry
+        # it — and it needs no argument about where an empty tuple is produced. An empty tuple here
+        # would tell an operator NOA compared and found nothing moved, about a change nothing was
+        # read for.
+        #
+        # Nothing compared is not nothing read, and the clause keeps the two apart: the gate-time
+        # reading is still on the target, and this is the branch that sends an operator to WHM to
+        # check the account by hand, so it is named as the thing to check against.
         unconfirmed = f"{detail}, so it cannot say the account {direction.confirmed_state}."
-        before = _before_clause(None, direction=direction)
+        before = _before_clause(None, target=target, direction=direction)
         # The heading names what the card is about rather than a reading, because there is no
         # reading: the corner beside it states that the change is unconfirmed, off the delta.
         headline = f"{direction.headline} — {target.username}"
@@ -632,7 +666,7 @@ async def _verify_account_state(
                 message=(
                     f"The {target.username} account {direction.confirmed_state} on "
                     f"{target.server_name}.{consequence}\n"
-                    f"{_before_clause(changed_fields, direction=direction)}"
+                    f"{_before_clause(changed_fields, target=target, direction=direction)}"
                 ),
             ),
             delta=_account_delta(
@@ -668,7 +702,7 @@ async def _verify_account_state(
                 verified=True,
                 message=(
                     f"{opener}, so NOA re-read the account: {reading}.\n"
-                    f"{_before_clause(changed_fields, direction=direction)}"
+                    f"{_before_clause(changed_fields, target=target, direction=direction)}"
                 ),
             ),
             delta=_account_delta(
@@ -686,8 +720,13 @@ async def _verify_account_state(
     changed_fields = () if measured_empty else None
     # The `mismatch` sentence states the reading it took, the way the postflight's own mismatch
     # branch above does, so no before-clause line follows it. The other shapes here compared
-    # nothing, and that line is what says so.
-    before = "" if measured_empty else f"\n{_before_clause(changed_fields, direction=direction)}"
+    # nothing — and the line that follows *them* says that without claiming NOA read nothing: the
+    # gate-time reading is what an operator checking the account by hand has to compare against.
+    before = (
+        ""
+        if measured_empty
+        else f"\n{_before_clause(changed_fields, target=target, direction=direction)}"
+    )
     return ChangeOutcome(
         payload={
             **tool_failure(
