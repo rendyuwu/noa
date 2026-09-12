@@ -445,7 +445,7 @@ async def _apply_change(
     added = (target.normalized,) if target.adding else ()
     try:
         await run_pmgconfig_sync_restart(target.config)
-    except PMGSHCLIError:
+    except PMGSHCLIError as exc:
         return _Applied(
             failure={
                 # **Both halves and the consequence, in one sentence.** The config moved and the
@@ -454,21 +454,40 @@ async def _apply_change(
                 # bug the four separate verification states exist to prevent, so the sentence
                 # cannot collapse to either half.
                 #
-                # `exc.message` is deliberately not spliced in. It is `pmgconfig`'s own line, an
-                # engineer's text that can quote a command an operator cannot run, and the
-                # remedy here does not move with it: the entry is in the config and not in
-                # force, so the sync gets run or an administrator gets called either way.
+                # `exc.message` is deliberately not spliced into the sentence. It is `pmgconfig`'s
+                # own line, an engineer's text that can quote a command an operator cannot run,
+                # and the remedy here does not move with it: the entry is in the config and not
+                # in force, so the sync gets run or an administrator gets called either way.
+                #
+                # It rides on `sync_error` instead of being dropped. Off the sentence, so the card
+                # stays an operator's; on the payload, so it reaches an administrator — the whole
+                # payload becomes `tool_runs.result_summary` as compact JSON
+                # (`core.audit.summaries.result_summary`), which the admin tool-run drawer renders
+                # as its `Result` row. That path also correlates to this run, which a log line
+                # raised in here could not: this function holds no `action_request_id`, so an
+                # administrator would be matching on a timestamp and a server name. Nowhere at
+                # all was the third option and the worst one — the only account of why the sync
+                # failed, gone from the card, the drawer and the logs alike.
                 **tool_failure(
                     ERROR_SYNC_FAILED,
                     f"{target.target} was "
                     f"{'added to' if target.adding else 'removed from'} the list on "
-                    f"{target.server_name} as {target.normalized}, and the step that puts it "
-                    "into effect did not run. It "
+                    f"{target.server_name} as "
+                    # The lines the change actually moved, read off the write above rather than
+                    # recomputed from the target. A removal can take more than one spelling of an
+                    # address out of the file, and naming the normalised form would print a single
+                    # line that may never have been in it — while the `removed` key on the delta
+                    # rendered beside this sentence carries all of them, so the two would disagree
+                    # about one measurement. An add is the other way round: `target.normalized` is
+                    # literally the line written, set as `added` a few lines below.
+                    f"{target.normalized if target.adding else ', '.join(removed)}, and the step "
+                    "that puts it into effect did not run. It "
                     f"{'cannot relay email yet' if target.adding else 'can still relay email'}.",
                 ),
                 **_common(target),
                 "headline": f"Saved, not live — {target.target}",
                 "applied": False,
+                "sync_error": exc.message,
             },
             added=added,
             removed=tuple(removed),

@@ -621,6 +621,15 @@ async def test_a_write_that_was_not_applied_is_reported_as_unapplied(
     assert payload["error_code"] == ERROR_SYNC_FAILED
     assert payload["applied"] is False
     assert payload["headline"] == f"Saved, not live — {TARGET}"
+    # `pmgconfig`'s own words are kept off the operator's sentence and kept on the payload, where
+    # the admin drawer reads them and where they correlate to this run. Both halves asserted: a
+    # strip that dropped them entirely would pass an assertion that only checked the sentence.
+    assert payload["sync_error"] == "pmgconfig: restart failed"
+    assert "pmgconfig" not in payload["message"]
+    # And it survives the audit path it was put there for: the whole payload becomes
+    # `result_summary`, which the admin tool-run drawer renders. Asserted rather than argued —
+    # a key an administrator cannot reach would be the same loss with an extra step.
+    assert "pmgconfig: restart failed" in str(result_summary(payload))
     # Both halves and the consequence, in one sentence: the config moved, the step that applies
     # it did not, and what that means for the address.
     assert payload["message"] == (
@@ -629,6 +638,46 @@ async def test_a_write_that_was_not_applied_is_reported_as_unapplied(
     )
     assert box.entries == [BYSTANDER, TARGET_NORMALIZED]
     assert status_for_payload(payload) is ToolRunStatus.FAILED
+
+
+async def test_a_failed_sync_on_a_removal_names_every_line_it_took(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The other arm of the sentence above, and the one that can name a line that never existed.
+
+    An add writes exactly one line and it is the normalised form, so naming that form names what
+    moved. A removal is not symmetric: it takes out every spelling of the address the file holds,
+    and the normalised form may not be among them. A sentence that recomputed it would print a
+    line the operator will not find in the file, beside a delta whose `removed` key lists the two
+    that really went — one measurement, two surfaces, disagreeing.
+    """
+    fixture, box = whitelist_change_context(
+        monkeypatch,
+        box=FakePMGWhitelist(
+            entries=[TARGET, BYSTANDER, TARGET_NORMALIZED],
+            sync_error=command_result(exit_code=1, stderr="pmgconfig: restart failed"),
+        ),
+    )
+
+    payload = await build_runner(fixture)(
+        execution_request(
+            server_id=server_id(fixture), action=ACTION_REMOVE, matches=BOTH_SPELLINGS
+        )
+    )
+
+    assert payload["ok"] is False
+    assert payload["error_code"] == ERROR_SYNC_FAILED
+    assert payload["applied"] is False
+    assert payload["headline"] == f"Saved, not live — {TARGET}"
+    # Both lines in the sentence, and both really gone from the file — the card names what the
+    # box now holds rather than a form recomputed from what was asked for.
+    assert payload["message"] == (
+        f"{TARGET} was removed from the list on {SERVER_NAME} as {TARGET}, "
+        f"{TARGET_NORMALIZED}, and the step that puts it into effect did not run. It can still "
+        "relay email."
+    )
+    assert box.deleted_paths == [delete_path(TARGET), delete_path(TARGET_NORMALIZED)]
+    assert box.entries == [BYSTANDER]
 
 
 async def test_a_failed_sync_and_a_failed_postflight_do_not_say_the_same_thing(
