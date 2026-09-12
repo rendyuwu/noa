@@ -48,12 +48,14 @@ from noa_api.mcp_tools.proxmox_nic import (
     ACTION_DISABLE,
     ACTION_ENABLE,
     ERROR_NET_NOT_FOUND,
+    EVIDENCE_NIC,
     TOOL_PROXMOX_VM_NIC,
 )
 from noa_api.mcp_tools.proxmox_nic_runner import (
     ERROR_POSTFLIGHT_FAILED,
     ERROR_TASK_FAILED,
     ERROR_TASK_TIMEOUT,
+    MESSAGE_NO_BEFORE_READING,
     TASK_POLL_ATTEMPTS,
     build_proxmox_nic_runners,
     build_proxmox_vm_nic_runner,
@@ -66,6 +68,8 @@ from support.proxmox_nic import (
     NET0_UP,
     NET1,
     NET1_UP,
+    SERVER_NAME,
+    VMID,
     FakeProxmoxNICVM,
     execution_request,
     nic_context,
@@ -126,6 +130,17 @@ async def test_an_approved_change_moves_the_link_and_confirms_it(
     assert payload["verified"] is True
     assert payload["link_state"] == expected_state
     assert vm.link_state() == expected_state
+    # The card's heading, written here rather than derived from the tool name: `Proxmox Vm Nic`
+    # names the machinery, and this names what happened to the interface. The verb is the
+    # operator's own, and it turns with the direction of the change.
+    verb = "disabled" if action == ACTION_DISABLE else "enabled"
+    assert payload["headline"] == f"Network interface {verb} — {NET0} on VM {VMID}"
+    # Two facts and no verdict word — `confirmed` is the status corner's job on the card — with
+    # the interface's own `up` / `down` left untranslated in both of them.
+    assert payload["message"] == (
+        f"{NET0} on VM {VMID} ({SERVER_NAME}) is {expected_state}. "
+        f"It was {'up' if action == ACTION_DISABLE else 'down'} before this ran."
+    )
 
 
 async def test_the_write_keeps_every_other_segment_of_the_line() -> None:
@@ -217,6 +232,14 @@ async def test_a_nic_already_in_the_asked_for_state_is_a_no_op_rather_than_a_fai
     assert payload["verified"] is True
     assert vm.config_writes == []
     assert vm.written_values == []
+    assert payload["headline"] == f"Nothing to change — {NET0} on VM {VMID}"
+    # `down`, not `disabled`: the interface's own word for its state, untranslated. And this
+    # sentence **is** the branch's empty diff said in words, which is why no before-clause prints
+    # beside it — asserted on the whole string, because a trailing one would pass a substring test.
+    assert payload["message"] == (
+        f"{NET0} on VM {VMID} ({SERVER_NAME}) was already down when NOA ran this change, so "
+        "nothing was written."
+    )
 
 
 async def test_a_nic_that_still_has_to_move_is_written() -> None:
@@ -324,6 +347,12 @@ async def test_a_task_that_reports_ok_while_the_nic_did_not_move_is_a_failure() 
     assert payload["verified"] is False
     assert payload["link_state"] == "up"
     assert len(vm.config_writes) == 1
+    # `unchanged`, because the reading earned it: NOA read the interface back and it had not
+    # moved. The sentence is that measurement, so no before-clause prints beside it either.
+    assert payload["headline"] == f"Interface unchanged — {NET0} on VM {VMID}"
+    assert payload["message"] == (
+        f"NOA read the interface back on {SERVER_NAME}: {NET0} on VM {VMID} is still up."
+    )
 
 
 async def test_a_postflight_that_cannot_be_read_is_unavailable_and_not_unverified() -> None:
@@ -343,6 +372,14 @@ async def test_a_postflight_that_cannot_be_read_is_unavailable_and_not_unverifie
     assert payload["verification"] == VERIFICATION_UNAVAILABLE
     assert payload["verification_cause"]
     assert len(vm.config_writes) == 1
+    # The heading is the applied one, because Proxmox took the write. What is unconfirmed is in
+    # the sentence, and the corner reads it off the verification state rather than off a word here.
+    assert payload["headline"] == f"Network interface disabled — {NET0} on VM {VMID}"
+    assert payload["message"] == (
+        f"Proxmox accepted the change to {NET0} on VM {VMID} ({SERVER_NAME}). NOA could not read "
+        f"the interface back afterwards, so it cannot say the link is down. "
+        f"{MESSAGE_NO_BEFORE_READING}"
+    )
 
 
 async def test_a_readable_postflight_that_agrees_is_verified() -> None:
@@ -357,6 +394,43 @@ async def test_a_readable_postflight_that_agrees_is_verified() -> None:
 
     assert payload["verified"] is True
     assert "verification" not in payload
+
+
+# --- The before-clause: where a missing reading and a measured-equal one stay apart ---
+
+
+async def test_the_three_before_clauses_are_three_different_sentences() -> None:
+    """`None` and `()` are not one answer, and one shared sentence is where they would fold.
+
+    All three are reachable on a confirmed flip, and each states something different: an interface
+    the card watched move, one that read then what it reads now, and one the card carried no
+    reading for at all. A runner spelling a missing `old` side and a measured-equal pair the same
+    way would tell an operator NOA had compared on the branch where it never did — the honesty
+    property the empty-versus-absent split exists for, restated on the surface a person reads.
+
+    Asserted together rather than one per test, because what has to hold is that the three
+    *differ*: each sentence alone passes against an implementation that prints one of them always.
+    """
+    fixture, _ = nic_context()
+    moved = await build_runner(fixture)(execution_request(server_id=server_id(fixture)))
+
+    fixture, _ = nic_context()
+    # The interface was edited away and back while the request sat pending: the card's reading and
+    # the postflight's agree, so NOA compared and nothing moved.
+    unmoved = await build_runner(fixture)(
+        execution_request(server_id=server_id(fixture), link_state="down")
+    )
+
+    fixture, _ = nic_context()
+    request = execution_request(server_id=server_id(fixture))
+    # Replaced rather than merged: what is being arranged is the *absence* of the key.
+    request.evidence[EVIDENCE_NIC] = {"net": NET0, "bridge": "vmbr0"}
+    uncompared = await build_runner(fixture)(request)
+
+    assert str(moved["message"]).endswith("It was up before this ran.")
+    assert str(unmoved["message"]).endswith("It already read down before this ran.")
+    assert str(uncompared["message"]).endswith(MESSAGE_NO_BEFORE_READING)
+    assert len({moved["message"], unmoved["message"], uncompared["message"]}) == 3
 
 
 # --- The write and its task ---
@@ -379,6 +453,15 @@ async def test_a_refused_write_is_reported_with_proxmoxs_own_code() -> None:
     assert payload["ok"] is False
     assert payload["error_code"] == "permission_denied"
     assert vm.link_state() == "up"
+    # The other arm of the heading: Proxmox refused and the fresh read agrees with the refusal, so
+    # the pair is a measurement that nothing moved and the heading may say so. The sentence is
+    # that measurement, so no before-clause prints — asserted on the whole string.
+    assert payload["headline"] == f"Interface unchanged — {NET0} on VM {VMID}"
+    assert payload["message"] == (
+        f"Proxmox refused the change to {NET0} on VM {VMID} ({SERVER_NAME}). Proxmox permission "
+        "denied: Permission check failed (/vms/110, VM.Config.Network). A fresh read agrees: "
+        f"{NET0} on VM {VMID} reads as up."
+    )
 
 
 async def test_a_task_that_finishes_badly_is_a_failure_and_the_nic_is_unchanged() -> None:
@@ -390,6 +473,7 @@ async def test_a_task_that_finishes_badly_is_a_failure_and_the_nic_is_unchanged(
     assert payload["ok"] is False
     assert payload["error_code"] == ERROR_TASK_FAILED
     assert "unable" in payload["message"]
+    assert payload["headline"] == f"Interface unchanged — {NET0} on VM {VMID}"
 
 
 async def test_a_task_that_never_finishes_times_out_rather_than_reporting_a_refusal(
@@ -409,6 +493,17 @@ async def test_a_task_that_never_finishes_times_out_rather_than_reporting_a_refu
     assert payload["ok"] is False
     assert payload["error_code"] == ERROR_TASK_TIMEOUT
     assert len([path for _method, path in vm.requests if "/tasks/" in path]) == TASK_POLL_ATTEMPTS
+    # Not `Interface unchanged`: the read agreeing with a write nobody answered is not a
+    # measurement that nothing moved, so the heading says the change failed and stops there.
+    assert payload["headline"] == f"Interface change failed — {NET0} on VM {VMID}"
+    assert payload["message"] == (
+        f"Proxmox did not answer the change to {NET0} on VM {VMID} ({SERVER_NAME}), and a fresh "
+        f"read says {NET0} on VM {VMID} reads as up. The change may still land, so NOA cannot "
+        f"report it as one that did not happen. {MESSAGE_NO_BEFORE_READING}"
+    )
+    # The write's own code names a remedy to an engineer and names nothing to the person reading
+    # the card. It stays on the envelope above, and `/admin` renders it there.
+    assert ERROR_TASK_TIMEOUT not in payload["message"]
 
 
 async def test_a_task_that_never_finishes_on_a_link_that_moved_reports_the_move(
@@ -428,8 +523,12 @@ async def test_a_task_that_never_finishes_on_a_link_that_moved_reports_the_move(
     assert payload["ok"] is True
     assert payload["verified"] is True
     assert payload["link_state"] == vm.link_state()
+    assert payload["headline"] == f"Network interface disabled — {NET0} on VM {VMID}"
     # The call is named in the sentence, so "confirmed" is never read as "answered".
-    assert "did not answer" in str(payload["message"])
+    assert payload["message"] == (
+        f"Proxmox did not answer the change to {NET0} on VM {VMID} ({SERVER_NAME}), so NOA read "
+        f"the interface back: {NET0} on VM {VMID} is down. It was up before this ran."
+    )
 
 
 async def test_a_write_that_answers_synchronously_is_not_polled() -> None:
@@ -508,6 +607,7 @@ async def test_the_payload_carries_the_identifiers_and_the_verdict_and_not_the_l
         "vmid",
         "net",
         "action",
+        "headline",
         "status",
         "link_state",
         "verified",

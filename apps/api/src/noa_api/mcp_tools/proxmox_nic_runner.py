@@ -137,6 +137,11 @@ ERROR_TASK_FAILED: Final = "task_failed"
 # be. Distinct from the unavailable case above it: this is a measurement.
 ERROR_POSTFLIGHT_FAILED: Final = "postflight_failed"
 
+# The third of the before-clause's three spellings, and the only one with no value in it. Named
+# because two branches reach for it: the confirming read that could not answer, and the failed
+# write whose reading says nothing about what this change did.
+MESSAGE_NO_BEFORE_READING: Final = "NOA has no reading of what it was before."
+
 # One structured event per outcome an operator may have to act on. Identifiers and codes only
 # — and never `request.reason`, which this runner does not read at all.
 LOG_NIC_RUN_NO_OP: Final = "proxmox_vm_nic_no_op"
@@ -173,6 +178,31 @@ class NICChangeTarget:
     def desired_link_state(self) -> str:
         """The link state this change is asking for."""
         return link_state_for(self.action)
+
+    @property
+    def subject(self) -> str:
+        """`net0 on VM 110` — the interface, as every sentence and every heading names it."""
+        return f"{self.net} on VM {self.vmid}"
+
+    @property
+    def where(self) -> str:
+        """`net0 on VM 110 (pve-cluster)` — the subject with the endpoint it sits on."""
+        return f"{self.subject} ({self.server_name})"
+
+    @property
+    def applied_headline(self) -> str:
+        """The card's heading for a change Proxmox took, whether or not NOA confirmed it.
+
+        Written here rather than derived from the tool name, which yields `Proxmox Vm Nic` — the
+        machinery, not what happened to the interface. Three branches share it: the confirmed
+        flip, the flip NOA could not read back, and the flip Proxmox never answered for. What is
+        unconfirmed on the last two is stated in their sentences and again by the status corner
+        beside the heading, so no verdict word belongs in the heading itself.
+
+        The verb is the operator's own `enable` / `disable` rather than `up` / `down`, which are
+        Proxmox's words for the link and stay untranslated wherever they name the link's state.
+        """
+        return f"Network interface {'disabled' if self.disabled else 'enabled'} — {self.subject}"
 
 
 @dataclass(frozen=True)
@@ -245,13 +275,20 @@ def build_proxmox_vm_nic_runner(*, context: McpToolContext) -> ChangeRunner:
                 return ChangeOutcome(
                     payload=tool_ok(
                         **_common(target),
+                        headline=f"Nothing to change — {target.subject}",
                         status=STATUS_NO_OP,
                         link_state=fresh.nic.link_state,
                         verified=True,
+                        # The reading in Proxmox's own word, not `disabled` / `enabled`: `up` and
+                        # `down` are what the interface calls itself and an operator reads them
+                        # as such, so they stay untranslated wherever they name the link's state.
+                        #
+                        # This sentence **is** the branch's empty diff, said in words — NOA
+                        # compared and nothing moved — so no separate before-clause prints beside
+                        # it, which a second line restating the same emptiness would.
                         message=(
-                            f"`{target.net}` on VM {target.vmid} ({target.server_name}) was "
-                            f"already {'disabled' if target.disabled else 'enabled'} when NOA "
-                            "ran this change, so nothing was written."
+                            f"{target.where} was already {fresh.nic.link_state} when NOA ran "
+                            "this change, so nothing was written."
                         ),
                     ),
                     delta=_nic_delta(target, verification=VERIFICATION_VERIFIED, changed_fields=()),
@@ -508,7 +545,6 @@ async def _verify_link_state(
     clean confirmed flip and leave no trace anything went wrong.
     """
     fresh = await _read_current_nic(target)
-    where = f"`{target.net}` on VM {target.vmid} ({target.server_name})"
     if not isinstance(fresh, FreshNIC):
         cause = str(fresh.get("error_code") or ERROR_UNKNOWN)
         logger.warning(
@@ -523,29 +559,37 @@ async def _verify_link_state(
         )
         # The cause names the **confirming read** on both paths: it answers why NOA holds no
         # measurement, while the write's own code sits on the envelope where a reader looks for
-        # what failed.
+        # what failed. Neither path holds a reading, so both print the no-comparison spelling of
+        # the before-clause — the same claim `changed_fields=None` makes in the delta below, said
+        # once in words here so the two halves of one answer cannot drift apart.
         return ChangeOutcome(
             payload=(
                 tool_ok(
                     **_common(target),
+                    headline=target.applied_headline,
                     status=STATUS_CHANGED,
                     verified=False,
                     verification=VERIFICATION_UNAVAILABLE,
                     verification_cause=cause,
                     message=(
-                        f"Proxmox accepted the change to {where}, but NOA could not read the "
-                        "interface back to confirm it. Check the VM before relying on it."
+                        f"Proxmox accepted the change to {target.where}. NOA could not read the "
+                        "interface back afterwards, so it cannot say the link is "
+                        f"{target.desired_link_state}. {MESSAGE_NO_BEFORE_READING}"
                     ),
                 )
                 if write_failure is None
                 else {
+                    # The write's own code is off the sentence and stays on the envelope beside
+                    # it: `digest_mismatch` names a remedy to an engineer and names nothing to the
+                    # person reading the card, and `/admin` renders it either way.
                     **tool_failure(
                         write_failure.code,
-                        f"Proxmox {write_failure.verb} the change to {where} "
-                        f"(`{write_failure.code}`), and NOA could not read the interface back "
-                        "either. Check the VM before relying on it.",
+                        f"Proxmox {write_failure.verb} the change to {target.where}, and NOA "
+                        "could not read the interface back afterwards either, so it cannot say "
+                        f"what the link is now. {MESSAGE_NO_BEFORE_READING}",
                     ),
                     **_common(target),
+                    "headline": f"Interface change failed — {target.subject}",
                 }
             ),
             delta=_nic_delta(
@@ -562,12 +606,16 @@ async def _verify_link_state(
         if not matched:
             return ChangeOutcome(
                 payload={
+                    # The reading is the whole sentence, so it is also this branch's empty diff
+                    # said in words and no before-clause prints beside it. `still up` carries the
+                    # before and the after at once: the interface did not move.
                     **tool_failure(
                         ERROR_POSTFLIGHT_FAILED,
-                        f"Proxmox accepted the change, but {where} still reads as "
-                        f"{fresh.nic.link_state}. Check the VM.",
+                        f"NOA read the interface back on {target.server_name}: "
+                        f"{target.subject} is still {fresh.nic.link_state}.",
                     ),
                     **_common(target),
+                    "headline": f"Interface unchanged — {target.subject}",
                     "link_state": fresh.nic.link_state,
                     "verified": False,
                 },
@@ -575,62 +623,78 @@ async def _verify_link_state(
                 delta=_nic_delta(target, verification=VERIFICATION_MISMATCH, changed_fields=()),
             )
 
+        # Computed once and read twice on purpose: the sentence's before-clause and the delta's
+        # `changed_fields` are the same three-way answer, and deriving them separately is how a
+        # card comes to say "It was up before this ran" over a delta claiming no comparison.
+        changed = _link_state_change(request, measured=fresh.nic.link_state)
         return ChangeOutcome(
             payload=tool_ok(
                 **_common(target),
+                headline=target.applied_headline,
                 status=STATUS_CHANGED,
                 link_state=fresh.nic.link_state,
                 verified=True,
+                # Two facts and no verdict word: `confirmed` is the status corner's job on the
+                # card, and saying it here as well trains a reader to skip both.
                 message=(
-                    f"{where} was {'disabled' if target.disabled else 'enabled'} and confirmed: "
-                    f"its link is now {fresh.nic.link_state}."
+                    f"{target.where} is {fresh.nic.link_state}. "
+                    f"{_before_clause(changed, measured=fresh.nic.link_state)}"
                 ),
             ),
-            delta=_nic_delta(
-                target,
-                verification=VERIFICATION_VERIFIED,
-                changed_fields=_link_state_change(request, measured=fresh.nic.link_state),
-            ),
+            delta=_nic_delta(target, verification=VERIFICATION_VERIFIED, changed_fields=changed),
         )
 
     verification, cause = confirmed_verification(matched=matched, failure=write_failure)
-    opener = f"Proxmox {write_failure.verb} the change to {where} (`{write_failure.code}`)"
+    opener = f"Proxmox {write_failure.verb} the change to {target.where}"
 
     if verification == VERIFICATION_VERIFIED:
         # Proxmox never said what it did and the link is where the change asked for it. No
         # hedge: NOA sent the write, Proxmox took it, and qualifying every unanswered call with
         # "NOA cannot prove it caused this" teaches an operator to skip the qualifier.
+        changed = _link_state_change(request, measured=fresh.nic.link_state)
         return ChangeOutcome(
             payload=tool_ok(
                 **_common(target),
+                headline=target.applied_headline,
                 status=STATUS_CHANGED,
                 link_state=fresh.nic.link_state,
                 verified=True,
                 message=(
-                    f"{opener}, so NOA re-read the interface: its link is now "
-                    f"{fresh.nic.link_state}."
+                    f"{opener}, so NOA read the interface back: {target.subject} is "
+                    f"{fresh.nic.link_state}. "
+                    f"{_before_clause(changed, measured=fresh.nic.link_state)}"
                 ),
             ),
-            delta=_nic_delta(
-                target,
-                verification=VERIFICATION_VERIFIED,
-                changed_fields=_link_state_change(request, measured=fresh.nic.link_state),
-            ),
+            delta=_nic_delta(target, verification=VERIFICATION_VERIFIED, changed_fields=changed),
         )
 
+    # Proxmox refused and the reading agrees with the refusal: both sides say nothing moved, so
+    # the sentence below is itself the measurement and prints no before-clause. Everywhere else on
+    # this branch NOA holds no comparison — an unanswered write may still land, and a link already
+    # in the desired state after a refusal was not put there by this change.
+    measured_unmoved = verification == VERIFICATION_MISMATCH
+    sentence = confirmed_verification_sentence(
+        opener=opener,
+        reading=f"{target.subject} reads as {fresh.nic.link_state}",
+        matched=matched,
+        failure=write_failure,
+        fallback="Proxmox did not say why.",
+    )
     return ChangeOutcome(
         payload={
             **tool_failure(
                 write_failure.code,
-                confirmed_verification_sentence(
-                    opener=opener,
-                    reading=f"{where} reads as {fresh.nic.link_state}",
-                    matched=matched,
-                    failure=write_failure,
-                    fallback="Proxmox VM config update failed.",
-                ),
+                sentence if measured_unmoved else f"{sentence} {MESSAGE_NO_BEFORE_READING}",
             ),
             **_common(target),
+            # `unchanged` only where the reading earns it. A refusal NOA could still not measure
+            # against, and an unanswered write whose read may simply be earlier than the change,
+            # both say the change failed and neither says the interface stayed put.
+            "headline": (
+                f"Interface unchanged — {target.subject}"
+                if measured_unmoved
+                else f"Interface change failed — {target.subject}"
+            ),
             # The reading rides beside the verdict on every one of these branches, because it is
             # what a refusal was missing: a code with no state behind it.
             "link_state": fresh.nic.link_state,
@@ -640,11 +704,7 @@ async def _verify_link_state(
             target,
             verification=verification,
             verification_cause=cause,
-            # `()` only where Proxmox refused and the reading agrees with the refusal — both
-            # sides say nothing moved. Everywhere else `None`: an unanswered write may still
-            # land, and a link already in the desired state after a refusal was not put there by
-            # this change.
-            changed_fields=() if verification == VERIFICATION_MISMATCH else None,
+            changed_fields=() if measured_unmoved else None,
         ),
     )
 
@@ -675,6 +735,34 @@ def _link_state_change(
     return (FieldChange(field="link_state", old=old, new=measured),)
 
 
+def _before_clause(changed_fields: tuple[FieldChange, ...] | None, *, measured: str) -> str:
+    """What the interface read before this ran, in three spellings that never fold into one.
+
+    Composed here rather than left to whatever renders the answer, because this runner is the only
+    party holding both the reading and the card's own `old` side, and a renderer given an empty
+    list and a missing one would have to guess which of the two it was looking at. The three:
+
+    - **one row** — the ordinary confirmed flip, and the `old` side is the card's.
+    - **`()`** — both sides were read and they match. Not nothing-known: NOA compared, and the
+      interface reads today what the card said it read then.
+    - **`None`** — no comparison was made at all, so the sentence says exactly that rather than
+      naming a value. An `old` side nobody recorded is not an `old` side of `up`, and an empty
+      diff rendered here would tell an operator the interface was checked and had not moved.
+
+    `measured` is only spoken on the middle one, where it is also the `old` side: the two sides
+    are equal there by definition, so quoting the reading quotes both.
+
+    Two branches deliberately print no clause at all and do not call this — the no-op and the
+    measured mismatch — because each one's own sentence is the emptiness in words, and a second
+    line restating it would read as a second fact.
+    """
+    if changed_fields is None:
+        return MESSAGE_NO_BEFORE_READING
+    if not changed_fields:
+        return f"It already read {measured} before this ran."
+    return f"It was {changed_fields[0].old} before this ran."
+
+
 def _common(target: NICChangeTarget) -> ToolPayload:
     """The identifiers every answer from this runner carries.
 
@@ -699,6 +787,7 @@ __all__ = [
     "LOG_NIC_RUN_NO_OP",
     "LOG_NIC_RUN_UNVERIFIED",
     "MESSAGE_NET_GONE",
+    "MESSAGE_NO_BEFORE_READING",
     "MESSAGE_TASK_TIMEOUT",
     "TASK_POLL_ATTEMPTS",
     "TASK_POLL_DELAY_SECONDS",
