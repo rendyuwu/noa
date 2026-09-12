@@ -11,9 +11,12 @@ Two decisions here carry the weight of the tests that use this module.
 **Rows are real `WHMServer` instances, not stand-ins.** The assertion is that nothing a
 tool emits carries credential material, and the thing that decides that is
 `WHMServer.to_safe_dict`. A hand-written fake with a hand-written `to_safe_dict` would test
-the fake. So `whm_server()` constructs the mapped class and fills the three server-defaulted
-columns (`id`, `created_at`, `updated_at`) by hand — an unsaved instance has them as `None`,
-and the resolver's UUID branch needs a real id.
+the fake. So `whm_server()` constructs the mapped class and fills the three defaulted columns
+(`id`, `created_at`, `updated_at`) by hand — an unsaved instance has them as `None`, and the
+resolver's UUID branch needs a real id. `None` until a flush whichever kind of default it is:
+`id` is Postgres's (`gen_random_uuid()`), while the two timestamps are stamped by the
+application clock and keep a server default only as the non-ORM fallback (`core/db/columns.py`).
+A default of either kind runs at flush and not at construction.
 
 Every row is built **with** an API token and SSH credentials, even where the test does not
 care. A row with no secrets cannot fail a "no secrets leaked" assertion, which would make
@@ -166,7 +169,7 @@ def pmg_server(
     """One `pmg_servers` row, credentials included, ready to read.
 
     The same construction as `whm_server` and for the same reasons — a real mapped instance
-    with the three server-defaulted columns filled by hand — over a narrower row: PMG is
+    with the three defaulted columns filled by hand — over a narrower row: PMG is
     SSH-only, so there is no `base_url`, no API token and no `verify_ssl`.
 
     The credential defaults are shared with the WHM row on purpose. They are ciphertext-*shaped*
@@ -204,7 +207,7 @@ def proxmox_server(
     """One `proxmox_servers` row, credentials included, ready to read.
 
     The same construction as `whm_server` and for the same reasons — a real mapped instance with
-    the three server-defaulted columns filled by hand — over the narrowest row of the three:
+    the three defaulted columns filled by hand — over the narrowest row of the three:
     Proxmox is HTTP-only (I.ext), so there are no SSH columns and no host-key pin.
 
     `api_token_secret` defaults to a ciphertext-*shaped* literal that does not decrypt. It exists

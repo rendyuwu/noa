@@ -15,7 +15,8 @@ not the caller's produces `["read"]` and nothing else — the property that keep
 prompt-injected id from making NOA write to a stranger's row.
 
 The stored value is an `ActionResultView`, not an `ActionRequest`: an ORM instance would carry
-its server-defaulted columns as `None` until a flush, so an assertion on `status` would be
+its defaulted columns as `None` until a flush — at flush and not at construction, whether the
+default is the application clock's or the database's — so an assertion on `status` would be
 asserting against the double's gaps. Same reason `support.action_decisions` keeps dataclasses.
 """
 

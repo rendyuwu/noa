@@ -12,9 +12,10 @@ in `action_requests`" are different claims and only the second one is what the v
 split as `support.tool_runs`, `support.servers` and `support.rbac`.
 
 The recorded row is a dataclass rather than an `ActionRequest` instance, for the reason
-`support.tool_runs` gives: the ORM object carries its server-defaulted columns as `None`
-until a flush, so an assertion on `status` would be asserting against the double's own gaps
-rather than against what the caller asked for. The three columns a decision writes —
+`support.tool_runs` gives: the ORM object carries its defaulted columns as `None` until a
+flush — at flush and not at construction, whether the default is the application clock's or
+the database's — so an assertion on `status` would be asserting against the double's own
+gaps rather than against what the caller asked for. The three columns a decision writes —
 `reason`, `decided_at`, `tool_run_id` — are absent from this class on purpose: the gate has
 no way to set them (`ActionRequestRepository` exposes none), and a double that offered a slot
 for them would make the assertion "the gate wrote no decision" pass by construction.

@@ -20,9 +20,11 @@ and the executor is handed the run only after that commit — a handoff before i
 whose authorization then rolled back.
 
 Rows are dataclasses, not ORM instances, for the reason `support.tool_runs` gives: an
-`ActionRequest` would carry its server-defaulted columns as `None` until a flush, so an
-assertion on `status` would be asserting against the double's own gaps rather than against
-what the caller asked for.
+`ActionRequest` would carry its defaulted columns as `None` until a flush, so an assertion
+on `status` would be asserting against the double's own gaps rather than against what the
+caller asked for. A column default runs at flush and not at construction whichever kind it
+is — `created_at` and `updated_at` are filled by the application clock and carry a server
+default only as the non-ORM fallback (`core/db/columns.py`), and the timing is the same.
 
 **The live helpers at the bottom are not doubles.** `insert_user`, `open_request`,
 `read_request`, `read_runs` and `ObservedDecisionRepository` run against a real Postgres and

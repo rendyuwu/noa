@@ -18,8 +18,10 @@ caller's produces `["read"]` and nothing else — the property that keeps an id 
 handed by a model from making NOA write to a stranger's row.
 
 Stored values are `ApprovalCardView`s rather than ORM instances, for the reason
-`support.action_decisions` gives: an `ActionRequest` carries its server-defaulted columns as
-`None` until a flush, so an assertion on `status` would be asserting against the double's gaps.
+`support.action_decisions` gives: an `ActionRequest` carries its defaulted columns as `None`
+until a flush — at flush and not at construction, whether the default is the application
+clock's or the database's — so an assertion on `status` would be asserting against the
+double's gaps.
 """
 
 from __future__ import annotations

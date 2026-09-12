@@ -31,8 +31,9 @@ from core.db.lifecycle import ActionRequestStatus
 @dataclass
 class FakeActionRequestRow:
     """The columns an expiry reads and writes. Not an ORM instance, for the reason
-    `support.action_decisions` gives: a real `ActionRequest` carries its server defaults as
-    `None` until a flush, so an assertion on `status` would be testing the double's gaps."""
+    `support.action_decisions` gives: a real `ActionRequest` carries its defaults as `None`
+    until a flush — at flush and not at construction, whether the default is the application
+    clock's or the database's — so an assertion on `status` would be testing the double's gaps."""
 
     action_request_id: UUID
     expires_at: datetime
