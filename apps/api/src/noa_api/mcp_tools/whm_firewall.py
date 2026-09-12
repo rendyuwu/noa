@@ -31,13 +31,16 @@ Three things the result does that `noa-old`'s did not:
 - **Evidence is not repeated per backend.** The lines are labelled by their own content
   (`csf.deny`, `Imunify blacklist: …`), so a per-backend copy would double the transcript to say
   the same thing twice. Each backend entry carries its verdict, or the code its failure has.
-- **A comment NOA wrote is cut back out before a model reads it.** This tool
-  reads csf's and Imunify's own text straight into a transcript, and the release-and-allow tool
-  writes the operator's approval reason into the comment of every allow entry it creates — so
+- **A comment NOA wrote is cut back out of every evidence line, and this module is where.** This
+  tool reads csf's and Imunify's own text straight into a transcript, and the release-and-allow
+  tool writes the operator's approval reason into the comment of every allow entry it creates — so
   without the cut, the one operator-typed reason field would come back through this result the
   way WHM's `suspendreason` came back through
-  `whm_search_accounts`. See `without_noa_comment_text` for what makes the cut possible
-  and what it costs.
+  `whm_search_accounts`. The cut is made in `BackendLookup` rather than in this tool's body,
+  because the same lines are the two CHANGE tools' before-state and go from there onto the
+  approval card: uncut there, an *earlier* approval's reason rides NOA's own allow entry onto a
+  *later* card. See `without_noa_comment_text` for what makes the cut possible and
+  `BackendLookup.__post_init__` for what it costs.
 
 The tool holds no session while it talks to the server. The row is resolved and turned into an
 `SSHConnectionConfig` inside one session, which then closes: the account search's rule, and the
@@ -158,6 +161,35 @@ class BackendLookup:
     message: str | None = None
     allow_entry: bool = False
 
+    def __post_init__(self) -> None:
+        """Cut NOA's own comment out of every evidence line, once, here.
+
+        This is the single point every firewall evidence line crosses: both parse sites build one
+        of these, and both readers — this module's own tool payload and `firewall_state`'s
+        before-state — take `matches` off it. A cut written at one reader leaves the other one
+        carrying the text, which is exactly the defect this replaced: the before-state went onto
+        `action_requests.approval_context` uncut, so the reason an operator typed at an *earlier*
+        approval rode the `csf.allow` entry NOA itself wrote back onto a *later* approval card and
+        into the block copied off it. The reason on a card belongs to the decision being made now
+        and reaches it from `action_requests`, never from a firewall line.
+
+        **The trade, stated where it happens.** An evidence line is no longer byte-verbatim for an
+        allow entry NOA wrote — on the approval card and in the receipt as well as in a tool
+        result — and that is deliberate. The alternative is rendering one decision's typed reason
+        on another decision's card and from there into a ticket.
+
+        Only NOA's own comment goes. The marker is what tells the two apart, and it is a marker
+        rather than a guess for that reason (`noa_firewall_comment`): an administrator's own
+        comment on a hand-written entry is the target system's text and is what the evidence block
+        exists to show.
+
+        `total_matches`, `verdict` and `allow_entry` are all computed from the full lines before
+        this runs, and none of them moves: the cut shortens a line, it never drops one.
+        """
+        object.__setattr__(
+            self, "matches", [without_noa_comment_text(line) for line in self.matches]
+        )
+
     @property
     def answered(self) -> bool:
         """True when this backend produced a verdict a decision can rest on."""
@@ -210,13 +242,13 @@ def without_noa_comment_text(line: str) -> str:
     LFD's own block reasons and Imunify's `smtpauth brute force` are the evidence this tool
     exists to show, and they are nobody's approval reason.
 
-    Applied at the **surface that answers a model** and not in the parser — one
-    system over from `ACCOUNT_FIELDS_WITHHELD_FROM_MODEL`: the same lines reach the approval
-    card and the receipt through the release-and-allow tool's evidence, and those are the
-    operator's own surfaces —
-    a cut made in `parse_csf_grep_output` would take the reason off the two places that exist to
-    show it. The verdict is unaffected either way; it is computed from the full parse before
-    anything is cut.
+    Applied once, in `BackendLookup.__post_init__` — every evidence line crosses that one point,
+    and the card and the receipt are cut there too. See it for the trade that buys.
+
+    Not applied in `parse_csf_grep_output`: `core.integrations.whm.csf` is a pure parser with no
+    NOA imports, and it is the parser the verdict is read off — which is why the verdict is
+    unaffected by the cut either way. `backend_change_failure` is the second caller and cuts
+    something else: a backend's refusal message, which can quote the entry back.
     """
     match = _NOA_COMMENT_RE.search(line)
     return line if match is None else line[: match.end()]
@@ -383,16 +415,12 @@ async def whm_preflight_firewall_entries(
     # Evidence in a fixed backend order, so two identical calls read alike. Each backend's own
     # lines are already ordered by the system that produced them (see `csf.total_matches`).
     #
-    # Cut, because this list goes to a model and the release-and-allow tool writes the operator's
-    # approval reason into
-    # the comment of every allow entry it creates. The count below is deliberately taken
-    # from the parsers rather than from this list: the cut shortens lines, it never drops one, so
-    # `total_matches` still answers "how many entries mention this address".
-    matches = [
-        without_noa_comment_text(line)
-        for name in (BACKEND_CSF, BACKEND_IMUNIFY)
-        for line in _lines(lookups, name)
-    ]
+    # No cut here: `BackendLookup` made it as each lookup was built, so a line reaching this list
+    # already carries no approval reason and a second cut would only be a second place to forget.
+    # The count below is deliberately taken from the parsers rather than from this list: the cut
+    # shortens lines, it never drops one, so `total_matches` still answers "how many entries
+    # mention this address".
+    matches = [line for name in (BACKEND_CSF, BACKEND_IMUNIFY) for line in _lines(lookups, name)]
     total_matches = sum(lookup.total_matches for lookup in lookups.values())
 
     payload: ToolPayload = {

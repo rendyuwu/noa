@@ -218,8 +218,9 @@ async def whm_firewall_allowlist_remove(
     the reading goes onto the row verbatim as the before-state and the question opens.
 
     The no-op answer lands in a transcript and is built from the server name, the address
-    and one measured boolean — never from the evidence lines, which carry the marker and reason
-    the release-and-allow tool wrote onto the very entry this call is about.
+    and one measured boolean — never from the evidence lines, which carry NOA's marker for the
+    very entry this call is about. The reason behind that marker is cut at `BackendLookup`; this
+    answer is built from what NOA measured so that it does not rest on that cut holding.
 
     No `reason` parameter and nowhere to add one — the word is typed by an operator on the card,
     after this result has been rendered and forgotten, and the gate refuses a

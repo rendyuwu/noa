@@ -32,7 +32,9 @@ and `test_an_already_allowlisted_address_still_opens_a_request` are that claim s
 
 from __future__ import annotations
 
+import json
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from fastmcp.tools import ToolResult
@@ -51,7 +53,12 @@ from noa_api.mcp_tools.change_gate import (
 )
 from noa_api.mcp_tools.registry import register_mcp_tools
 from noa_api.mcp_tools.results import ERROR_TIMEOUT
-from noa_api.mcp_tools.whm_firewall import ERROR_INVALID_TARGET, ERROR_TARGET_REQUIRED
+from noa_api.mcp_tools.whm_firewall import (
+    ERROR_INVALID_TARGET,
+    ERROR_TARGET_REQUIRED,
+    NOA_COMMENT_MARKER,
+    noa_firewall_comment,
+)
 from noa_api.mcp_tools.whm_firewall_change import (
     ERROR_DURATION_INVALID,
     EVIDENCE_DURATION_MINUTES,
@@ -81,6 +88,7 @@ from support.whm_firewall import (
     IMUNIFY_DELETE,
     IMUNIFY_DROP,
     IMUNIFY_WHITE,
+    IMUNIFY_WHITE_AND_DROP,
     SERVER_NAME,
     SSH_PASSWORD_PLAINTEXT,
     SSH_PRIVATE_KEY_PLAINTEXT,
@@ -169,6 +177,58 @@ async def test_the_preflight_runs_inside_the_call_and_lands_on_the_row(
     # The evidence carries its own bound, on the card as much as in a tool result.
     assert firewall["total_matches"] == len(firewall["matches"])
     assert firewall["truncated"] is False
+
+
+async def test_an_earlier_approvals_reason_does_not_reach_this_card(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The one operator-typed reason field does not travel from one decision to the next.
+
+    The shape is the live one rather than a string: this tool writes `noa:<id> <reason>` into the
+    comment of every allow entry it creates, csf echoes that comment back through `csf -g`, and
+    this before-state is rendered onto the approval card and into the block an operator copies
+    into a ticket. So an address released last week arrives at today's card carrying last week's
+    typed words — authored by a different operator, for a decision nobody is being asked to make
+    here. `EARLIER_APPROVAL` is deliberately not this request's id, because that is the case:
+    the entry outlives the approval that authorised it.
+
+    Driven through the parse site, not around it. A test that hand-built the evidence dict would
+    assert about its own fixture and would stay green with the cut deleted.
+
+    The second half is the one that makes the first mean anything: a cut that ate the whole line
+    would satisfy "the reason is gone" and destroy the evidence the card exists to show. So the
+    marker survives — `noa:<id>` is the address of the approval row where that reason is readable
+    behind the operator's own cookie — and so does everything csf and Imunify wrote themselves,
+    including an administrator's own `office` note, which is the target system's text and not
+    anybody's approval reason.
+    """
+    earlier_approval = uuid4()
+    earlier_reason = "customer confirmed, ticket NOC-4471"
+    noa_allow_line = (
+        f"{CSF_ALLOW_LINE} ({noa_firewall_comment(earlier_approval, reason=earlier_reason)})"
+    )
+    fixture, _ = release_context(
+        monkeypatch,
+        box=FakeFirewallBox(
+            csf=csf_backend(csf_answer(f"{CSF_DENY_LINE}\n{noa_allow_line}")),
+            imunify=imunify_backend(imunify_answer(IMUNIFY_WHITE_AND_DROP)),
+        ),
+    )
+
+    await release(fixture)
+
+    approval_context = fixture.action_requests.only.approval_context
+    # On the serialized row rather than on one key: the reason is not a field here, it is text
+    # inside an evidence line, and a key comparison would pass straight over it.
+    assert earlier_reason not in json.dumps(approval_context)
+
+    matches = approval_context["evidence"][EVIDENCE_FIREWALL]["matches"]
+    assert f"{CSF_ALLOW_LINE} ({NOA_COMMENT_MARKER}{earlier_approval}" in matches
+    assert CSF_DENY_LINE in matches
+    assert "office" in " ".join(matches)
+    assert "smtpauth brute force" in " ".join(matches)
+    # The cut shortens lines and never drops one, so the bound the card states is unmoved.
+    assert approval_context["evidence"][EVIDENCE_FIREWALL]["total_matches"] == len(matches)
 
 
 async def test_the_recorded_arguments_are_the_three_the_schema_declares(

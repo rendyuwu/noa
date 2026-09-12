@@ -80,15 +80,17 @@ whichever half answered is the fabrication the unknown-verdict rule was written 
 dual-backend firewall read to stop, and on a CHANGE it is
 worse: "released and allowed" on a box whose blocking backend was never re-read.
 
-**The operator's reason is written onto the entry, and cut back out of the READ**.
+**The operator's reason is written onto the entry, and cut back out of every line NOA reads
+back**.
 csf's allow entry takes a comment and Imunify's takes `--comment`, and the only honest content
 for either is why the address was allowed — the one operator-typed reason field permits it to
 leave NOA for exactly
-this. What the no-path-back rule requires is that it cannot come back, and the path back is the
-dual-backend firewall read, which reads csf's
-own lines into a transcript. So the comment is written behind NOA's marker
-(`noa:<action_request_id> <reason>`) and the dual-backend firewall read cuts from that marker to
-the end of the line. Two
+this. What the no-path-back rule requires is that it cannot come back, and every line either
+backend echoes is a way back. So the comment is written behind NOA's marker
+(`noa:<action_request_id> <reason>`) and `BackendLookup` cuts from that marker to the end of
+every evidence line it is built with — the model's result, the approval card and the receipt
+alike, because the entry this tool wrote outlives the approval that authorised it and the next
+card reading the same address would otherwise show that earlier decision's words. Two
 consequences worth stating: the runner's own payload never repeats the reason, because
 `result_summary` is derived from it and `noa_get_action_result` hands that to a model (the
 no-path-back rule's clause on a derived summary); and

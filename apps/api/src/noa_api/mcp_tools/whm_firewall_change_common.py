@@ -210,16 +210,14 @@ def firewall_state(
     firewall change is looking at the reading they would have got from the preflight, which is
     what makes the card honest about what it is approving (DECISIONS section 6.5).
 
-    **Uncut**, unlike the dual-backend firewall read's own `matches`. These lines go onto
-    `action_requests.approval_context`
-    and from there to the approval card and the receipt, both of which are the operator's own
-    surfaces behind their cookie — and `noa_get_action_result` reaches neither: `ActionResultView`
-    has no evidence field, and the only thing `core.approvals.results` takes off `action_receipts`
-    is the delta's two verification scalars, lifted out of the JSONB **in SQL**
-    (`core.approvals.reads.select_requester_matched_with_change_verification`), so no receipt row
-    enters that process at all. The
-    no-path-back rule withholds from the surface that answers a *model*; withholding
-    here would take the reason off the two places that exist to show it.
+    **Cut**, the same as the dual-backend firewall read's own `matches` and by the same mechanism:
+    `BackendLookup` removes NOA's own comment text as each lookup is built, so nothing reaching
+    here can be handed an uncut line. These lines go onto `action_requests.approval_context` and
+    from there to the approval card and the block copied off it, and the reason a NOA-written
+    allow entry carries is **not this request's** — it was typed at an earlier approval, against a
+    decision this operator is not being asked to make. The reason that belongs on this card
+    reaches it from `action_requests`, where the operator types it. What the cut costs is stated
+    at the mechanism: an allow entry NOA wrote no longer reads back byte-verbatim, here either.
     """
     matches = [line for lookup in lookups.values() for line in lookup.matches]
     total_matches = sum(lookup.total_matches for lookup in lookups.values())

@@ -94,7 +94,15 @@ from support.whm_firewall_change import allowlist_remove, changes, csf_commands,
 
 # The address is on both allow lists: the state an operator asks for a removal from, and the one
 # every test below that expects a card to open needs.
-NOA_ALLOW_LINE = f"{CSF_ALLOW_LINE} noa:d3b07384-d9a0-4f1e-8e2b-5a6c7d8e9f01 {REASON}"
+#
+# The id is an *earlier* approval's, and that is the point rather than a detail. This tool takes no
+# reason and opens its own row; the reason csf echoes back on this entry was typed at the approval
+# that created the entry, for a decision nobody is being asked to make again. `NOA_ALLOW_LINE_CUT`
+# is what survives `BackendLookup`'s cut — the marker, which is the address of the row where that
+# reason stays readable behind the operator's own cookie.
+EARLIER_APPROVAL = "d3b07384-d9a0-4f1e-8e2b-5a6c7d8e9f01"
+NOA_ALLOW_LINE = f"{CSF_ALLOW_LINE} noa:{EARLIER_APPROVAL} {REASON}"
+NOA_ALLOW_LINE_CUT = f"{CSF_ALLOW_LINE} noa:{EARLIER_APPROVAL}"
 
 
 def _allowlisted_box(*, csf: str = CSF_ALLOW_LINE, imunify: str = IMUNIFY_WHITE) -> FakeFirewallBox:
@@ -140,10 +148,11 @@ async def test_the_preflight_runs_inside_the_call_and_lands_on_the_row(
 ) -> None:
     """One call, evidence born in it, persisted for the card.
 
-    The before-state is the allow entry the operator is deciding to delete, shown with the
-    comment NOA wrote on it — uncut, because the card is the operator's own surface behind their
-    cookie and is one of the two places the never-crosses-back-to-a-model rule deliberately does
-    *not* withhold from.
+    The before-state is the allow entry the operator is deciding to delete, shown with NOA's
+    marker on it and the reason behind that marker cut away. The card is the operator's own
+    surface, but the reason on this line is not this decision's — it was typed at the approval
+    that created the entry, so rendering it here would carry one operator's words onto another
+    operator's card and into whatever they copy off it.
     """
     fixture, _ = release_context(monkeypatch, box=_allowlisted_box(csf=NOA_ALLOW_LINE))
 
@@ -158,8 +167,8 @@ async def test_the_preflight_runs_inside_the_call_and_lands_on_the_row(
     assert firewall["combined_verdict"] == "allowlisted"
     assert firewall["available_backends"] == {"csf": True, "imunify": True}
     assert firewall["unanswered_backends"] == []
-    assert NOA_ALLOW_LINE in firewall["matches"]
-    assert REASON in " ".join(firewall["matches"])
+    assert NOA_ALLOW_LINE_CUT in firewall["matches"]
+    assert REASON not in " ".join(firewall["matches"])
     # Row-cap rule: the evidence carries its own bound, on the card as much as in a tool result.
     assert firewall["total_matches"] == len(firewall["matches"])
     assert firewall["truncated"] is False
@@ -327,10 +336,7 @@ async def test_the_no_op_answer_carries_no_evidence_line(
      target and the answer is still a no-op while the leaky text is genuinely in front of the code
      under test. Asserting on a clean read would prove nothing.
     """
-    other = (
-        "Found 198.51.100.7 in /etc/csf/csf.allow "
-        f"noa:d3b07384-d9a0-4f1e-8e2b-5a6c7d8e9f01 {REASON}"
-    )
+    other = f"Found 198.51.100.7 in /etc/csf/csf.allow noa:{EARLIER_APPROVAL} {REASON}"
     fixture, _ = release_context(
         monkeypatch,
         box=FakeFirewallBox(
