@@ -152,11 +152,17 @@
  * the background (`components/notice.module.css`), which lifts the surface TOWARD the label and
  * takes the ratio down — so a colour picked to clear 4.5:1 at rest can sit under the bar for as
  * long as the pointer is on it. Measured from the hex values below: approve 6.67:1 resting and
- * 5.63:1 hovered, deny 6.46:1 and 5.52:1.
+ * 5.61:1 hovered, deny 6.46:1 and 5.52:1.
  *
- * The light pair is left where it was, at 5.32:1 / 4.52:1 and 6.75:1 / 5.59:1. Note how little
- * room approve has once hovered: 0.02. The check beside this file binds all eight numbers to these
- * shipped values, so a nudge to any one of them reddens rather than passing quietly.
+ * The light pair is left where it was, at 5.32:1 / 4.52:1 and 6.75:1 / 5.57:1. Note how little
+ * room approve has once hovered: 0.02.
+ *
+ * What the check beside this file (`decision-contrast.test.ts`) actually binds: it recomputes all
+ * four resting and all four hovered surfaces from the hex values in this file and the hover mix
+ * percentage in `components/notice.module.css`, and asserts each one against a 4.5:1 FLOOR. So a
+ * nudge that drops a pair under the bar reddens, and a nudge that stays above it does not — the
+ * eight numbers written above are the measurement taken when the colours were chosen, and nothing
+ * holds them to what ships. Re-measure them here when a colour moves.
  */
 @media (prefers-color-scheme: dark) {
   .approve {

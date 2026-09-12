@@ -62,9 +62,18 @@ function capture(css: string, pattern: RegExp, what: string): string {
   return found[1]
 }
 
-/** `.selector { … color: #rrggbb … }`, the colour of the rule that selector opens. */
+/**
+ * `.selector { … color: #rrggbb … }`, the colour of the rule that selector opens.
+ *
+ * The declaration has to start at a `;` boundary, and `\b` was not enough to say so: every rule
+ * here declares `border-color` directly above `color`, `\b` matches between the `-` and the `c`,
+ * and the lazy `[^}]*?` before it stops at the first thing that matches — so the capture read the
+ * border and a mutation of the label colour alone left every ratio below green. The group stays
+ * optional so a rule declaring `color` first still matches, and `[^}]` cannot cross into the next
+ * rule.
+ */
 const colorOf = (selector: string) =>
-  new RegExp(`\\${selector}\\s*\\{[^}]*?\\bcolor:\\s*(#[0-9a-fA-F]{6})`)
+  new RegExp(`\\${selector}\\s*\\{(?:[^}]*?;)?\\s*color:\\s*(#[0-9a-fA-F]{6})`)
 
 /** `--name: #rrggbb`, the token as declared in whichever half it is read from. */
 const tokenOf = (name: string) => new RegExp(`${name}:\\s*(#[0-9a-fA-F]{6})`)
