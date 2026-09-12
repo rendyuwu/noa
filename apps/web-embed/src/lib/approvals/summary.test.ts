@@ -14,13 +14,11 @@
  * between sentences sharing most of their words.
  *
  * Timestamps are compared as rendered strings — safe, because the instants are fixtures and this
- * file reads the wall clock nowhere. The process zone is moved off Jakarta for the reason
- * `lib/format/jakarta-time.test.ts` moves it: a stamp matching on a machine already in the zone
- * proves nothing about a fixed one. The stamps carry no offset, so the zone is named by the heading
- * above them, and a case below asserts that it is named exactly once.
+ * file reads the wall clock nowhere. The process zone is moved off Jakarta in `vitest.config.ts`
+ * under `test.env`, for the reason `lib/format/jakarta-time.test.ts` states: a stamp matching on a
+ * machine already in the zone proves nothing about a fixed one. The stamps carry no offset, so the
+ * zone is named by the heading above them, and a case below asserts that it is named exactly once.
  */
-
-process.env.TZ = 'America/New_York'
 
 import { describe, expect, it } from 'vitest'
 

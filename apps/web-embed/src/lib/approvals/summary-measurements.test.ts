@@ -11,9 +11,10 @@
  * between two sentences sharing most of their words — "none, the runner compared" and "not
  * measured" both contain the word a substring match would find — so a `toContain` on a fragment
  * would pass against the fold it is here to catch.
+ *
+ * The process zone is moved off Jakarta in `vitest.config.ts` under `test.env`, for the reason
+ * `lib/format/jakarta-time.test.ts` states.
  */
-
-process.env.TZ = 'America/New_York'
 
 import { describe, expect, it } from 'vitest'
 

@@ -4,15 +4,16 @@
  * **This file runs with the process zone set to New York, and asserts that it took.** A test of
  * "renders Jakarta time" that runs on a machine already in Jakarta passes against an
  * implementation that reads the machine zone — it is green against the exact bug it exists to
- * catch. So the zone is moved first, and the first case below measures the move rather than
- * trusting it: if that assertion fails, every case under it is meaningless and says so loudly.
+ * catch. The zone is set in `vitest.config.ts` under `test.env`, which lands at worker spawn: the
+ * formatter under test captures its zone when this module graph is imported, and an assignment in
+ * this file would sit below the hoisted import of it. The first case below measures the move
+ * rather than trusting it: if that assertion fails, every case under it is meaningless and says so
+ * loudly.
  *
  * The instants are chosen so the two zones disagree about the *date*, not just the hour. A case
  * where both zones land on the same calendar day cannot separate a fixed-zone formatter from a
  * local one.
  */
-
-process.env.TZ = 'America/New_York'
 
 import { describe, expect, it } from 'vitest'
 
@@ -26,11 +27,11 @@ const OVER_MIDNIGHT = '2026-09-09T17:00:00Z'
 
 describe('the process zone this file runs under', () => {
   it('is not Jakarta, so the cases below can fail', () => {
-    // The instrument check. New York is four zones and a date boundary away from Jakarta at this
-    // instant; if `process.env.TZ` had not taken effect, this reads 13 and the file stops here
-    // rather than reporting green on a formatter that reads the machine.
-    expect(new Date(MIDDAY).getHours()).toBe(2)
-    expect(new Date(OVER_MIDNIGHT).getDate()).toBe(9)
+    // The instrument check, and it reads the zone off `Intl` rather than off `Date`. `Date`
+    // re-reads `TZ` on every call, so it reports New York even in a process where `Intl` already
+    // captured Jakarta at import time — which is the failure the formatter under test can have.
+    // An instrument that cannot see that failure is green against it.
+    expect(new Intl.DateTimeFormat().resolvedOptions().timeZone).not.toBe('Asia/Jakarta')
   })
 })
 
