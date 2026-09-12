@@ -143,6 +143,33 @@
   color: #a3324a;
 }
 
+/*
+ * The same two labels for the dark scheme, and they are replacements rather than a preference:
+ * against `--noa-bg: #11151a` the light pair reaches 3.45:1 and 2.72:1, and `font-weight: 600` at
+ * the body's 0.9375rem is not large text, so the bar is 4.5:1 and both failed it.
+ *
+ * Chosen against the HOVERED surface, not the resting one. Hover mixes `currentColor` at 12% into
+ * the background (`components/notice.module.css`), which lifts the surface TOWARD the label and
+ * takes the ratio down — so a colour picked to clear 4.5:1 at rest can sit under the bar for as
+ * long as the pointer is on it. Measured from the hex values below: approve 6.67:1 resting and
+ * 5.63:1 hovered, deny 6.46:1 and 5.52:1.
+ *
+ * The light pair is left where it was, at 5.32:1 / 4.52:1 and 6.75:1 / 5.59:1. Note how little
+ * room approve has once hovered: 0.02. The check beside this file binds all eight numbers to these
+ * shipped values, so a nudge to any one of them reddens rather than passing quietly.
+ */
+@media (prefers-color-scheme: dark) {
+  .approve {
+    border-color: #35b07a;
+    color: #35b07a;
+  }
+
+  .deny {
+    border-color: #f2707f;
+    color: #f2707f;
+  }
+}
+
 .outcome {
   margin: 0;
   font-size: 0.8125rem;

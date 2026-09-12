@@ -88,3 +88,31 @@
   cursor: progress;
   opacity: 0.6;
 }
+
+/*
+ * Hover and focus, keyed on `currentColor` rather than written once per button.
+ *
+ * `.approve` and `.deny` already set `color` on themselves (`app/approvals/[id]/card.module.css`),
+ * and the notice's own controls — Copy summary, the 401 link-out, Try again — inherit `--noa-fg`.
+ * So one declaration tints Approve green, Deny red and the rest the foreground token, out of the
+ * colour each button already carries. Four per-button rules would be four places to keep in step
+ * with a colour that is stated once, and a fifth button added later would silently get nothing.
+ *
+ * `:not(:disabled)` because a disabled button is not a target: it is mid-decision under
+ * `cursor: progress`, and a tint that says "clickable" there is a lie. It also keeps the enabled
+ * button the only surface these colours were measured against — `opacity: 0.6` composites to a
+ * different one, and the contrast check beside the card's colours does not model it.
+ *
+ * Two rules rather than one grouped selector: a browser that does not know `:focus-visible` drops
+ * the whole selector list, so grouping would take the hover state down with it.
+ *
+ * No transition, because this app has none anywhere — nothing for a reduced-motion branch to turn
+ * off. Add one here and it gets its `prefers-reduced-motion: reduce` guard in the same change.
+ */
+.button:hover:not(:disabled) {
+  background: color-mix(in srgb, currentColor 12%, var(--noa-bg));
+}
+
+.button:focus-visible:not(:disabled) {
+  background: color-mix(in srgb, currentColor 12%, var(--noa-bg));
+}
