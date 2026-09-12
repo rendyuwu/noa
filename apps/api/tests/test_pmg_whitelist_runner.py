@@ -124,6 +124,14 @@ async def test_an_approved_add_writes_the_entry_syncs_and_confirms_it(
     assert payload["status"] == STATUS_CHANGED
     assert payload["verified"] is True
     assert payload["exists"] is True
+    # The card's heading, written here rather than derived from the tool name: `Pmg Whitelist`
+    # names the machinery, and this names what happened to the address.
+    assert payload["headline"] == f"Email relay allowed — {TARGET}"
+    # Both spellings, because an operator can grep the box for either — the typed address in the
+    # first sentence, the line PMG now holds in the second.
+    assert payload["message"] == (
+        f"{TARGET} may now relay email through {SERVER_NAME}. Added as {TARGET_NORMALIZED}."
+    )
     assert box.entries == [BYSTANDER, TARGET_NORMALIZED]
 
 
@@ -146,6 +154,12 @@ async def test_an_approved_removal_deletes_the_entry_syncs_and_confirms_it(
     assert payload["verified"] is True
     assert payload["exists"] is False
     assert payload["removed"] == [TARGET]
+    assert payload["headline"] == f"Email relay stopped — {TARGET}"
+    # The second sentence names the lines the removal actually took, in PMG's own spelling, for
+    # the reason `removed` above carries them: two spellings of one address are two lines.
+    assert payload["message"] == (
+        f"{TARGET} may no longer relay email through {SERVER_NAME}. Removed {TARGET}."
+    )
     assert box.entries == [BYSTANDER]
 
 
@@ -262,6 +276,12 @@ async def test_every_spelling_of_one_address_is_removed(
     assert box.entries == [BYSTANDER]
     assert payload["ok"] is True
     assert payload["removed"] == [TARGET, TARGET_NORMALIZED]
+    # The sentence names every line too, not just the count — the case where the two spellings
+    # are the whole point is the case a card saying "Removed 203.0.113.10." would understate.
+    assert payload["message"] == (
+        f"{TARGET} may no longer relay email through {SERVER_NAME}. "
+        f"Removed {TARGET}, {TARGET_NORMALIZED}."
+    )
 
 
 async def test_an_add_writes_the_masked_network_and_not_the_typed_address(
@@ -308,6 +328,9 @@ async def test_an_address_whitelisted_while_the_card_was_pending_is_a_no_op(
     assert payload["ok"] is True
     assert payload["status"] == STATUS_NO_OP
     assert payload["verified"] is True
+    assert payload["headline"] == f"Already on the list — {TARGET}"
+    # The last clause is the whole of what membership means and deliberately nothing more.
+    assert payload["message"].endswith(f"It may relay email through {SERVER_NAME}.")
     assert box.mutations == []
     assert box.synced == 0
 
@@ -325,6 +348,8 @@ async def test_an_entry_removed_while_the_card_was_pending_is_a_no_op(
     )
 
     assert payload["status"] == STATUS_NO_OP
+    assert payload["headline"] == f"Already off the list — {TARGET}"
+    assert payload["message"].endswith(f"It may not relay email through {SERVER_NAME}.")
     assert box.mutations == []
 
 
@@ -359,6 +384,11 @@ async def test_a_read_that_cannot_answer_refuses_rather_than_deciding(
 
     assert payload["ok"] is False
     assert payload["error_code"] == "pmgsh_command_failed"
+    # Nothing was written, and the heading says that rather than naming a change that did not
+    # happen. PMG's own words stay whole in the sentence: they are the only thing here naming a
+    # remedy, and a `mynetworks` line has no comment for `pmgsh` to quote back.
+    assert payload["headline"] == f"Change did not run — {TARGET}"
+    assert payload["message"] == "pmgsh: connection refused"
     assert box.mutations == []
 
 
@@ -474,6 +504,10 @@ async def test_a_mutation_that_answered_200_ok_while_the_list_did_not_move_is_a_
     assert payload["error_code"] == ERROR_POSTFLIGHT_FAILED
     assert payload["verified"] is False
     assert payload["exists"] is False
+    assert payload["headline"] == f"List unchanged — {TARGET}"
+    # The reading NOA took, not a verdict word: the corner on the card states the verdict off
+    # the delta, and the sentence states what was seen.
+    assert payload["message"] == f"NOA read the list back on {SERVER_NAME}: {TARGET} is not on it."
     assert box.created == [TARGET_NORMALIZED]
 
 
@@ -494,6 +528,8 @@ async def test_a_removal_the_list_still_shows_is_a_failure(
     assert payload["ok"] is False
     assert payload["error_code"] == ERROR_POSTFLIGHT_FAILED
     assert payload["exists"] is True
+    assert payload["headline"] == f"List unchanged — {TARGET}"
+    assert payload["message"].endswith(f"{TARGET} is still on it.")
 
 
 async def test_a_postflight_that_cannot_be_read_is_unavailable_and_not_unverified(
@@ -517,6 +553,13 @@ async def test_a_postflight_that_cannot_be_read_is_unavailable_and_not_unverifie
     assert payload["verified"] is False
     assert payload["verification"] == VERIFICATION_UNAVAILABLE
     assert payload["verification_cause"] == "pmgsh_command_failed"
+    # The heading is the confirmed one, because the commands were accepted — what is unconfirmed
+    # is stated in the sentence, and the corner reads it off the verification state.
+    assert payload["headline"] == f"Email relay allowed — {TARGET}"
+    assert payload["message"] == (
+        f"PMG accepted the change on {SERVER_NAME}. NOA could not read the list back afterwards, "
+        f"so it cannot say {TARGET} may relay email."
+    )
     assert box.created == [TARGET_NORMALIZED]
 
 
@@ -577,8 +620,61 @@ async def test_a_write_that_was_not_applied_is_reported_as_unapplied(
     assert payload["ok"] is False
     assert payload["error_code"] == ERROR_SYNC_FAILED
     assert payload["applied"] is False
+    assert payload["headline"] == f"Saved, not live — {TARGET}"
+    # Both halves and the consequence, in one sentence: the config moved, the step that applies
+    # it did not, and what that means for the address.
+    assert payload["message"] == (
+        f"{TARGET} was added to the list on {SERVER_NAME} as {TARGET_NORMALIZED}, and the step "
+        "that puts it into effect did not run. It cannot relay email yet."
+    )
     assert box.entries == [BYSTANDER, TARGET_NORMALIZED]
     assert status_for_payload(payload) is ToolRunStatus.FAILED
+
+
+async def test_a_failed_sync_and_a_failed_postflight_do_not_say_the_same_thing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two failures of one add, and the sentences have to hold them apart.
+
+    Both answer `ok: False` for the same requested change, and that is exactly why the wording
+    cannot collapse to "failed" on either. The config row moved on the first and not on the
+    second: an operator told only "failed" after a failed sync goes and re-adds a line that is
+    already in the file, straight into a no-op, which is the reason these verification states are
+    four rather than two.
+
+    Asserted as a pair rather than one at a time, because a runner wording both branches the same
+    way passes either assertion alone. The failed sync names the line PMG now holds and says the
+    applying step did not run; the failed postflight says the list does not hold it.
+    """
+    # One gateway at a time: the fixture patches the SSH seam, so building both before running
+    # either would point both runners at whichever box was patched last.
+    sync_fixture, _ = whitelist_change_context(
+        monkeypatch,
+        box=FakePMGWhitelist(
+            entries=[BYSTANDER],
+            sync_error=command_result(exit_code=1, stderr="pmgconfig: restart failed"),
+        ),
+    )
+    sync_failed = await build_runner(sync_fixture)(
+        execution_request(server_id=server_id(sync_fixture))
+    )
+
+    postflight_fixture, _ = whitelist_change_context(
+        monkeypatch, box=FakePMGWhitelist(entries=[BYSTANDER], ignore_writes=True)
+    )
+    postflight_failed = await build_runner(postflight_fixture)(
+        execution_request(server_id=server_id(postflight_fixture))
+    )
+
+    assert sync_failed["error_code"] == ERROR_SYNC_FAILED
+    assert postflight_failed["error_code"] == ERROR_POSTFLIGHT_FAILED
+    # The entry is in the config on one and not on the other, and each sentence says so.
+    assert TARGET_NORMALIZED in sync_failed["message"]
+    assert "did not run" in sync_failed["message"]
+    assert "not on it" in postflight_failed["message"]
+    assert "did not run" not in postflight_failed["message"]
+    assert sync_failed["message"] != postflight_failed["message"]
+    assert sync_failed["headline"] != postflight_failed["headline"]
 
 
 async def test_a_refused_delete_stops_and_leaves_the_remaining_lines(
@@ -606,6 +702,10 @@ async def test_a_refused_delete_stops_and_leaves_the_remaining_lines(
 
     assert payload["ok"] is False
     assert payload["applied"] is False
+    assert payload["headline"] == f"Change failed — {TARGET}"
+    # The reading is what turns a refusal into a measurement, and it says what membership means
+    # rather than restating the verdict.
+    assert f"{TARGET} may relay email through {SERVER_NAME}" in payload["message"]
     assert box.entries == [TARGET, TARGET_NORMALIZED]
     assert box.synced == 0
 

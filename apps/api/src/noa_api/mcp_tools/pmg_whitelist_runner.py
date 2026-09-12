@@ -64,6 +64,12 @@ comes back through a later READ. It is also why a backend failure message travel
 the allowlist-remove tool cuts its own (`backend_change_failure`): csf quotes an entry NOA wrote a
 comment onto, and
 `pmgsh` has no comment to quote.
+
+That is a rule about what must never travel, not a rule that every branch quotes the remote. The
+failed-sync branch states the two halves above in an operator's words and quotes nothing, because
+`pmgconfig`'s own line is an engineer's text and the remedy does not move with it; the branches
+where the remote's words are the only thing that names a remedy — a list that could not be read,
+a `pmgsh` write that was refused — still carry them whole.
 """
 
 from __future__ import annotations
@@ -210,7 +216,15 @@ def build_pmg_whitelist_runner(*, context: McpToolContext) -> ChangeRunner:
         before = await _read_matches(target)
         if not isinstance(before, list):
             return ChangeOutcome(
-                payload={**before, **_common(target)},
+                # PMG's own words travel whole on this one, for the reason the module docstring
+                # gives: there is no comment on a `mynetworks` line for `pmgsh` to quote back.
+                # The heading beside them says the part an operator acts on — nothing was
+                # written, because the list could not be read at all.
+                payload={
+                    **before,
+                    **_common(target),
+                    "headline": f"Change did not run — {target.target}",
+                },
                 delta=_whitelist_delta(
                     target,
                     verification=VERIFICATION_UNAVAILABLE,
@@ -229,13 +243,20 @@ def build_pmg_whitelist_runner(*, context: McpToolContext) -> ChangeRunner:
             return ChangeOutcome(
                 payload=tool_ok(
                     **_common(target),
+                    headline=(
+                        f"Already {'on' if target.adding else 'off'} the list — {target.target}"
+                    ),
                     status=STATUS_NO_OP,
                     exists=target.adding,
                     verified=True,
+                    # The last clause is the whole of what membership means, and deliberately
+                    # nothing more: an address in `mynetworks` may relay email through the
+                    # gateway, one that is not may not. No spam scoring, no ports, no delivery.
                     message=(
-                        f"`{target.normalized}` was already "
-                        f"{'on' if target.adding else 'off'} the mynetworks whitelist on "
-                        f"{target.server_name} when NOA ran this change, so nothing was written."
+                        f"{target.target} was already {'on' if target.adding else 'off'} the "
+                        f"list on {target.server_name} when NOA ran this change, so nothing was "
+                        f"written. It may {'' if target.adding else 'not '}relay email through "
+                        f"{target.server_name}."
                     ),
                 ),
                 delta=_whitelist_delta(
@@ -424,16 +445,29 @@ async def _apply_change(
     added = (target.normalized,) if target.adding else ()
     try:
         await run_pmgconfig_sync_restart(target.config)
-    except PMGSHCLIError as exc:
+    except PMGSHCLIError:
         return _Applied(
             failure={
+                # **Both halves and the consequence, in one sentence.** The config moved and the
+                # step that applies it did not, and an operator told only "failed" goes and
+                # re-adds a line that is already in the file — straight into a no-op. That is the
+                # bug the four separate verification states exist to prevent, so the sentence
+                # cannot collapse to either half.
+                #
+                # `exc.message` is deliberately not spliced in. It is `pmgconfig`'s own line, an
+                # engineer's text that can quote a command an operator cannot run, and the
+                # remedy here does not move with it: the entry is in the config and not in
+                # force, so the sync gets run or an administrator gets called either way.
                 **tool_failure(
                     ERROR_SYNC_FAILED,
-                    f"PMG accepted the whitelist change for `{target.normalized}` on "
-                    f"{target.server_name}, but `pmgconfig sync` failed, so mail flow has not "
-                    f"picked it up yet: {exc.message}",
+                    f"{target.target} was "
+                    f"{'added to' if target.adding else 'removed from'} the list on "
+                    f"{target.server_name} as {target.normalized}, and the step that puts it "
+                    "into effect did not run. It "
+                    f"{'cannot relay email yet' if target.adding else 'can still relay email'}.",
                 ),
                 **_common(target),
+                "headline": f"Saved, not live — {target.target}",
                 "applied": False,
             },
             added=added,
@@ -522,7 +556,11 @@ async def _verify_membership(
     moved and is the property of neither branch.
     """
     after = await _read_matches(target)
-    where = f"`{target.normalized}` on {target.server_name}"
+    # The heading a branch carries where the change is in the state it was asked for. It names
+    # the direction rather than the verdict, because the corner on the card states the verdict
+    # off the delta — and a branch NOA could not confirm keeps this heading, since the commands
+    # were accepted and it is the sentence that says what is unconfirmed.
+    relay_headline = f"Email relay {'allowed' if target.adding else 'stopped'} — {target.target}"
     if not isinstance(after, list):
         cause = str(after.get("error_code") or ERROR_UNKNOWN)
         logger.warning(
@@ -541,24 +579,29 @@ async def _verify_membership(
             payload=(
                 tool_ok(
                     **_common(target),
+                    headline=relay_headline,
                     status=STATUS_CHANGED,
                     verified=False,
                     verification=VERIFICATION_UNAVAILABLE,
                     verification_cause=cause,
                     message=(
-                        f"PMG accepted the whitelist change for {where}, but NOA could not read "
-                        "the list back to confirm it. Check the server before relying on it."
+                        f"PMG accepted the change on {target.server_name}. NOA could not read "
+                        f"the list back afterwards, so it cannot say {target.target} may "
+                        f"{'' if target.adding else 'no longer '}relay email."
                     ),
                 )
                 if write_failure is None
                 else {
+                    # The write's own code sits on the envelope, where a reader looks for what
+                    # failed; the sentence names the step instead of repeating the token.
                     **tool_failure(
                         write_failure.code,
-                        f"PMG {write_failure.verb} the whitelist change for {where} "
-                        f"(`{write_failure.code}`), and NOA could not read the list back "
+                        f"PMG {write_failure.verb} the change to {target.target} on "
+                        f"{target.server_name}, and NOA could not read the list back afterwards "
                         "either. Check the server before relying on it.",
                     ),
                     **_common(target),
+                    "headline": f"Change failed — {target.target}",
                     "applied": False,
                 }
             ),
@@ -572,20 +615,24 @@ async def _verify_membership(
 
     exists = bool(after)
     matched = exists == target.adding
-    membership = f"{where} is {'on' if exists else 'absent from'} the mynetworks whitelist"
+    # What the reading means, and the whole of what it means: an address on the list may relay
+    # email through the gateway, one that is not may not. Owner-stated, and not elaborated.
+    relay = (
+        f"{target.target} may {'' if exists else 'not '}relay email through {target.server_name}"
+    )
 
     if write_failure is None:
         if not matched:
             return ChangeOutcome(
                 payload={
+                    # The reading, not the verdict word: NOA looked, and this is what it saw.
                     **tool_failure(
                         ERROR_POSTFLIGHT_FAILED,
-                        f"PMG accepted the change, but `{target.normalized}` on "
-                        f"{target.server_name} is still "
-                        f"{'absent from' if target.adding else 'on'} the mynetworks whitelist. "
-                        "Check the server.",
+                        f"NOA read the list back on {target.server_name}: {target.target} is "
+                        f"{'still on it' if exists else 'not on it'}.",
                     ),
                     **_common(target),
+                    "headline": f"List unchanged — {target.target}",
                     "exists": exists,
                     "verified": False,
                 },
@@ -597,6 +644,7 @@ async def _verify_membership(
         return ChangeOutcome(
             payload=tool_ok(
                 **_common(target),
+                headline=relay_headline,
                 status=STATUS_CHANGED,
                 exists=exists,
                 verified=True,
@@ -604,27 +652,47 @@ async def _verify_membership(
                 # and its `/32` twin are two lines, and a receipt saying "removed" without saying
                 # how many is a receipt that cannot be checked against the box.
                 removed=list(moved.removed),
+                # Both spellings, because an operator can grep the box for either: the address
+                # they typed carries the first sentence, and the lines the list move actually
+                # names carry the second. The second is the list move itself rather than the
+                # normalised form, for the same reason `removed` above is.
+                #
+                # **Neither join can render empty here, and three guards say so** — worth
+                # naming, because an empty one renders as `Added as .` on an operator's card
+                # and nothing downstream would catch it. This branch is reached only with no
+                # `write_failure`, which means `_apply_change` returned no failure at all, since
+                # its refusal envelopes are built by `tool_failure` and `write_failure_or_none`
+                # returns `None` only for `ok: True`. On an add, `_apply_change` sets `added` to
+                # the one-tuple of the normalised form before the sync. On a remove, `run`'s
+                # already-in-that-state guard returns `no_op` when the pre-read found nothing,
+                # so the delete loop runs at least once and every pass that did not raise
+                # appended a line.
                 message=(
-                    f"`{target.normalized}` was "
-                    f"{'added to' if target.adding else 'removed from'} the mynetworks "
-                    f"whitelist on {target.server_name} and confirmed by a fresh read."
+                    f"{target.target} may {'now' if target.adding else 'no longer'} relay email "
+                    f"through {target.server_name}. "
+                    + (
+                        f"Added as {', '.join(moved.added)}."
+                        if target.adding
+                        else f"Removed {', '.join(moved.removed)}."
+                    )
                 ),
             ),
             delta=_whitelist_delta(target, verification=VERIFICATION_VERIFIED, list_delta=moved),
         )
 
     verification, cause = confirmed_verification(matched=matched, failure=write_failure)
-    opener = f"PMG {write_failure.verb} the whitelist change for {where} (`{write_failure.code}`)"
+    opener = f"PMG {write_failure.verb} the change to {target.target} on {target.server_name}"
 
     if verification == VERIFICATION_VERIFIED:
         return ChangeOutcome(
             payload=tool_ok(
                 **_common(target),
+                headline=relay_headline,
                 status=STATUS_CHANGED,
                 exists=exists,
                 verified=True,
                 removed=list(moved.removed),
-                message=f"{opener}, so NOA re-read the list: {membership}.",
+                message=f"{opener}, so NOA read the list back: {relay}.",
             ),
             delta=_whitelist_delta(target, verification=VERIFICATION_VERIFIED, list_delta=moved),
         )
@@ -635,13 +703,14 @@ async def _verify_membership(
                 write_failure.code,
                 confirmed_verification_sentence(
                     opener=opener,
-                    reading=membership,
+                    reading=relay,
                     matched=matched,
                     failure=write_failure,
                     fallback="The PMG command failed.",
                 ),
             ),
             **_common(target),
+            "headline": f"Change failed — {target.target}",
             "applied": False,
             # The reading rides beside the verdict, because it is what a refusal was missing.
             "exists": exists,
