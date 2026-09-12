@@ -217,10 +217,16 @@
 }
 
 /*
- * The verification sentence, and the named sources that did not answer.
+ * Every paragraph on the card that is a sentence rather than a value.
  *
- * Body font rather than monospace: these are sentences an operator reads, not values they check
- * against a target system.
+ * Body font rather than monospace, which is the whole rule: these are read, not checked character
+ * by character against a target system the way an identity pair or a field diff is. Stated as the
+ * rule and not only as a list, because the list has already gone stale once — it named two users
+ * while there were three.
+ *
+ * Three today, all in `outcome-view.tsx`: the verification sentence, the named sources that did not
+ * answer, and the runner's own message. Hand-kept and bound to nothing — a fourth `styles.verification`
+ * added over there reddens nothing here, so the rule above is what a fourth one has to satisfy.
  */
 .verification {
   margin: 0;

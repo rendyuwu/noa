@@ -11,9 +11,11 @@ against a scratch Postgres, because "the middleware called a repository" and "a 
 in `tool_runs`" are different claims and only the second one is the audit rule. Same split as
 `support.servers` and `support.rbac`.
 
-Rows are a dataclass rather than `ToolRun` instances: the ORM object would carry
-server-defaulted columns as `None` until a flush, so an assertion on `created_at` would be
-asserting against the double's own gaps. What matters here is what the *caller* passed.
+Rows are a dataclass rather than `ToolRun` instances: the ORM object would carry its defaulted
+columns as `None` until a flush, so an assertion on `created_at` would be asserting against the
+double's own gaps. `created_at` is stamped by the application clock now rather than by the
+database, and that changes nothing here — a column default of either kind runs at flush, not at
+construction. What matters here is what the *caller* passed.
 """
 
 from __future__ import annotations

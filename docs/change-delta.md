@@ -302,13 +302,19 @@ The binding record of what the builder does with any given input is its own suit
 `apps/web-embed/src/lib/approvals/summary.test.ts`; these are here to show a reader what lands in a
 ticket, and if the builder changes they will drift until someone re-runs it.
 
-The copied block deliberately states **more** than the card renders. No image reaches the clipboard
-from inside the frame on the pinned host, so this text is the only durable record that can leave —
-and a field the card drops as noise on screen is exactly the field a ticket is searched by later.
-Hence the reference block at the end: the request id, the run id, the LibreChat account and the
-conversation reference, none of which the card displays any more. Every timestamp is absolute and
-carries `+07:00` (`apps/web-embed/src/lib/format/jakarta-time.ts`), because a bare wall-clock time
-is read in whatever zone the reader is in.
+The copied block carries what the card cannot. No image reaches the clipboard from inside the frame
+on the pinned host, so this text is the only durable record that can leave — and a field the card
+drops as noise on screen may still be the field a ticket is answered from later. Hence the `For
+support` block at the end, and hence its **one** identifier: the run id, beside the requester and
+the raw tool name. The action-request id, the conversation reference and the LibreChat account all
+render in the admin drawer for whoever can open `/admin`, and the audit list and that drawer are
+keyed on the run id — so the run id is the one string that gets an answer for a reader who cannot
+(`DECISIONS.md` section 15).
+
+Every timestamp is absolute and **bare**. The `When` heading names Jakarta (WIB) once and the stamps
+under it carry no offset (`apps/web-embed/src/lib/format/jakarta-time.ts`): a wall-clock time is
+read in whatever zone the reader sits in, so the zone is stated — once, above the values it governs,
+rather than on every line until it reads as furniture.
 
 ### A firewall change with a multi-backend result
 
@@ -322,53 +328,49 @@ the verdict rests on was capped at twenty lines by csf's own `max_matches`.
 ```text
 NOA approval record
 
-Change
-  Tool: whm_firewall_release_and_allow
-  Status: Approved
-  Target: server=alpha, target=203.0.113.24
+Firewall Release And Allow — Approved, Outcome unknown
+  The change completed.
 
-What moved
-  Verification: unavailable
+What changed
+  server=alpha, target=203.0.113.24
   Field changes: not measured. Nothing here says that nothing moved.
   New values: expires_at=2026-09-11T11:06:12+07:00, duration_minutes=60
-
-Result
-  The change completed.
+  Not checked: NOA could not look afterwards, so this is neither confirmed nor ruled out.
   Backend alpha: driven, answered, verdict allowlisted
   Backend beta: driven, no answer
   Unanswered sources: beta
   Evidence bound: 20 entries, truncated — the claim above rests on a capped reading, not on the whole list.
 
-Timing
-  Requested: 2026-09-11 09:00:00 +07:00
-  Approval window ends: 2026-09-11 10:00:00 +07:00
-  Decided: 2026-09-11 09:06:12 +07:00
-  Run status: COMPLETED
-  Run started: 2026-09-11 09:06:12 +07:00
-  Run completed: 2026-09-11 09:06:20 +07:00 (8.0s)
+When — all times Jakarta (WIB)
+  Requested: 2026-09-11 09:00:00
+  Decided:   2026-09-11 09:06:12
+  Finished:  2026-09-11 09:06:20
 
-Reference
-  Request id: 7d3a1c02-9e44-4f61-b0d2-5c8ea1f37b90
-  Run id: 5c2f1a90-0000-4000-8000-000000000001
-  LibreChat account: operator@noa.internal (user librechat-user-1)
-  Conversation: 1f0c2e5a-7b41-4d2e-9a3c-0b5d8e6f4a12
+For support
+  Requested by: operator@noa.internal
+  Run id:       5c2f1a90-0000-4000-8000-000000000001
+  Tool:         whm_firewall_release_and_allow
 ```
 
 Three things in that block are the rules above, seen from the reading end.
 
-`The change completed.` and `Verification: unavailable` sit four lines apart and do not contradict
-each other: the first is the runner's envelope and the second is whether anything read the target
-back. A block that let the envelope speak for both would be the collapse this whole document exists
-to prevent.
+**The headline states two facts, and here they disagree on purpose.** `Approved` is the decision an
+operator made; `Outcome unknown` beside it is what the change then did, read off the verification
+state rather than off the call's return. The runner's own sentence sits directly under it saying
+`The change completed.` — and that is the envelope, not a reading. Nothing read the target back
+afterwards, so the headline refuses to promote the envelope into a verdict, and `Not checked: NOA
+could not look afterwards` says the same thing down at the facet. A block that let the envelope
+speak for both would be the collapse this whole document exists to prevent.
 
 `Unanswered sources: beta` names the machine. A count would tell an operator that something is
 wrong and not where to go, and no `verification_cause` rides beside it because *which* source said
 nothing is the cause.
 
 `New values` prints the runner's own pair verbatim — an ISO timestamp and the window it came from,
-because `renderValue` returns a string as it stands and does not reformat one. The absolute
-timestamps in the `Timing` block below are a different thing: those are the card's own fields, put
-through the Jakarta formatter.
+because `renderValue` returns a string as it stands and does not reformat one. That is also why it
+is the one `+07:00` left in the block: it is the runner's string, not a stamp this builder rendered.
+The stamps under the `When` heading are the card's own fields put through the Jakarta formatter, and
+they are bare because that heading names the zone for all of them at once.
 
 `Field changes: not measured` is printed rather than omitted. That facet and the unanswered-sources
 line are the two that print in all three of their states — measured, measured-as-nothing, and not
@@ -384,47 +386,40 @@ that is neither a change nor a refusal.
 ```text
 NOA approval record
 
-Change
-  Tool: pmg_whitelist
-  Status: Approved
-  Target: server=mail-1, action=add, target=198.51.100.7, normalized_target=198.51.100.7/32
+Whitelist — Approved, Not in force
+  The change did not complete.
 
-What moved
-  Verification: not_in_force (pmg_sync_failed)
+What changed
+  server=mail-1, action=add, target=198.51.100.7, normalized_target=198.51.100.7/32
   Field changes: not measured. Nothing here says that nothing moved.
   List entries added: 198.51.100.7/32
   List entries removed: none
   List size: 42 entries
-
-Result
-  The change did not complete.
+  Not live yet: the change was saved, and the step that puts it into effect did not run. (pmg_sync_failed)
   Error code: pmg_sync_failed
   Unanswered sources: not measured.
 
-Timing
-  Requested: 2026-09-11 11:10:00 +07:00
-  Approval window ends: 2026-09-11 12:10:00 +07:00
-  Decided: 2026-09-11 11:12:30 +07:00
-  Run status: FAILED
-  Run started: 2026-09-11 11:12:30 +07:00
-  Run completed: 2026-09-11 11:14:06 +07:00 (1m 36s)
+When — all times Jakarta (WIB)
+  Requested: 2026-09-11 11:10:00
+  Decided:   2026-09-11 11:12:30
+  Finished:  2026-09-11 11:14:06
 
-Reference
-  Request id: b41f8e77-2c05-4a9d-8f13-6ad0c9e25a44
-  Run id: 5c2f1a90-0000-4000-8000-000000000002
-  LibreChat account: operator@noa.internal (user librechat-user-1)
-  Conversation: 9c7d2b10-4e88-4a51-b7c6-2e4f1a09d833
+For support
+  Requested by: operator@noa.internal
+  Run id:       5c2f1a90-0000-4000-8000-000000000002
+  Tool:         pmg_whitelist
 ```
 
 `List entries added` carries the gateway's own spelling of the line, `198.51.100.7/32`, beside the
 `198.51.100.7` the operator typed — both are in the identity line for the same reason. An operator
 holding this block can go to the box and grep for either.
 
-The line an author of a new runner should look at hardest is `Verification: not_in_force
-(pmg_sync_failed)` sitting above `The change did not complete.` Read together they say the config
-moved and Postfix did not, which is the one state that sends an operator to the right place. A
-runner that answered a bare failure here would send them to re-add an entry that is already in the
-file.
+The line an author of a new runner should look at hardest is `Not live yet: the change was saved,
+and the step that puts it into effect did not run. (pmg_sync_failed)`, read against the runner's own
+`The change did not complete.` under the headline, and against `Not in force` in the headline
+itself. Together they say the config moved and Postfix did not, which is the one state that sends an
+operator to the right place. A runner that answered a bare failure here would send them to re-add an
+entry that is already in the file.
 
 Two things a delta must never put in this block. **A reason**: the operator's justification is
 typed at decision time and travels outward only, and the builder has nowhere to put one because the

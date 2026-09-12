@@ -135,11 +135,18 @@ export function formatCountdown(iso: string, now: Date = new Date()): string {
  *
  * **That silence now costs the reader the elapsed time outright**, and the guard stays anyway. The
  * copied summary used to print the run's start beside its finish, so a `null` there lost nothing;
- * it prints the finish alone now (`lib/approvals/summary.ts`), and the card collapses the two
- * stamps into one row with the start in that row's `title`. So on a run where the two stamps
- * disagree about direction, how long it took is on neither surface, and the two raw stamps on the
- * run row are where it is left. Rare rather than impossible: a clock that steps mid-run is exactly
- * the case this refuses to average away.
+ * it prints the finish alone now (`lib/approvals/summary.ts`), and the card prints this duration
+ * alone, with the start in that row's `title`. On a `null` the card falls back to the start — one
+ * row either way, one stamp either way — so the run's two ends are split one per surface, the
+ * start on the card and the finish in the copied block, and how long it took is stated on neither.
+ * Both stamps sit together only on the `/admin` audit row, whose own derived duration answers zero
+ * rather than a negative (`core/audit/tool_run_reads.py`), so it does not state the elapsed time
+ * either.
+ *
+ * Rare rather than impossible: both stamps come from one clock now (`core.clock.now_utc`, via
+ * `core/db/columns.py`), so the cross-host gap that used to reach here is gone and an NTP step on
+ * that one host mid-run is what is left. A clock that steps mid-run is exactly the case this
+ * refuses to average away.
  */
 export function formatDuration(startIso: string, endIso: string | null): string | null {
   if (endIso === null) return null

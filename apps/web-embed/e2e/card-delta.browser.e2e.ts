@@ -133,13 +133,15 @@ test('the whole card fits the frame it asks for, receipt and delta included', as
     card.locator('[class*="deltaLines"] li').filter({ hasText: 'suspended: false → true' }),
   ).toHaveCount(1)
 
-  // The control for that scoping, and the reason the count above is `1` rather than `2`: the
-  // collision is real, the block carries the same sentence, so an unscoped selector would resolve
-  // twice and a selector that reached only into the block would be measuring the clipboard while
-  // claiming to measure the card. This line goes red if the block stops carrying the sentence,
-  // which is the only way the scoping above could quietly become unnecessary.
+  // The control for that scoping: the block carries the same field diff, in its own vocabulary.
+  // `renderValue` prints a boolean as `yes`/`no` (`lib/approvals/summary.ts`), so the block says
+  // `no → yes` where the card's list says `false → true` — a line about a boolean rather than
+  // about an account, once it is out of the frame and into a ticket. Asserting the block's own
+  // spelling is what keeps the scoping above honest: the two surfaces really do both carry this
+  // diff, and if the block ever printed the card's spelling again the selector above would
+  // silently start matching twice.
   await expect(
-    card.locator('[data-noa-copy-block]').filter({ hasText: 'suspended: false → true' }),
+    card.locator('[data-noa-copy-block]').filter({ hasText: 'suspended: no → yes' }),
   ).toHaveCount(1)
 
   const applied = await settledFrame(page)

@@ -89,17 +89,23 @@ test('the card renders its provenance and before-state inside the frame', async 
   await expect(cardBody(card)).toContainText('acme.example')
   await expect(card.getByRole('button', { name: 'Approve' })).toBeVisible()
 
-  // The LibreChat account id left the display and went into the block that leaves the frame, and
-  // this is the pair that says *moved* rather than *gone*. Deleting the old assertion would have
-  // proved nothing, and keeping it unscoped would have been worse than either: the copy block is
-  // laid out inside `main`, so a substring match over the card body still finds the id and the
-  // spec goes green while claiming the opposite of what it now means.
+  // The LibreChat account id left the display first and the copied block after it, so this pair
+  // now says *gone from both* rather than *moved*. The block carries one identifier, not four: the
+  // run id, because the audit list and its drawer are keyed on it, while this id and the
+  // conversation reference are reachable in `/admin` for whoever can open it. Keeping the old
+  // "it moved to the block" assertion would have gone red here, and keeping either line unscoped
+  // would be worse than either: the copy block is laid out inside `main`, so a substring match
+  // over the card body still finds whatever the block carries and the spec goes green while
+  // claiming the opposite of what it now means.
   expect(await visibleCardText(page)).not.toContain('librechat-user-1')
-  await expect(card.locator('[data-noa-copy-block]')).toContainText('librechat-user-1')
+  await expect(card.locator('[data-noa-copy-block]')).not.toContainText('librechat-user-1')
 
-  // The control for the line above. Without it, "absent from the visible card" would also pass
-  // against a helper that returned an empty string — an assertion that cannot fail.
+  // One control per surface for the two absences above. Without them either line would also pass
+  // against a helper that returned an empty string or a block that never rendered at all —
+  // assertions that cannot fail. The raw tool name is the right positive for the block: it is one
+  // of the three things the block still carries, in place of the four identifiers it dropped.
   expect(await visibleCardText(page)).toContain('operator@noa.internal')
+  await expect(card.locator('[data-noa-copy-block]')).toContainText('whm_suspend_account')
 })
 
 test('the frame is on NOA’s own origin, and the operator’s cookie reached the API', async ({
@@ -225,7 +231,14 @@ test('the card follows its run to a terminal state, on the same URL', async ({
   // The stub answers STARTED twice and COMPLETED after that, so this is a transition the page had
   // to go and fetch — not the first answer it ever saw.
   await expect(cardBody(card)).toContainText('COMPLETED', { timeout: 20_000 })
-  await expect(cardBody(card)).toContainText(STUB_RUN_RESULT)
+
+  // And the run's own envelope is deliberately not printed beside it. `result_summary` is the
+  // payload the receipt's `after` half renders as labelled rows further down, so a `Result` row
+  // was one value under two headings and the less readable of the two. It is untouched in the
+  // database and still on the row in `/admin`; only the surface printing it changed. Asserted as
+  // an absence rather than deleted, because a deleted assertion cannot redden anything — the
+  // status and receipt assertions around it are what stop this one passing vacuously.
+  await expect(cardBody(card)).not.toContainText(STUB_RUN_RESULT)
 
   // The card's receipt render, run-plus-receipt, and DECISIONS section 6.5: the answer this URL
   // owns is the receipt's two halves, rendered in the frame measured live — the before-state

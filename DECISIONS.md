@@ -37,7 +37,8 @@ registry: 9 retained CHANGE tools. An earlier review pass called this a miscount
 wrong, and the line stands unchanged.
 
 Owner actions outstanding, not agent tasks: rename this repo to `noa` and the old one to `noa-old`
-(section 5).
+(section 5); NTP on the Kubernetes node and the database VM (section 17, where the 38-second gap
+that makes it worth doing is measured).
 
 ---
 
@@ -1000,3 +1001,144 @@ extending it breaks a correlation that currently works.
 tool share a task: `call_next` is awaited directly, so the value set in the middleware is visible in
 the tool. Anything under a tool that moves its work into a task of its own stops carrying the id,
 silently — which is exactly the defect above, one level deeper.
+
+---
+
+## 15. DECIDED — the copied summary carries one identifier, not four (2026-09-12)
+
+**The rule: the block an operator pastes out of the frame carries exactly one identifier an
+administrator can look the run up by — `tool_runs.id` — beside the requester's email and the raw
+tool name. The action-request id, the conversation reference and the LibreChat account id are not
+in it.**
+
+This reverses the argument that used to sit in `apps/web-embed/src/lib/approvals/summary.ts`: carry
+all four, because a ticket is searched by them. What settles it is who reads the block. It exists
+for the operator who cannot open `/admin` — that is the entire reason a summary is copyable at all
+— and what that reader needs is one string to hand to somebody who can. The other three are already
+in front of whoever can: the action-request id, the conversation reference and the LibreChat account
+all render in the admin drawer
+(`apps/admin-web/src/components/admin/audit/action-request-detail-drawer.tsx`), and the audit list
+and that drawer are both keyed on `tool_runs.id`. So the run id is the one identifier that crosses
+the gap between the two readers; the other three cross it only in the direction where nobody needed
+them carried.
+
+Four identifiers also cost more than three lines of a paste. A block is read a year later by
+somebody who then has to decide which of them to quote, and a reader made to choose has been handed
+a lookup problem in place of a lookup. One identifier that works beats four of which one works.
+
+### 15.1 The card's own reasoning retires with the change
+
+`apps/web-embed/src/app/approvals/[id]/card-view.tsx` had already dropped the LibreChat account id
+and the conversation reference from the card, and **one of its two stated reasons was that the
+copied block carried them** — they were one copy away. After this change neither surface carries
+them, so that half of the justification is gone, and the comment at that site now says so rather
+than leaving it standing.
+
+The surviving half is the one that was always doing the work: those two identify the request to NOA
+and to `/admin` rather than to the person deciding it, and a card that has to fit one screen spends
+its rows on what a decision turns on. The admin drawer is where they live.
+
+This is recorded because the failure mode is specific and quiet. A reader who notices the card is
+missing them, checks why, and finds a reason that is no longer true will put them back on the card
+— and will be right to, given what the comment said. `apps/web-embed/src/lib/approvals/before-state.ts`
+carries the same correction for the same pair, its admin-only rows having leaned on the same
+"one copy away" clause.
+
+---
+
+## 16. DECIDED — the zone is named once, in a heading, and the stamps under it are bare (2026-09-12)
+
+**The rule: a bare wall-clock stamp may leave the frame only under a heading that names the zone.
+In the copied block that heading is `When — all times Jakarta (WIB)`, and the stamps under it carry
+no offset.**
+
+The offset moved; it was not dropped. Every stamp in the block used to end `+07:00`, on its own
+line, and the trade is between two ways of stating one fact: repeated per line it becomes furniture
+a reader stops seeing, stated once directly above the values it governs it is read before the first
+of them. What is not on the table is a stamp with neither. A wall-clock time alone in a ticket is
+read in whatever zone the reader sits in, and pinning the zone at all (`Asia/Jakarta`, never the
+machine's) exists so that two operators quoting the same approval quote the same instant.
+
+**What makes the rule enforceable is that there is exactly one stamp function.** `formatJakarta` in
+`apps/web-embed/src/lib/format/jakarta-time.ts` is the only thing in the package that renders an
+absolute instant, so there is nowhere for a bare stamp to escape from. The tempting call, once the
+offset is off the line, is a second shorter variant beside it for some caller that does not want a
+heading — and that variant is precisely how a bare wall-clock time reaches a ticket with nothing
+above it. There is no second one, and that absence is the control.
+
+**The rule is written at both of the two sites that can break it**, because a surviving copy of the
+old one is what restores the old shape: the `formatJakarta` docstring in that module, and the header
+docstring of `apps/web-embed/src/lib/approvals/summary.ts`. Restating one and leaving the other
+would hand the next reader a per-line offset to put back with a comment agreeing that it belongs.
+
+One stamp is deliberately not under a heading and names its zone on the value instead: the
+before-state row rendering `account.suspendtime` (`apps/web-embed/src/lib/approvals/before-state.ts`),
+which sits in a block that has no heading to satisfy. Heading above it or zone on the value — never
+neither.
+
+---
+
+## 17. DECIDED — every timestamp NOA writes comes from the application clock (2026-09-12)
+
+**The rule: `created_at` and `updated_at` are stamped by `core.clock.now_utc` through the column
+helpers in `core/db/columns.py` — the same clock `decided_at`, `expires_at` and `completed_at`
+already came from. `server_default=func.now()` stays on both columns and only as the fallback for
+rows inserted outside the ORM (Alembic, `psql`). No DDL changed, so there is no migration.**
+
+### 17.1 The measurement that forced it
+
+Taken on 2026-09-12 against the live deployment: **the API pod's host and the database host are 38
+seconds apart.** Four readings agree, one of them a direct probe from inside the API pod, so the gap
+belongs to the deployment rather than to the vantage point it was read from.
+
+38 seconds is enough to break every pair of stamps that spanned the two clocks, and it broke them in
+the direction that reads as a bug somewhere else entirely:
+
+- `completed_at - created_at` was the true duration **minus 38 s**. A run shorter than 38 seconds
+  therefore yields a negative, so a duration rendered at all only for runs longer than 38 seconds,
+  and every faster run printed a completion stamped earlier than its own start.
+- A decision taken within 38 seconds of the request it decides printed as decided before it was
+  asked for.
+
+Neither is a rounding error a reader shrugs past. Both are an audit trail stating an impossible
+order, which is the one thing an audit trail cannot do and remain worth reading.
+
+### 17.2 Why the application clock rather than the database's
+
+The other direction was available and is worse arithmetic: putting everything on the database clock
+means changing four writers instead of one helper, and two of those four are values the code
+reasons about before any row exists — the expiry the gate computes and the approval window the card
+counts down are decided in Python, not returned by an INSERT. Two functions in one helper, against
+four call sites and a migration.
+
+Spelled `default=lambda: now_utc()` rather than `default=now_utc`, deliberately, with the reason at
+the site: the lambda resolves the name at call time, which is what lets a test pin the clock and
+watch its assertion fail against unmodified production code. The tidier bare reference captures the
+function at import, which would make the pin a no-op — and an assertion that cannot be made to fail
+is not evidence of anything. `apps/api/tests/test_tool_runs_schema.py` holds both halves: a pinned
+sentinel no Postgres would ever return, read back with a column-level SELECT so the assertion is
+against what was stored rather than against the flushed instance; and beside it the plain
+start-before-finish check, stated as only biting on a lane whose database clock runs ahead rather
+than left to read as broader coverage than it is.
+
+### 17.3 Accepted cost, and the part of this that is not code
+
+**The audit list's ordering now rests on pod clocks agreeing across nodes** rather than on one
+database clock. Two API pods on drifting hosts can write rows whose `created_at` order is not their
+real order. The list sorts `created_at DESC, id DESC` (`core/audit/tool_run_reads.py`) and that
+tiebreaker is already there for a different reason — two calls in the same millisecond are ordinary
+on the MCP path — so the page boundary stays reproducible under drift even where the order inside a
+tied group is not wall-clock truth. Accepted knowingly: it trades a defect that fired on every run
+shorter than 38 seconds for a risk that needs two nodes to drift.
+
+What remains after the fix is one host stepping its own clock backwards mid-run, which is what an
+NTP correction is. That hazard is guarded at both ends and named at both sites: `_duration_ms`
+clamps at zero (`core/audit/tool_run_reads.py`) rather than rendering a negative, and the embed's
+duration answers `null` rather than averaging one away
+(`apps/web-embed/src/lib/format/jakarta-time.ts`).
+
+**NTP on the Kubernetes node and on the database VM is a separate task and the owner's.** It is not
+blocked by this change and it is not replaced by it. The code fix makes NOA's own stamps comparable
+**to each other**, which is what a duration and a decision order are made of. NTP is what makes them
+comparable to anything NOA did not write — the clock in a screenshot, a target system's log line, a
+certificate's validity window. Both are wanted; neither substitutes for the other.
