@@ -120,8 +120,15 @@ describe('Outcome, what the runner reported', () => {
     // Whitespace-only is the fourth of those, and it is the one that used to fall between the two
     // surfaces: the paragraph rendered and was invisible, and the key list dropped the row because
     // the paragraph had rendered. The value was then on no surface at all. Both halves are asserted
-    // here — no paragraph, and the row survives — because either alone passes against the bug.
+    // here — the row survives, and no paragraph — because either alone passes against the bug.
     const blank = renderOutcome({ after: { ok: false, message: '  ' } })
+    // The row is asserted first, and the order is what makes each half watchable on its own.
+    // Dropping the trim from `runnerSentence` breaks both halves at once, and only the first
+    // failing assertion in a block runs, so whichever is written first is the one seen red. The
+    // paragraph half has a second mutation of its own — rendering the sentence unconditionally in
+    // `outcome-view.tsx` leaves this row untouched — and the row half has no such mutation, so it
+    // takes the slot.
+    expect(Object.keys(reportedRows(blank.container))).toContain('message')
     // By count first, then by text. A paragraph holding only spaces prints as empty in a DOM dump,
     // so the text assertion alone reads as the weaker of the two even though both catch this. The
     // verification sentence is the one paragraph this section always has, and it is identified by
@@ -130,7 +137,6 @@ describe('Outcome, what the runner reported', () => {
     expect(paragraphs).toHaveLength(1)
     expect(paragraphs[0]?.hasAttribute('data-noa-verification')).toBe(true)
     expect(paragraph(blank.container, '  ')).toBeUndefined()
-    expect(Object.keys(reportedRows(blank.container))).toContain('message')
     blank.unmount()
 
     // The collision the condition has to survive, and the reason "the sentence rendered" is one
