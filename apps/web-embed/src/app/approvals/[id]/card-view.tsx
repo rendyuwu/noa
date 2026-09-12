@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { type ApprovalCard, type ApprovalCardLoad, canDecide, statusLabel } from '@/lib/approvals/card'
 import { fetchApprovalCard, isRunning, isStalled, isTerminal, pollIntervalMs } from '@/lib/approvals/poll'
 import { buildSummary } from '@/lib/approvals/summary'
+import { humanizeToolName } from '@/lib/approvals/tool-name'
 import { CARD_FRAME_POLICY } from '@/lib/embed/frame-size'
 import { formatCountdown, formatDuration, formatRelative } from '@/lib/format/jakarta-time'
 
@@ -60,43 +61,6 @@ type LiveCard = {
   load: ApprovalCardLoad
   /** Consecutive polls that found a run still in flight. Reset the moment one does not. */
   runPolls: number
-}
-
-const KNOWN_TOOL_PREFIXES = ['proxmox_', 'whm_', 'pmg_']
-const TOOL_WORD_OVERRIDES: Record<string, string> = {
-  csf: 'CSF',
-  whm: 'WHM',
-  rbac: 'RBAC',
-  ldap: 'LDAP',
-  vm: 'VM',
-  pmg: 'PMG',
-}
-
-/**
- * A raw tool name as a readable label. The raw name stays on the card in the heading's `title`.
- *
- * **Duplicated from `apps/admin-web/src/lib/admin/audit/audit-format.ts`, deliberately, and it
- * stays duplicated.** The two web apps are independent packages with their own lockfiles, their
- * own CI and their own deploy; this one's eslint refuses any `apps/admin-web` import outright, and
- * the `core/` the two really do share is Python. Sharing these fifteen lines would cost either a
- * third npm package or the cross-app import the fence exists to forbid, and both are more than
- * the duplication is worth. Kept byte-identical to the other copy so a reader diffing the two can
- * see at a glance that they have not drifted.
- */
-function humanizeToolName(value: string): string {
-  const raw = value.trim()
-  const withoutPrefix = KNOWN_TOOL_PREFIXES.reduce(
-    (current, prefix) => (current.startsWith(prefix) ? current.slice(prefix.length) : current),
-    raw,
-  )
-  const words = withoutPrefix
-    .split(/[_-]+/)
-    .filter(Boolean)
-    .map((word) => {
-      const lower = word.toLowerCase()
-      return TOOL_WORD_OVERRIDES[lower] ?? lower.charAt(0).toUpperCase() + lower.slice(1)
-    })
-  return words.length === 0 ? raw : words.join(' ')
 }
 
 /**

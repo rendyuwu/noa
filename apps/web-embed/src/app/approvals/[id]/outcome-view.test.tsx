@@ -354,7 +354,7 @@ describe('Outcome', () => {
     // to be answers to the same receipt, and a card whose top line was reconciled by hand could
     // pass the first of these with the second saying something else.
     expect(verificationState(container)).toBe(VERIFICATION_UNAVAILABLE)
-    expect(verificationLine(container)).toContain('neither confirmed nor refuted')
+    expect(verificationLine(container)).toContain('neither confirmed nor ruled out')
   })
 
   it('does not headline a change that was written but never applied as completed', () => {
@@ -381,8 +381,8 @@ describe('Outcome', () => {
   it('headlines a contradicted reading the same way whichever way the call returned', () => {
     // A contradicted reading arrives with `ok: false` today, where the envelope agrees and there
     // is nothing to reconcile. The pair is the point: the same delta over a payload reporting
-    // success headlined "completed" above a sentence saying NOA read the target back and it
-    // disagrees, which is the same self-contradiction the unmeasured and never-applied cases were
+    // success headlined "completed" above a sentence saying NOA looked afterwards and the change
+    // is not there, which is the same self-contradiction the unmeasured and never-applied cases were
     // fixed for. A headline that disagrees with the verification block printed beneath it is the
     // defect, so the headline reads the verification state rather than the call's return.
     const { container: refused } = renderOutcome({
@@ -402,7 +402,7 @@ describe('Outcome', () => {
     // Asserted on the same render as the headline: the word above and the sentence below have to
     // be answers to one receipt.
     expect(verificationState(reportedOk)).toBe(VERIFICATION_MISMATCH)
-    expect(verificationLine(reportedOk)).toContain('disagrees')
+    expect(verificationLine(reportedOk)).toContain('the change is not there')
   })
 
   it('falls back to the envelope when there is no delta to read', () => {

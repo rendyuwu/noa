@@ -1,13 +1,11 @@
 import type { JSX } from 'react'
 
 import type { ApprovalReceipt } from '@/lib/approvals/card'
-import {
-  type ChangeDelta,
-  VERIFICATION_MISMATCH,
-  VERIFICATION_NOT_IN_FORCE,
-  VERIFICATION_UNAVAILABLE,
-  VERIFICATION_VERIFIED,
-} from '@/lib/approvals/delta'
+import type { ChangeDelta } from '@/lib/approvals/delta'
+// The headline and the verification sentence live in `lib/` rather than here because the copied
+// summary block prints the same two, and a second copy of a sentence about a measurement is a
+// second answer to "did this work".
+import { outcomeText, verificationText } from '@/lib/approvals/verdict'
 
 import styles from './card.module.css'
 
@@ -113,40 +111,6 @@ function Lines({ label, items }: { label: string; items: string[] }): JSX.Elemen
         ))}
       </ul>
     </div>
-  )
-}
-
-/**
- * The four states verification has, plus the one this build has never heard of.
- *
- * **Four, not two.** `unavailable` is "NOA holds no measurement" and `mismatch` is "NOA took a
- * measurement and it disagrees" — collapsing those into one "not confirmed" merges a non-answer
- * with a failure, and they send an operator to different places. `not_in_force` is a third thing
- * again: the write landed and the step that applies it did not, which is neither a change nor a
- * refusal, and an operator told "failed" would go and re-add an entry that is already in the
- * config.
- */
-const VERIFICATION_TEXT: Record<string, string> = {
-  [VERIFICATION_VERIFIED]: 'Verified: NOA read the target back and it agrees.',
-  [VERIFICATION_UNAVAILABLE]:
-    'Not measured: NOA holds no reading, so this is neither confirmed nor refuted.',
-  [VERIFICATION_MISMATCH]: 'Contradicted: NOA read the target back and it disagrees.',
-  [VERIFICATION_NOT_IN_FORCE]:
-    'Not in force: the change was written and the step that applies it did not run.',
-}
-
-/**
- * The sentence for a verification state, or the state itself when it is not one of the four.
- *
- * The fallback is the point, and it is why `verification` is a plain string rather than a union: a
- * state a later API grows must reach the screen **as itself** and be undecidable here. Anything
- * else fails open — an unrecognised value quietly rendered as the verified sentence would be NOA
- * claiming a measurement it does not have.
- */
-function verificationText(state: string): string {
-  return (
-    VERIFICATION_TEXT[state] ??
-    `Unrecognised verification state "${state}": this card cannot say what it means.`
   )
 }
 
@@ -339,51 +303,12 @@ function Delta({ delta }: { delta: ChangeDelta }): JSX.Element {
   )
 }
 
-/**
- * The headline, and it reads the delta rather than the envelope alone.
- *
- * **A third word, because two were a claim NOA cannot make.** `ok: false` means the call did not
- * come back with a success, which is not the same as the change not having happened: a mutation
- * that timed out may well have landed on the far side, and the runner says so by publishing
- * `unavailable` rather than inventing a reading. Headlining that as "did not complete" while the
- * block below says NOA holds no measurement is the card contradicting itself, and an operator
- * reads the top line.
- *
- * **`not_in_force` moves the headline in the other direction**, and it is the same defect
- * mirrored: the envelope says the write succeeded, so the old headline said so too, over a
- * sentence explaining that the step which applies the change never ran. An operator told
- * "completed" does not go and run it.
- *
- * **`mismatch` is named here rather than left to fall through**, and naming it changes nothing for
- * the way it arrives today: a contradicted reading comes with `ok: false`, and "did not complete"
- * is what the envelope said anyway. It changes the other direction. The same delta over a payload
- * reporting success headlined "completed" above a sentence saying NOA read the target back and it
- * disagrees — the same self-contradiction the two states above are here to remove, and the rule is
- * one rule: the headline reads the verification state, not the call's return. A mapping with a
- * hole in it is worse than the mapping, because the next state added gets its shape copied from
- * this one.
- *
- * No delta at all falls through to the envelope, which is the only thing there is to report.
- */
-function outcomeText(receipt: ApprovalReceipt): string {
-  switch (receipt.delta?.verification) {
-    case VERIFICATION_UNAVAILABLE:
-      return 'Outcome unknown'
-    case VERIFICATION_NOT_IN_FORCE:
-      return 'Not in force'
-    case VERIFICATION_MISMATCH:
-      return 'Did not complete'
-    default:
-      return receipt.ok ? 'Completed' : 'Did not complete'
-  }
-}
-
 export function Outcome({ receipt }: { receipt: ApprovalReceipt }): JSX.Element {
   return (
     <section className={styles.section}>
       <h2 className={styles.sectionTitle}>What the change did</h2>
       <dl className={styles.facts}>
-        <Fact label="Outcome" value={outcomeText(receipt)} />
+        <Fact label="Outcome" value={outcomeText(receipt.delta, receipt.ok)} />
         {/*
          * "Error code", not "Reason". In this repository a reason is one thing — the justification
          * an operator types at decision time, which the model never authors, relays or sees — and
