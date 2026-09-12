@@ -67,8 +67,8 @@ class SQLMcpTokenRepository:
     ) -> McpTokenView:
         """Write one token row and return its view.
 
-        Flushed, not committed, so `created_at` (a server default) and the generated id
-        are readable in the same transaction the caller is building.
+        Flushed, not committed, so `created_at` (a column default, never the caller's) and the
+        server-generated id are readable in the same transaction the caller is building.
 
         No retry around the `uq_mcp_tokens_token_hash` collision: with 256 bits of entropy
         behind the digest, a duplicate means the CSPRNG is broken, and a retry loop would
@@ -89,9 +89,12 @@ class SQLMcpTokenRepository:
     async def list_for_user(self, user_id: UUID) -> list[McpTokenView]:
         """This user's tokens, newest first.
 
-        Tie-broken on `id` because two tokens minted in one request share a `created_at`
-        from the same statement timestamp, and an unstable order makes a paginated admin
-        list drop or repeat a row.
+        Tie-broken on `id` because `created_at` is not declared unique, and an unstable order
+        makes a paginated admin list drop or repeat a row. Two tokens minted in one request no
+        longer collide the way they once did — the column default is the application clock, read
+        once per row, so they differ by microseconds — which makes this tie-break
+        belt-and-braces rather than load-bearing. It stays: "distinct to the microsecond" is a
+        property of the clock's resolution, not a guarantee worth resting pagination on.
         """
         result = await self._session.execute(
             select(McpToken)

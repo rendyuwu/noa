@@ -28,13 +28,13 @@ one an audit reader would have to trust without seeing.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import Any, Protocol
 from uuid import UUID
 
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.clock import now_utc
 from core.db.lifecycle import ToolRisk, ToolRunStatus
 from core.db.models import ToolRun
 
@@ -108,9 +108,11 @@ class SQLToolRunRepository:
 
         A bare `UPDATE` rather than load-mutate-save: the row was written by this same
         request moments ago and nothing else touches it, so reading it back only to write
-        it again would be a round trip that can fail on its own. `completed_at` is set from
-        the application clock, matching `created_at`'s server default closely enough for a
-        duration and, unlike a second `now()`, provable in a test.
+        it again would be a round trip that can fail on its own. `completed_at` comes from
+        `core.clock.now_utc`, the same clock the `created_at` column default reads, so the
+        difference between the two is a duration rather than a duration plus whatever the API
+        host and the database host disagree by; unlike a second SQL `now()` it is also pinnable
+        in a test.
 
         **`status = STARTED` is in the predicate: the first terminal write wins.** Two of
         the four callers can reach one run — the approved-change executor, finishing a change
@@ -128,7 +130,7 @@ class SQLToolRunRepository:
             .values(
                 status=status,
                 result_summary=result_summary,
-                completed_at=datetime.now(UTC),
+                completed_at=now_utc(),
             )
         )
 

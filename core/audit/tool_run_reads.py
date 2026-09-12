@@ -115,10 +115,13 @@ class ToolRunAuditFilters:
 def _duration_ms(created_at: datetime, completed_at: datetime | None) -> int | None:
     """Milliseconds from start to terminal state, or `None` while the run is `STARTED`.
 
-    Clamped at zero: `created_at` is a server default and `completed_at` is stamped by the
-    application clock (`core.audit.tool_runs.finish_run`), so on a machine whose clock stepped
-    backwards the difference can be negative. A negative duration is a clock fault, not a
-    measurement, and rendering it as `-4ms` in an audit view invites a bug hunt in the wrong place.
+    Clamped at zero. Both ends come from one clock now — `core.clock.now_utc`, via the
+    `created_at` column default and `core.audit.tool_runs.finish_run` — so the gap between the
+    API host and the database host no longer lands here. The clamp is for the hazard that
+    remains: a host whose clock steps backwards between the two stamps, which is what an NTP
+    correction is, still produces a run that finished before it started. A negative duration is a
+    clock fault, not a measurement, and rendering it as `-4ms` in an audit view invites a bug hunt
+    in the wrong place.
     """
     if completed_at is None:
         return None

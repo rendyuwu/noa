@@ -119,8 +119,8 @@ async def test_get_by_id_answers_none_for_a_missing_row(
 async def test_a_stored_row_carries_its_generated_identity(
     session: AsyncSession, repository: SQLPMGServerRepository
 ) -> None:
-    """`id`, `created_at` and `updated_at` are server defaults, and the in-memory rows fill them
-    by hand — this is the only place the real thing is checked."""
+    """`id`, `created_at` and `updated_at` are filled at insert, never by the caller, and the
+    in-memory rows fill them by hand — this is the only place the real thing is checked."""
     written = await insert(session, "pmg1")
 
     [server] = await repository.list_servers()

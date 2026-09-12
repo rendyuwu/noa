@@ -12,11 +12,16 @@ Two levels, for two different claims:
 This file is about the *shape*, not the writer. The tool-run writer wired the write into the tool
 path and `test_mcp_tool_audit.py` covers it end to end; what is asserted here is that the columns
 the tool-run audit rule asks for exist and hold, so the writer cannot quietly reshape them.
+
+One exception, at the bottom: which *host* stamps `created_at` is a property of the column, but
+the only honest way to read it is through a real insert, so those two drive
+`SQLToolRunRepository` against the live database rather than inspecting metadata.
 """
 
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
+from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
@@ -24,6 +29,7 @@ import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError, StatementError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from core.audit.tool_runs import SQLToolRunRepository
 from core.db import Base
 from core.db.lifecycle import ToolRisk, ToolRunStatus
 from core.db.models import ToolRun, User
@@ -384,3 +390,73 @@ async def test_args_hold_a_redacted_payload(session: AsyncSession) -> None:
     # redacted form, and that JSONB gives it back unchanged. `noa_api.mcp_audit` owns the
     # redaction, and `test_secret_redaction.py` covers it.
     assert stored.args == redacted
+
+
+# --------------------------------------------------------------------------------------
+# Live: which clock stamps the row
+# --------------------------------------------------------------------------------------
+
+
+async def open_run(session: AsyncSession, user_id: UUID) -> UUID:
+    """One STARTED row through the production writer, committed."""
+    repository = SQLToolRunRepository(session)
+    tool_run_id = await repository.start_run(
+        tool_name="whm_list_servers",
+        requested_by_user_id=user_id,
+        risk=ToolRisk.READ,
+        conversation_ref=None,
+        args={},
+    )
+    await repository.commit()
+    return tool_run_id
+
+
+async def test_created_at_is_stamped_by_the_application_clock(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The row carries the instant the API process read, not the one the database would have.
+
+    The column keeps `server_default=func.now()` for inserts that never touch the ORM, so
+    metadata cannot answer this — only a real insert can say which of the two ran. A pinned
+    sentinel is the answer: no Postgres would ever return it.
+
+    Every other timestamp NOA writes (`decided_at`, `expires_at`, `completed_at`) comes from
+    `core.clock.now_utc`, and a `created_at` from a different host makes every pair that spans
+    the two uncomparable. Reading a column-level SELECT rather than the flushed instance, so the
+    assertion is against what Postgres stored.
+    """
+    sentinel = datetime(2019, 3, 14, 1, 59, 26, 535898, tzinfo=UTC)
+    monkeypatch.setattr("core.db.columns.now_utc", lambda: sentinel)
+    user_id = await insert_user(session, "clock@example.com")
+
+    await open_run(session, user_id)
+
+    stored = (await session.execute(sa.select(ToolRun.created_at))).scalar_one()
+
+    assert stored == sentinel
+
+
+async def test_a_finished_run_never_completes_before_it_started(session: AsyncSession) -> None:
+    """Unpinned, both stamps real: start then finish, in that order.
+
+    This one is free wherever the API host and the database host agree, and it is worth stating
+    plainly rather than letting it read as coverage: it only bites on a lane whose database
+    clock runs ahead of the API's, where a `created_at` from the server default would land after
+    a `completed_at` from the application clock. The assertion above is the one that fails
+    everywhere the Python-side default goes missing.
+    """
+    user_id = await insert_user(session, "duration@example.com")
+    tool_run_id = await open_run(session, user_id)
+
+    repository = SQLToolRunRepository(session)
+    await repository.finish_run(
+        tool_run_id=tool_run_id, status=ToolRunStatus.COMPLETED, result_summary="2 servers"
+    )
+    await repository.commit()
+
+    created, completed = (
+        await session.execute(sa.select(ToolRun.created_at, ToolRun.completed_at))
+    ).one()
+
+    assert completed is not None
+    assert completed >= created

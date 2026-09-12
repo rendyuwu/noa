@@ -145,9 +145,9 @@ async def open_request(
 ) -> UUID:
     """A PENDING row, written by the gate's own repository.
 
-    `created_at` is a server default, so a test that needs a particular instant sets it afterwards
-    — the writer has no parameter for it and giving one would be a column this surface could
-    disagree with the gate about.
+    `created_at` is stamped at insert by its own column default, so a test that needs a particular
+    instant sets it afterwards — the writer has no parameter for it and giving one would be a
+    column this surface could disagree with the gate about.
     """
     repository = SQLActionRequestRepository(session)
     request_id = await repository.create_pending(

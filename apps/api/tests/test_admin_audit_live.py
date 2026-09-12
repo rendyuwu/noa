@@ -274,8 +274,8 @@ async def test_an_unknown_id_answers_none(session: AsyncSession) -> None:
 
 
 async def stamp(session: AsyncSession, tool_run_id: UUID, created_at: datetime) -> None:
-    """Force one run's `created_at`. The column is a server default, so a test that needs a
-    controlled ordering — or a deliberate tie — has to write it."""
+    """Force one run's `created_at`. The column is stamped at insert by its own default, so a
+    test that needs a controlled ordering — or a deliberate tie — has to write it afterwards."""
     await session.execute(
         sa.update(ToolRun).where(ToolRun.id == tool_run_id).values(created_at=created_at)
     )

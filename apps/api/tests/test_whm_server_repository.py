@@ -123,8 +123,8 @@ async def test_a_stored_row_renders_safely(
 ) -> None:
     """`to_safe_dict` on a real row: identifiers present, credentials absent.
 
-    Run against a row Postgres generated, because `id`, `created_at` and `updated_at` are
-    server defaults — an in-memory double fills them by hand, and this is the only place
+    Run against a row the insert path generated, because `id`, `created_at` and `updated_at`
+    are never the caller's — an in-memory double fills them by hand, and this is the only place
     that check is against the real thing.
     """
     written = await insert(session, "alpha")

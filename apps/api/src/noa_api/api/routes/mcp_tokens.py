@@ -73,8 +73,8 @@ class McpTokenResponse(BaseModel):
     last_used_at: str | None
     last_ldap_check_at: str | None
     expires_at: str | None
-    # Not nullable, unlike the four above: `created_at` is a server default, so a row that
-    # exists has one.
+    # Not nullable, unlike the four above: `created_at` is stamped at insert by the column's
+    # default, never by a caller, so a row that exists has one.
     created_at: str
 
 
