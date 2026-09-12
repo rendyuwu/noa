@@ -141,11 +141,26 @@ test('Approve posts from inside a frame whose sandbox omits allow-forms', async 
   // No form in the tree either: `type="button"` and no `<form>` is the same rule stated twice.
   await expect(card.locator('form')).toHaveCount(0)
 
+  // The baseline, taken before the click: the server-rendered seed read and nothing since.
+  expect((await hits(page))[`GET /action-requests/${id}`]).toBe(1)
+
   await card.getByLabel(/why is this change/i).fill('Customer confirmed; ticket NOC-4471.')
   await card.getByRole('button', { name: 'Approve' }).click()
 
   await expect(card.getByRole('status')).toContainText('Approved')
   expect((await hits(page))[`POST /action-requests/${id}/approve`]).toBe(1)
+
+  // And the card re-reads itself on the recorded decision rather than waiting out its poll. The
+  // wiring this binds is the card handing the decision controls its own reader; the controls'
+  // own suite proves the callback fires, which stays true against a reader that reads nothing.
+  //
+  // Exactly 2, and the premise that makes it exact: this stub answers an id it does not
+  // recognise as PENDING forever, so the card's own interval stays at its pending value of 15
+  // seconds — longer than this assertion's budget, so no third read can race in and turn a
+  // greater-than into a pass the poll alone would have earned.
+  await expect
+    .poll(async () => (await hits(page))[`GET /action-requests/${id}`])
+    .toBe(2)
 })
 
 test('Deny posts to the other door', async ({ page }) => {
