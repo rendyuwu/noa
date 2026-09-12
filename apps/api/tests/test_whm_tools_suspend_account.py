@@ -79,7 +79,7 @@ from noa_api.mcp_tools.whm_account_change_runner import (
     build_whm_suspend_runner,
 )
 from support.action_decisions import REASON
-from support.change_delta import delta_of, payload_runner
+from support.change_delta import delta_of, outcome_of, payload_runner
 from support.mcp_identity import (
     LIBRECHAT_USER,
     FakeMcpIdentityRepository,
@@ -524,6 +524,13 @@ async def test_the_runner_sends_the_operator_reason_as_whms_suspension_note() ->
     assert payload["ok"] is True
     assert payload["status"] == STATUS_CHANGED
     assert payload["verified"] is True
+    # The card's heading, composed here rather than derived from the tool name: `Whm Suspend
+    # Account` names the machinery, and this names what happened to the account.
+    assert payload["headline"] == f"Account suspended — {ACCOUNT}"
+    # The owner's own words for what a suspension does, stated once. Nothing mirrors this on the
+    # unsuspend runner — lifting a suspension produces no new consequence to state — and that
+    # absence is asserted in `test_whm_tools_unsuspend_account.py`.
+    assert "The whole account — nothing on it is reachable." in str(payload["message"])
 
 
 async def test_the_runner_payload_never_carries_the_reason_back() -> None:
@@ -581,6 +588,13 @@ async def test_a_change_that_did_not_take_is_a_failure() -> None:
 
     assert payload["ok"] is False
     assert payload["error_code"] == ERROR_POSTFLIGHT_FAILED
+    assert payload["headline"] == f"Account not suspended — {ACCOUNT}"
+    # Asserted whole rather than by substring, because the absence is half the claim: this
+    # sentence **is** the measurement, so no before-clause line follows it. Two statements of one
+    # reading read as two readings.
+    assert payload["message"] == (
+        f"NOA read the account back on {SERVER_NAME}: {ACCOUNT} is not suspended."
+    )
 
 
 async def test_a_change_whm_accepted_but_could_not_confirm_says_unverified() -> None:
@@ -597,6 +611,13 @@ async def test_a_change_whm_accepted_but_could_not_confirm_says_unverified() -> 
     assert payload["ok"] is True
     assert payload["verified"] is False
     assert payload["verification"] == VERIFICATION_UNAVAILABLE
+    # The heading is the change's own, because the commands were accepted — what is unconfirmed is
+    # stated in the sentence, and the corner reads it off the verification state.
+    assert payload["headline"] == f"Account suspended — {ACCOUNT}"
+    # Nothing was compared on this branch by construction — there is no reading to compare
+    # against — so the before-clause is the no-reading spelling and never the measured-empty one,
+    # which would claim a comparison that could not have happened.
+    assert "NOA has no reading of what it was before." in str(payload["message"])
     assert len(api.requests_to(SUSPENDACCT_PATH)) == 1
 
 
@@ -617,6 +638,12 @@ async def test_a_whm_refusal_at_execute_time_keeps_its_own_code() -> None:
     assert payload["ok"] is False
     assert payload["error_code"] == "whm_api_error"
     assert "Account is locked." in str(payload["message"])
+    # The reading disagrees with what was asked for, so the heading says so.
+    assert payload["headline"] == f"Account not suspended — {ACCOUNT}"
+    # The code stays on the envelope, where an administrator looks for it. It names a remedy to
+    # an engineer and names nothing to the operator reading the sentence, whose useful half is
+    # WHM's own words above.
+    assert "whm_api_error" not in str(payload["message"])
 
 
 async def test_a_server_that_vanished_after_approval_is_refused_before_the_mutation() -> None:
@@ -714,17 +741,24 @@ async def test_the_suspend_delta_names_the_one_field_it_moved() -> None:
     against — and the `new` side is the direction's own target, confirmed by the postflight
     before this branch is reached. Re-reading the `old` side in the runner would be a second
     reading, and a delta about a decision nobody made.
+
+    The line an operator reads is asserted beside the facet, here and in the two tests below,
+    because both are composed from the one tuple: the card's before-clause and the audit drawer's
+    field change cannot state two different before-values, and this is the pair that says so.
     """
     fixture, _ = suspend_context(whm_endpoint(listings=[[suspended_account()]]))
     runner = build_whm_suspend_runner(context=fixture.context)
 
-    delta = await delta_of(runner, execution_request(server_id=fixture.servers.servers[0].id))
+    outcome = await outcome_of(runner, execution_request(server_id=fixture.servers.servers[0].id))
 
+    delta = outcome.delta
     assert delta is not None
     payload = delta.as_payload()
     assert payload["identity"] == {"server": SERVER_NAME, "username": ACCOUNT}
     assert payload["verification"] == VERIFICATION_VERIFIED
     assert payload["changed_fields"] == [{"field": "suspended", "old": False, "new": True}]
+    # One row: the two sides were read and they differ, which is the ordinary confirmed change.
+    assert "It was not suspended before this ran." in str(outcome.payload["message"])
 
 
 async def test_evidence_that_never_recorded_the_field_states_no_field_change() -> None:
@@ -747,12 +781,16 @@ async def test_evidence_that_never_recorded_the_field_states_no_field_change() -
     # Replaced rather than merged: what is being arranged is the *absence* of the key.
     request.evidence[EVIDENCE_ACCOUNT] = {"user": ACCOUNT}
 
-    delta = await delta_of(runner, request)
+    outcome = await outcome_of(runner, request)
 
+    delta = outcome.delta
     assert delta is not None
     payload = delta.as_payload()
     assert payload["verification"] == VERIFICATION_VERIFIED
     assert "changed_fields" not in payload
+    # The absent facet in words. NOA states that it holds no reading rather than naming a value,
+    # because an `old` side nobody recorded is not an `old` side of `false`.
+    assert "NOA has no reading of what it was before." in str(outcome.payload["message"])
 
 
 async def test_a_before_value_that_already_matched_renders_a_measured_empty_diff() -> None:
@@ -769,12 +807,16 @@ async def test_a_before_value_that_already_matched_renders_a_measured_empty_diff
     request = execution_request(server_id=fixture.servers.servers[0].id)
     request.evidence[EVIDENCE_ACCOUNT] = {"user": ACCOUNT, "suspended": True}
 
-    delta = await delta_of(runner, request)
+    outcome = await outcome_of(runner, request)
 
+    delta = outcome.delta
     assert delta is not None
     payload = delta.as_payload()
     assert payload["verification"] == VERIFICATION_VERIFIED
     assert payload["changed_fields"] == []
+    # The measured-empty spelling, and the third of the three that never fold: "it already read
+    # suspended" is a comparison NOA made, which is a different claim from holding no reading.
+    assert "It already read suspended before this ran." in str(outcome.payload["message"])
 
 
 async def test_the_suspend_delta_never_carries_the_note_it_wrote() -> None:

@@ -198,10 +198,6 @@ ERROR_SUSPENSION_STATE_UNREADABLE = "suspension_state_unreadable"
 MESSAGE_USERNAME_REQUIRED = "A cPanel account username is required."
 MESSAGE_SUSPEND_FAILED = "WHM did not suspend the account."
 MESSAGE_UNSUSPEND_FAILED = "WHM did not unsuspend the account."
-MESSAGE_POSTFLIGHT_SUSPEND_FAILED = "WHM accepted the suspension but the account is not suspended."
-MESSAGE_POSTFLIGHT_UNSUSPEND_FAILED = (
-    "WHM accepted the unsuspension but the account is still suspended."
-)
 
 # One structured event per call that found nothing to do, so "why is there no approval card" is
 # answerable from the logs. Identifiers only, never the account payload.
@@ -736,8 +732,6 @@ __all__ = [
     "LOG_UNSUSPEND_LOCKED",
     "LOG_UNSUSPEND_NO_OP",
     "LOG_UNSUSPEND_UNVERIFIED",
-    "MESSAGE_POSTFLIGHT_SUSPEND_FAILED",
-    "MESSAGE_POSTFLIGHT_UNSUSPEND_FAILED",
     "MESSAGE_SERVER_UNAVAILABLE",
     "MESSAGE_SUSPEND_FAILED",
     "MESSAGE_UNSUSPEND_FAILED",

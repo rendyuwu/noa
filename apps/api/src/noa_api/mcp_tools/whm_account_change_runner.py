@@ -35,6 +35,15 @@ boolean, `suspended`, and the value it moved from is the reading the operator au
 rather than a second reading taken later. Where the evidence cannot say, no field change is
 stated at all: an `old` side nobody recorded is not an `old` side of `false`, and a delta whose
 before-value was invented is the fabrication refused one surface over.
+
+**Every sentence and heading an operator reads for this family is composed here.** The approval
+card renders the runner's own bytes unchanged and no LLM authors any of them, so whatever this
+module writes into `headline` and `message` is literally what a person reads off the completed
+card and pastes into a ticket. Two consequences that shape the wording below: the words state
+facts rather than verdicts, because the card's status corner already states the verdict off the
+delta's verification; and the raw error code stays on the envelope's `error_code` rather than
+inside a sentence, because it names a remedy to an engineer and names nothing to the operator
+deciding what to do next.
 """
 
 from __future__ import annotations
@@ -75,8 +84,6 @@ from noa_api.mcp_tools.whm_account_change import (
     EVIDENCE_SERVER_ID,
     LOG_SUSPEND_UNVERIFIED,
     LOG_UNSUSPEND_UNVERIFIED,
-    MESSAGE_POSTFLIGHT_SUSPEND_FAILED,
-    MESSAGE_POSTFLIGHT_UNSUSPEND_FAILED,
     MESSAGE_SUSPEND_FAILED,
     MESSAGE_UNSUSPEND_FAILED,
     TOOL_WHM_SUSPEND_ACCOUNT,
@@ -126,12 +133,25 @@ class _AccountChangeDirection:
     tool_name: str
     # The value `suspended` must hold on the re-read once the change took.
     target_suspended: bool
-    # What WHM was asked to do, as it appears mid-sentence: "WHM accepted the {noun} of `x`".
+    # What WHM was asked to do, as it appears mid-sentence: "WHM accepted the {noun} of x".
     noun: str
-    # The confirmed state, as an operator reads it: "`x` {confirmed_state}."
+    # The state the account reads in once the change took: "The x account {confirmed_state} on y."
     confirmed_state: str
-    # The `postflight_failed` sentence — WHM accepted a call that did not take.
-    postflight_message: str
+    # The card's heading where the account reads the way the change asked, and where nothing could
+    # be read at all — the latter because the corner beside it already says the change is
+    # unconfirmed, so the heading there names what the card is about rather than a measurement.
+    headline: str
+    # The heading where the account was read and reads the other way. Not the negation of the one
+    # above: "not suspended" and "still suspended" name the two directions' failures as an
+    # operator would say them.
+    mismatch_headline: str
+    # The consequence of the act, stated once, in the owner's own words.
+    #
+    # **Empty on unsuspend, and nothing takes its place.** A suspension has a consequence worth
+    # stating — the whole account goes unreachable — while lifting one produces no new consequence
+    # to state, so a mirrored sentence there would be a clause nobody measured and nobody
+    # supplied. Decided by the owner on 2026-09-13.
+    consequence: str
     # What to say when WHM's own refusal carried no sentence of its own.
     failure_message: str
     unverified_log_event: str
@@ -142,7 +162,9 @@ _SUSPEND: Final = _AccountChangeDirection(
     target_suspended=True,
     noun="suspension",
     confirmed_state="is suspended",
-    postflight_message=MESSAGE_POSTFLIGHT_SUSPEND_FAILED,
+    headline="Account suspended",
+    mismatch_headline="Account not suspended",
+    consequence="The whole account — nothing on it is reachable.",
     failure_message=MESSAGE_SUSPEND_FAILED,
     unverified_log_event=LOG_SUSPEND_UNVERIFIED,
 )
@@ -152,7 +174,11 @@ _UNSUSPEND: Final = _AccountChangeDirection(
     target_suspended=False,
     noun="unsuspension",
     confirmed_state="is no longer suspended",
-    postflight_message=MESSAGE_POSTFLIGHT_UNSUSPEND_FAILED,
+    headline="Account unsuspended",
+    mismatch_headline="Account still suspended",
+    # Deliberately empty, and the field's own comment holds why: no mirror of the suspend
+    # direction's consequence sentence goes here.
+    consequence="",
     failure_message=MESSAGE_UNSUSPEND_FAILED,
     unverified_log_event=LOG_UNSUSPEND_UNVERIFIED,
 )
@@ -409,6 +435,38 @@ def _suspension_change(
     return (FieldChange(field=DELTA_FIELD_SUSPENDED, old=old, new=direction.target_suspended),)
 
 
+def _state_words(suspended: bool) -> str:
+    """One boolean as an operator reads it, and the only spelling of it this module composes."""
+    return "suspended" if suspended else "not suspended"
+
+
+def _before_clause(
+    changed_fields: tuple[FieldChange, ...] | None, *, direction: _AccountChangeDirection
+) -> str:
+    """What the account read before the change ran, in the one spelling that branch earned.
+
+    Read off the **same** tuple the delta beside it is built from, so the line an operator reads
+    on the card and the field change an administrator opens in the audit drawer cannot state two
+    different before-values.
+
+    Three spellings, and they never fold into one, because the three claims behind them differ:
+
+    - one row — both sides were read and they differ. The ordinary confirmed change.
+    - `()` — both sides were read and they match: measured, and nothing moved. Only reachable
+      where the gate-time reading already equalled what the change asked for, which is the value
+      the line therefore names.
+    - `None` — nothing was compared at all, so the line says NOA holds no reading rather than
+      naming a value. An `old` side nobody recorded is not an `old` side of `false`, and printing
+      "it was not suspended" off an absent reading is exactly the fabrication the facet's three
+      states exist to keep apart.
+    """
+    if changed_fields is None:
+        return "NOA has no reading of what it was before."
+    if not changed_fields:
+        return f"It already read {_state_words(direction.target_suspended)} before this ran."
+    return f"It was {_state_words(bool(changed_fields[0].old))} before this ran."
+
+
 async def _verify_account_state(
     target: _ChangeTarget,
     *,
@@ -466,13 +524,23 @@ async def _verify_account_state(
     )
     state = account_suspension_state(verified) if verified is not None else None
 
+    # **Nothing composed below is built from the row this read answered with.** WHM stores the
+    # operator's typed NOA reason as the suspension note and echoes it back as `suspendreason` on
+    # every later `listaccts` row, so a sentence assembled from that row would render a previous
+    # decision's reason on this card. Every string here is built from the username, the server
+    # name and the one boolean.
+
     if state is None:
+        # Two shapes of non-answer, kept apart in the sentence as well as in the cause, because
+        # they send an operator to different places: a read that never answered says nothing about
+        # the account, while a read that answered without a state NOA can spell says WHM's own
+        # version reports the field in a way this build does not know.
         if verified is None:
             cause = str(result.get("error_code") or MESSAGE_LIST_ACCOUNTS_FAILED)
-            detail = "the confirming read did not answer"
+            detail = "NOA could not read the account back afterwards"
         else:
             cause = ERROR_SUSPENSION_STATE_UNREADABLE
-            detail = "the confirming read did not report a suspension state NOA can read"
+            detail = "NOA read the account back and WHM did not say whether it is suspended"
         logger.warning(
             direction.unverified_log_event,
             tool=direction.tool_name,
@@ -484,26 +552,42 @@ async def _verify_account_state(
         # The cause names the **confirming read**, not the write, on both paths: what it answers
         # is why NOA holds no measurement, and the write's own code is on the envelope beside it
         # where a reader looks for what failed. Two questions, two fields.
+        #
+        # `None` is the before-clause this branch takes, and it is a literal in both places rather
+        # than a value that happens to arrive as one: the line below and the delta at the foot of
+        # this return are each handed `None` outright. The measured-empty spelling cannot reach
+        # here at all, because the only thing that produces it is `_suspension_change`, and every
+        # call to it sits past this return where a reading exists to compare against. An empty
+        # tuple here would tell an operator NOA compared and found nothing moved, about a change
+        # nothing was read for.
+        unconfirmed = f"{detail}, so it cannot say the account {direction.confirmed_state}."
+        before = _before_clause(None, direction=direction)
+        # The heading names what the card is about rather than a reading, because there is no
+        # reading: the corner beside it states that the change is unconfirmed, off the delta.
+        headline = f"{direction.headline} — {target.username}"
         return ChangeOutcome(
             payload=(
                 tool_ok(
+                    headline=headline,
                     status=STATUS_CHANGED,
                     server=target.server_name,
                     username=target.username,
                     verified=False,
                     verification=VERIFICATION_UNAVAILABLE,
                     message=(
-                        f"WHM accepted the {direction.noun} of `{target.username}`, but {detail}. "
-                        "Check the account on the server."
+                        f"WHM accepted the {direction.noun} of {target.username} on "
+                        f"{target.server_name}. {unconfirmed}\n{before}"
                     ),
                 )
                 if write_failure is None
-                else tool_failure(
-                    write_failure.code,
-                    f"WHM {write_failure.verb} the {direction.noun} of "
-                    f"`{target.username}` (`{write_failure.code}`), and {detail}. Check the "
-                    "account on the server.",
-                )
+                else {
+                    **tool_failure(
+                        write_failure.code,
+                        f"WHM {write_failure.verb} the {direction.noun} of {target.username} on "
+                        f"{target.server_name}. {unconfirmed}\n{before}",
+                    ),
+                    "headline": headline,
+                }
             ),
             delta=_account_delta(
                 target,
@@ -518,74 +602,118 @@ async def _verify_account_state(
     if write_failure is None:
         if not matched:
             return ChangeOutcome(
-                payload=tool_failure(ERROR_POSTFLIGHT_FAILED, direction.postflight_message),
+                payload={
+                    **tool_failure(
+                        ERROR_POSTFLIGHT_FAILED,
+                        # This sentence **is** the measurement, so no before-clause line follows
+                        # it: the reading it states is what a second line would restate, and two
+                        # statements of one reading read as two readings.
+                        f"NOA read the account back on {target.server_name}: "
+                        f"{target.username} is {_state_words(state)}.",
+                    ),
+                    "headline": f"{direction.mismatch_headline} — {target.username}",
+                },
                 # Measured and disagreeing: the account was re-read and the field did not move.
                 delta=_account_delta(target, verification=VERIFICATION_MISMATCH, changed_fields=()),
             )
 
+        changed_fields = _suspension_change(target, direction=direction)
+        # The owner's consequence sentence, where the direction has one. Nothing stands in for it
+        # on the other direction — `_AccountChangeDirection.consequence` holds why.
+        consequence = f" {direction.consequence}" if direction.consequence else ""
         return ChangeOutcome(
             payload=tool_ok(
+                headline=f"{direction.headline} — {target.username}",
                 status=STATUS_CHANGED,
                 server=target.server_name,
                 username=target.username,
                 suspended=direction.target_suspended,
                 verified=True,
-                message=f"`{target.username}` {direction.confirmed_state}.",
+                message=(
+                    f"The {target.username} account {direction.confirmed_state} on "
+                    f"{target.server_name}.{consequence}\n"
+                    f"{_before_clause(changed_fields, direction=direction)}"
+                ),
             ),
             delta=_account_delta(
                 target,
                 verification=VERIFICATION_VERIFIED,
-                changed_fields=_suspension_change(target, direction=direction),
+                changed_fields=changed_fields,
             ),
         )
 
     verification, cause = confirmed_verification(matched=matched, failure=write_failure)
-    reading = f"`{target.username}` is {'suspended' if state else 'not suspended'}"
+    reading = f"{target.username} is {_state_words(state)}"
+    # The write's own error code is **not** spliced in here: it rides on the envelope's
+    # `error_code`, where an administrator looks for it, and it names nothing to the operator
+    # reading this line. What that reader needs from the failure is whether WHM refused or never
+    # answered, which is what `verb` says in words.
     opener = (
-        f"WHM {write_failure.verb} the {direction.noun} of `{target.username}` "
-        f"(`{write_failure.code}`)"
+        f"WHM {write_failure.verb} the {direction.noun} of {target.username} on "
+        f"{target.server_name}"
     )
 
     if verification == VERIFICATION_VERIFIED:
         # The call never answered and the account is where the change asked for it. No hedge:
         # NOA sent the write, WHM took the connection, and qualifying every timeout with "NOA
         # cannot prove it caused this" teaches an operator to skip the qualifier.
+        changed_fields = _suspension_change(target, direction=direction)
         return ChangeOutcome(
             payload=tool_ok(
+                headline=f"{direction.headline} — {target.username}",
                 status=STATUS_CHANGED,
                 server=target.server_name,
                 username=target.username,
                 suspended=direction.target_suspended,
                 verified=True,
-                message=f"{opener}, so NOA re-read the account: {reading}.",
+                message=(
+                    f"{opener}, so NOA re-read the account: {reading}.\n"
+                    f"{_before_clause(changed_fields, direction=direction)}"
+                ),
             ),
             delta=_account_delta(
                 target,
                 verification=VERIFICATION_VERIFIED,
-                changed_fields=_suspension_change(target, direction=direction),
+                changed_fields=changed_fields,
             ),
         )
 
+    # `()` only where WHM refused and the reading agrees with the refusal — a comparison was made
+    # and both sides say nothing moved. Everywhere else `None`: a call that went unanswered may
+    # still land, and an account already in the target state after a refusal was not put there by
+    # this change, so neither is a diff NOA can state.
+    measured_empty = verification == VERIFICATION_MISMATCH
+    changed_fields = () if measured_empty else None
+    # The `mismatch` sentence states the reading it took, the way the postflight's own mismatch
+    # branch above does, so no before-clause line follows it. The other shapes here compared
+    # nothing, and that line is what says so.
+    before = "" if measured_empty else f"\n{_before_clause(changed_fields, direction=direction)}"
     return ChangeOutcome(
-        payload=tool_failure(
-            write_failure.code,
-            confirmed_verification_sentence(
-                opener=opener,
-                reading=reading,
-                matched=matched,
-                failure=write_failure,
-                fallback=direction.failure_message,
+        payload={
+            **tool_failure(
+                write_failure.code,
+                confirmed_verification_sentence(
+                    opener=opener,
+                    reading=reading,
+                    matched=matched,
+                    failure=write_failure,
+                    fallback=direction.failure_message,
+                )
+                + before,
             ),
-        ),
+            # The account was read, so the heading names what it reads as: the change's own
+            # heading where the reading agrees with what was asked for, and the direction's
+            # did-not-happen heading where it does not.
+            "headline": (
+                f"{direction.headline if matched else direction.mismatch_headline} — "
+                f"{target.username}"
+            ),
+        },
         delta=_account_delta(
             target,
             verification=verification,
             verification_cause=cause,
-            # `()` only where WHM refused and the reading agrees with the refusal — a comparison
-            # was made and both sides say nothing moved. Everywhere else `None`: a call that went
-            # unanswered may still land, and an account already in the target state after a
-            # refusal was not put there by this change, so neither is a diff NOA can state.
-            changed_fields=() if verification == VERIFICATION_MISMATCH else None,
+            changed_fields=changed_fields,
         ),
     )
 

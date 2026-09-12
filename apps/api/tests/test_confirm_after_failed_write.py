@@ -194,8 +194,14 @@ async def test_a_write_that_never_answered_over_a_change_that_landed_reports_it_
     assert outcome.payload["ok"] is True
     assert outcome.payload["verified"] is True
     assert outcome.payload["suspended"] is True
+    assert outcome.payload["headline"] == f"Account suspended — {ACCOUNT}"
     assert "did not answer" in str(outcome.payload["message"])
-    assert ERROR_TIMEOUT in str(outcome.payload["message"])
+    # The raw code does **not** ride in the sentence, and nothing distinguishable goes with it: a
+    # reading that matches after a failed write is reported as verified only where the failure was
+    # a non-answer (`confirmed_verification`), and every member of that closed set means the one
+    # thing "did not answer" already says in words an operator reads.
+    assert ERROR_TIMEOUT not in str(outcome.payload["message"])
+    assert "It was not suspended before this ran." in str(outcome.payload["message"])
     assert outcome.delta is not None
     assert outcome.delta.verification == VERIFICATION_VERIFIED
     # No hedge has anywhere to ride, and that is the shape rather than a coincidence: a verified
@@ -220,7 +226,11 @@ async def test_a_write_that_never_answered_over_a_change_that_did_not_land_is_un
 
     assert outcome.payload["ok"] is False
     assert outcome.payload["error_code"] == ERROR_TIMEOUT
+    # The account was read and reads the other way, so the heading names that reading — while the
+    # sentence keeps the change itself open, which is the asymmetry this row exists for.
+    assert outcome.payload["headline"] == f"Account not suspended — {ACCOUNT}"
     assert "may still land" in str(outcome.payload["message"])
+    assert "NOA has no reading of what it was before." in str(outcome.payload["message"])
     assert outcome.delta is not None
     assert outcome.delta.verification == VERIFICATION_UNAVAILABLE
     assert outcome.delta.verification_cause == ERROR_TIMEOUT
@@ -245,6 +255,11 @@ async def test_a_write_the_remote_refused_now_has_a_reading_behind_it() -> None:
     assert outcome.payload["error_code"] == "whm_api_error"
     assert LOCKED in str(outcome.payload["message"])
     assert "A fresh read agrees" in str(outcome.payload["message"])
+    assert outcome.payload["headline"] == f"Account not suspended — {ACCOUNT}"
+    # No before-clause line: the sentence above already states the reading it took, and a second
+    # line restating it would read as a second reading.
+    assert "before this ran" not in str(outcome.payload["message"])
+    assert "NOA has no reading" not in str(outcome.payload["message"])
     assert outcome.delta is not None
     assert outcome.delta.verification == VERIFICATION_MISMATCH
     assert outcome.delta.changed_fields == ()
@@ -270,6 +285,10 @@ async def test_a_write_the_remote_refused_over_a_state_that_matches_is_not_a_cha
     assert outcome.payload["error_code"] == "whm_api_error"
     assert "something other than this change" in str(outcome.payload["message"])
     assert "is suspended" in str(outcome.payload["message"])
+    # The reading agrees with what was asked for, so the heading states it. What the sentence
+    # withholds is the attribution, not the state.
+    assert outcome.payload["headline"] == f"Account suspended — {ACCOUNT}"
+    assert "NOA has no reading of what it was before." in str(outcome.payload["message"])
     assert outcome.delta is not None
     assert outcome.delta.verification == VERIFICATION_UNAVAILABLE
     assert outcome.delta.verification_cause == "whm_api_error"
@@ -288,6 +307,10 @@ async def test_a_confirming_read_that_fails_names_its_own_cause_and_not_the_writ
 
     assert outcome.payload["ok"] is False
     assert outcome.payload["error_code"] == ERROR_TIMEOUT
+    # No reading came back at all, so the heading names what the card is about rather than a
+    # measurement — the corner beside it is what says the change is unconfirmed.
+    assert outcome.payload["headline"] == f"Account suspended — {ACCOUNT}"
+    assert "NOA could not read the account back afterwards" in str(outcome.payload["message"])
     assert outcome.delta is not None
     assert outcome.delta.verification == VERIFICATION_UNAVAILABLE
     assert outcome.delta.verification_cause == "http_error"
