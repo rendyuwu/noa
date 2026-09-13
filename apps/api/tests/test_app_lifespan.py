@@ -12,8 +12,9 @@ so it exercises the state wiring without needing a database.
 
 from __future__ import annotations
 
+from dataclasses import fields
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any, Final, cast
 
 import pytest
 from fastapi import FastAPI
@@ -35,6 +36,7 @@ from noa_api.api.deps import (
 )
 from noa_api.api.routes.auth import router as auth_router
 from noa_api.mcp_notifications import McpToolListChangedNotifier
+from noa_api.mcp_tools.context import McpToolContext
 from support.auth import build_settings
 
 # Port 1 is privileged and nothing listens there, so the DSN is well-formed and
@@ -503,6 +505,65 @@ def test_the_notifier_dependency_resolves_the_published_object(pinned_settings: 
         resolved = get_tool_list_notifier(cast("Any", SimpleNamespace(app=app)))
 
     assert resolved is getattr(app.state, STATE_TOOL_LIST_NOTIFIER)
+
+
+def test_every_tool_context_scalar_is_wired_to_the_setting_it_is_named_after(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each plain value on `McpToolContext`, against the `Settings` field it was built from.
+
+    `build_runtime` is the single `get_settings()` caller, so every scalar a tool reads arrives by
+    being handed over at this one site — and nothing else could catch a hand-over that names the
+    wrong field. The tool suites build their contexts directly, which is what makes them fast and
+    also what makes them blind here: a context whose delivery lifetime was handed the one-time flag
+    would leave every one of them green, and an operator would be told a link lasts a number of
+    seconds that is really a boolean.
+
+    **Asserted as a pair, never against a literal**, so a crossed wire fails and a changed default
+    does not — and every value below is *distinct*, because two settings that happened to share a
+    number would let a crossed wire pass unnoticed.
+
+    The map is hand-kept and therefore a claim, so it is bound to the dataclass in the same run:
+    a scalar added to `McpToolContext` without a line in it reddens here rather than shipping
+    unwired. Scalars are identified from the built object rather than from the annotations, which
+    keeps the binding honest if a field's type is ever spelled differently.
+    """
+    # What each scalar is named after. `result_table_*` and `secret_password_length` share their
+    # settings' names; the other four do not, and those are the wires nothing was watching.
+    setting_of: Final[dict[str, str]] = {
+        "pending_ttl_seconds": "approval_pending_ttl_seconds",
+        "embed_base_url": "noa_embed_base_url",
+        "result_table_ttl_seconds": "result_table_ttl_seconds",
+        "result_table_max_rows": "result_table_max_rows",
+        "secret_password_length": "secret_password_length",
+        "secret_delivery_one_time": "yopass_one_time",
+        "secret_delivery_expiration_seconds": "yopass_secret_expiration_seconds",
+    }
+    # Distinct, and inside every bound `core.config` puts on them (`ge=60`, `ge=8`, `ge=1`,
+    # `le=50000`), so what a failure here reports is the wiring and never the model. The flag is
+    # flipped off its default for the same reason a number is moved off its own: a scalar that was
+    # never handed over would otherwise read as correct.
+    settings = build_settings(
+        approval_pending_ttl_seconds=61,
+        noa_embed_base_url="https://embed.wiring.example",
+        result_table_ttl_seconds=62,
+        result_table_max_rows=63,
+        secret_password_length=64,
+        yopass_one_time=True,
+        yopass_secret_expiration_seconds=65,
+    )
+    monkeypatch.setattr(main, "get_settings", lambda: settings)
+
+    context = main.build_runtime(settings).tool_context
+
+    scalars = {
+        field.name
+        for field in fields(McpToolContext)
+        if isinstance(getattr(context, field.name), bool | float | int | str)
+    }
+    assert scalars == set(setting_of)
+    for field_name, setting_name in setting_of.items():
+        assert getattr(context, field_name) == getattr(settings, setting_name), field_name
 
 
 def test_a_wrongly_typed_notifier_on_state_is_refused_loudly() -> None:

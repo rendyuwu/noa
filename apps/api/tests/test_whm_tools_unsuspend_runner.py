@@ -34,13 +34,16 @@ import json
 from typing import Any
 from uuid import UUID, uuid4
 
-from core.approvals.delta import VERIFICATION_VERIFIED
+import pytest
+
+from core.approvals.delta import VERIFICATION_MISMATCH, VERIFICATION_VERIFIED
 from core.approvals.execution import ChangeExecutionRequest
 from core.audit.summaries import result_summary
 from core.db.models import WHMServer
 from noa_api.mcp_tools.whm_account_change import (
     ERROR_POSTFLIGHT_FAILED,
     ERROR_SERVER_UNAVAILABLE,
+    ERROR_SUSPENSION_STATE_UNREADABLE,
     EVIDENCE_ACCOUNT,
     EVIDENCE_OWNER,
     EVIDENCE_SERVER_ID,
@@ -51,7 +54,7 @@ from noa_api.mcp_tools.whm_account_change import (
 )
 from noa_api.mcp_tools.whm_account_change_runner import build_whm_unsuspend_runner
 from support.action_decisions import REASON
-from support.change_delta import delta_of, payload_runner
+from support.change_delta import delta_of, outcome_of, payload_runner
 from support.servers import ToolFixture, build_tool_context, whm_server
 from support.whm_api import (
     LISTACCTS_PATH,
@@ -99,6 +102,23 @@ def suspended_account(**extra: Any) -> dict[str, Any]:
 def live_account(**extra: Any) -> dict[str, Any]:
     """The same account once the suspension is lifted (`suspended` as `0`, WHM's spelling)."""
     return whm_account(ACCOUNT, domain="acme.example.com", suspended=0, owner=OWNER, **extra)
+
+
+def unreadable_state_account() -> dict[str, Any]:
+    """The account with a `suspended` the normaliser does not read, WHM's note still on it.
+
+    `account_suspension_state` answers `None` for `maybe`, so the postflight holds a matched row
+    and no state — the one could-not-confirm shape that *has* a row, and therefore the only one a
+    note can ride in on. The spelling is the unseen-cPanel-version guard
+    `test_whm_account_non_answers.py` names; here it is staging, not subject.
+    """
+    return whm_account(
+        ACCOUNT,
+        domain="acme.example.com",
+        suspended="maybe",
+        owner=OWNER,
+        suspendreason=SUSPEND_NOTE_ECHO,
+    )
 
 
 def whm_endpoint(
@@ -223,8 +243,19 @@ async def test_the_runner_payload_never_carries_the_reason_back() -> None:
     approved change — and the evidence carries WHM's older note, so both strings are in
     front of this runner even though it writes neither. Asserted on the derived summary as well
     as on the payload, because the summary is the thing a model actually reads.
+
+    **The note is on the POSTFLIGHT row too, and that is the half this was missing.** The
+    confirming read is the second place WHM hands the operator's own words back, and until the
+    row carried one this test drove a composer with nothing to leak: splicing `suspendreason`
+    into the confirmed branch's sentence yielded the literal `None` and sat green, so the one
+    branch-direction this test exists to hold was measured by nothing. A suspension that was
+    lifted keeps its `suspendreason` on `listaccts`, so the row below is the ordinary shape
+    rather than a contrived one — and the suspend direction already staged it this way, which is
+    why only this mirror was open.
     """
-    fixture, _ = unsuspend_context(whm_endpoint(listings=[[live_account()]]))
+    fixture, _ = unsuspend_context(
+        whm_endpoint(listings=[[live_account(suspendreason=SUSPEND_NOTE_ECHO)]])
+    )
     runner = payload_runner(build_whm_unsuspend_runner(context=fixture.context))
 
     payload = await runner(execution_request(server_id=fixture.servers.servers[0].id))
@@ -419,3 +450,87 @@ async def test_a_confirming_read_that_did_not_answer_claims_no_diff() -> None:
     assert payload["verification"] == VERIFICATION_UNAVAILABLE
     assert payload["verification_cause"] == "whm_api_error"
     assert "changed_fields" not in payload
+
+
+# --------------------------------------------------------------------------------------
+# The reason boundary on the postflight branches that held no run with a note in front of them
+# --------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("row", "mutation_body", "error_code", "verification", "verification_cause"),
+    [
+        pytest.param(
+            suspended_account(),
+            None,
+            ERROR_POSTFLIGHT_FAILED,
+            VERIFICATION_MISMATCH,
+            None,
+            id="the-change-did-not-take",
+        ),
+        pytest.param(
+            suspended_account(),
+            whm_api_failure_body("Account suspension is locked"),
+            "whm_api_error",
+            VERIFICATION_MISMATCH,
+            None,
+            id="whm-refused-the-write",
+        ),
+        pytest.param(
+            unreadable_state_account(),
+            None,
+            None,
+            VERIFICATION_UNAVAILABLE,
+            ERROR_SUSPENSION_STATE_UNREADABLE,
+            id="whm-did-not-say-whether-it-is-suspended",
+        ),
+    ],
+)
+async def test_no_postflight_branch_carries_the_operator_words_back(
+    row: dict[str, Any],
+    mutation_body: dict[str, Any] | None,
+    error_code: str | None,
+    verification: str,
+    verification_cause: str | None,
+) -> None:
+    """The reason rule on every postflight branch that holds a row, not only the confirmed one.
+
+    `test_the_runner_payload_never_carries_the_reason_back` above reads the payload back on the
+    **verified** branch. The other three answers of `_verify_account_state` rested on a reading of
+    the code — the matched row is reduced to one boolean the line after it arrives and never read
+    again — and a reading is an argument, not a measurement. Each case here puts a note-bearing row
+    in front of one of them and asserts the same property.
+
+    **This direction is where the hazard is WHM's own rather than planted.** The two failure cases
+    read an account that is *still suspended*, which is exactly the row WHM echoes a previous
+    decision's `suspendreason` on — the words an operator typed into a NOA card, coming back off
+    the target system on the branch that reports the lift did not take. The suspend direction
+    plants the same field on a live row, and `test_whm_tools_suspend_runner.py` holds that mirror.
+
+    **One shape of could-not-confirm is not staged here and cannot be.** Where WHM refuses the
+    confirming read outright, no row arrives at all (`verified is None`), so there is no
+    note-bearing row to put in front of the composer and nothing this test could add.
+    `test_a_change_whm_accepted_but_could_not_confirm_says_unverified` drives that branch, and what
+    it leaves open is a branch whose only material is the error code and the gate-time reading —
+    stated rather than papered over, because a case pretending to stage it would read as coverage.
+
+    Each case asserts the branch it means to drive before the property, since a fixture that
+    stopped landing there would otherwise pass with the hazard nowhere near the composer.
+    """
+    fixture, _ = unsuspend_context(whm_endpoint(listings=[[row]], unsuspend_body=mutation_body))
+    runner = build_whm_unsuspend_runner(context=fixture.context)
+
+    outcome = await outcome_of(runner, execution_request(server_id=fixture.servers.servers[0].id))
+
+    delta = outcome.delta
+    assert delta is not None
+    delta_payload = delta.as_payload()
+    assert outcome.payload.get("error_code") == error_code
+    assert delta_payload["verification"] == verification
+    assert delta_payload.get("verification_cause") == verification_cause
+    # The three surfaces one run opens towards a model, rendered together: the envelope,
+    # the summary `result_summary` derives from it and `noa_get_action_result` hands back, and the
+    # delta an administrator reads out of the audit drawer.
+    readable = json.dumps([outcome.payload, result_summary(outcome.payload), delta_payload])
+    assert REASON not in readable
+    assert SUSPEND_NOTE_ECHO not in readable
