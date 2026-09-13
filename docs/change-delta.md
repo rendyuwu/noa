@@ -305,57 +305,79 @@ If none of these fits the new tool, that is worth a conversation before a facet 
 of an eighth facet is that every renderer grows a branch, and the cost of reusing one badly is a
 receipt that reads as a measurement it is not.
 
-## What the facet looks like pasted into a ticket
+## What a change looks like pasted into a ticket
 
-A delta has two readers. The approval card renders it for an operator deciding something now, and
-the copy-summary block carries it out of the frame for whoever reads the ticket six months later.
-The builder is `apps/web-embed/src/lib/approvals/summary.ts`.
+A delta has two readers, and **neither of them prints a facet any more**. The approval card renders
+a change for an operator deciding something now, and the copy-summary block carries the same body
+out of the frame for whoever reads the ticket six months later — and what each of them shows is the
+runner's own sentence, the gate's own evidence, and one word in the corner. Of the delta itself the
+two surfaces read, between them, exactly two fields: `verification`, which becomes that corner word
+on both, and `delivered_credential`, whose link renders on the card and never in the block. Every
+other facet is still stated by the runner, still on the receipt, and still rendered whole on
+`/admin` — the audit drawer draws the delta as JSON under `Change`, both receipt halves beside it,
+and the envelope's error code as its own row
+(`apps/admin-web/src/components/admin/audit/action-request-detail-drawer.tsx`). What changed is the
+surface that prints them, not what a runner states.
+
+The builder is `apps/web-embed/src/lib/approvals/summary.ts`, with what each section says in
+`summary-sections.ts` beside it. Both read `lib/approvals/body.ts`, which is what the card renders
+too, so the screen and the ticket cannot become two statements of one measurement; the evidence
+block inside that body is `lib/approvals/evidence.ts` and the corner is `lib/approvals/verdict.ts`.
 
 **What the blocks below are, exactly.** They are that builder's own output, run over two fixtures
 whose keys are copied from the runners named beside them — not hand-composed, and not a capture of
 a live run either. So the key names and the shape are the real ones and the values are invented.
-The binding record of what the builder does with any given input is its own suite,
-`apps/web-embed/src/lib/approvals/summary.test.ts`; these are here to show a reader what lands in a
-ticket, and if the builder changes they will drift until someone re-runs it.
+The binding record of what the builder does with any given input is its own two suites,
+`apps/web-embed/src/lib/approvals/summary.test.ts` and `summary-evidence.test.ts` beside it, and
+that the card says the same thing byte for byte is
+`apps/web-embed/src/app/approvals/[id]/card-parity.test.tsx`; these are here to show a reader what
+lands in a ticket, and if the builder changes they will drift until someone re-runs it.
 
 The copied block carries what the card cannot. No image reaches the clipboard from inside the frame
 on the pinned host, so this text is the only durable record that can leave — and a field the card
 drops as noise on screen may still be the field a ticket is answered from later. Hence the `For
-support` block at the end, and hence its **one** identifier: the run id, beside the requester and
-the raw tool name. The action-request id, the conversation reference and the LibreChat account all
-render in the admin drawer for whoever can open `/admin`, and the audit list and that drawer are
-keyed on the run id — so the run id is the one string that gets an answer for a reader who cannot
-(`DECISIONS.md` section 15).
+support` block at the end, and hence its **one** identifier: the run id, beside the requester's
+email and nothing else. There is no tool-name row in it at all — the raw tool name survives on one
+embed surface only, as the hover `title` of the card's heading, which is a weak affordance and
+therefore never the only place a fact lives. The run id is on both: the card's `Requested` block
+and the end of this one. The action-request id, the conversation reference and the LibreChat
+account all render in the admin drawer for whoever can open `/admin`, and the audit list and that
+drawer are keyed on the run id — so the run id is the one string that gets an answer for a reader
+who cannot (`DECISIONS.md` section 15: the copied block carries exactly one identifier an
+administrator can look the run up by, `tool_runs.id`, beside the requester's email).
 
-Every timestamp is absolute and **bare**. The `When` heading names Jakarta (WIB) once and the stamps
-under it carry no offset (`apps/web-embed/src/lib/format/jakarta-time.ts`): a wall-clock time is
-read in whatever zone the reader sits in, so the zone is stated — once, above the values it governs,
-rather than on every line until it reads as furniture.
+Every timestamp this builder renders is absolute and **bare**. The `When` heading names Jakarta
+(WIB) once and the stamps under it carry no offset
+(`apps/web-embed/src/lib/format/jakarta-time.ts`): a wall-clock time is read in whatever zone the
+reader sits in, so the zone is stated — once, above the values it governs, rather than on every line
+until it reads as furniture. A stamp a *runner* composed into its own sentence is the other case and
+it carries `(WIB)` on the value, because that sentence also renders on the card, which has no
+zone-naming heading to put a bare stamp under.
 
 ### A firewall change with a multi-backend result
 
 One backend answered the confirming read and one did not, on the branch where the commands were
-accepted. `whm_firewall_change.py::_release_delta` states why each facet falls the way it does
-here: a silent backend leaves `measured_verdict` at `None`, a comparison needs both sides, so
+accepted — answer 2 of the five in `whm_firewall_release_outcome.py::release_outcome`, which is
+where this tool's outcome and its delta moved when `whm_firewall_change.py` ran out of room under
+the 900-line cap. The delta that branch publishes is what it always was, and
+`whm_firewall_release_outcome.py::release_delta` still states why each facet falls the way it does:
+a silent backend leaves `measured_verdict` at `None`, a comparison needs both sides, so
 `changed_fields` is **absent** rather than empty; the resolved expiry still rides as a new value
-because every command was accepted and no backend answered that it holds nothing; and the reading
-the verdict rests on was capped at twenty lines by csf's own `max_matches`.
+because every command was accepted and no backend answered that it holds nothing; and `bound`
+carries the cap the gate's reading was taken under. None of the three prints as a row any more.
+What an operator gets instead is this.
 
 ```text
 NOA approval record
 
-Firewall Release And Allow — Approved, Outcome unknown
-  The change completed.
+IP unblocked — 203.0.113.24 — Approved · not confirmed
+  The unblock ran on alpha. Imunify did not answer when NOA checked afterwards, so NOA cannot say it is fully unblocked.
 
-What changed
-  server=alpha, target=203.0.113.24
-  Field changes: not measured. Nothing here says that nothing moved.
-  New values: expires_at=2026-09-11T11:06:12+07:00, duration_minutes=60
-  Not checked: NOA could not look afterwards, so this is neither confirmed nor ruled out.
-  Backend alpha: driven, answered, verdict allowlisted
-  Backend beta: driven, no answer
-  Unanswered sources: beta
-  Evidence bound: 20 entries, truncated — the claim above rests on a capped reading, not on the whole list.
+Why it was blocked
+  Found 203.0.113.24 in /etc/csf/csf.deny
+  Temporary Blocks: IP:203.0.113.24 Port: Dir:in TTL:1800
+  Imunify blacklist: 203.0.113.24 (brute force)
+  Read from the server before the change ran.
 
 When — all times Jakarta (WIB)
   Requested: 2026-09-11 09:00:00
@@ -365,34 +387,63 @@ When — all times Jakarta (WIB)
 For support
   Requested by: operator@noa.internal
   Run id:       5c2f1a90-0000-4000-8000-000000000001
-  Tool:         whm_firewall_release_and_allow
 ```
 
-Three things in that block are the rules above, seen from the reading end.
+Five things in that block are the rules above, seen from the reading end.
 
 **The headline states two facts, and here they disagree on purpose.** `Approved` is the decision an
-operator made; `Outcome unknown` beside it is what the change then did, read off the verification
-state rather than off the call's return. The runner's own sentence sits directly under it saying
-`The change completed.` — and that is the envelope, not a reading. Nothing read the target back
-afterwards, so the headline refuses to promote the envelope into a verdict, and `Not checked: NOA
-could not look afterwards` says the same thing down at the facet. A block that let the envelope
-speak for both would be the collapse this whole document exists to prevent.
+operator made; `not confirmed` after the middle dot is what the change then did, read off the
+delta's `verification` — `unavailable` on this branch — rather than off the call's return. That
+corner word is where the four verification states landed, and all four are still told apart in it:
+`verified` adds nothing at all, `unavailable` is `not confirmed`, `mismatch` is `did not happen`,
+`not_in_force` is `not live yet`, and a state this build has never heard of is quoted back as
+`NOA reported "<state>"` rather than folded into any of them (`lib/approvals/verdict.ts`). Note what
+the headline itself does *not* do: `IP unblocked — 203.0.113.24` is the runner's own and it reads
+identically on the branch where the postflight agreed, because WHM accepted the call in both cases.
+The corner is the only thing separating a confirmed change from an unread one, which is why it is
+never allowed to be one word.
 
-`Unanswered sources: beta` names the machine. A count would tell an operator that something is
-wrong and not where to go, and no `verification_cause` rides beside it because *which* source said
-nothing is the cause.
+**The silent backend is named in the runner's sentence, and that is where `Unanswered sources`
+went.** `Imunify did not answer when NOA checked afterwards` is composed in Python by
+`whm_firewall_change_common.py::name_sources`, which joins the backends' display names — named,
+never counted, because "one backend was silent" tells an operator that something is wrong and not
+which box to go and look at. No `verification_cause` rides beside it, in the sentence or on the
+delta: *which* source said nothing is the cause, and a code next to it would be a second answer to
+one question. The names are still on `delta.unanswered` for `/admin` to draw.
 
-`New values` prints the runner's own pair verbatim — an ISO timestamp and the window it came from,
-because `renderValue` returns a string as it stands and does not reformat one. That is also why it
-is the one `+07:00` left in the block: it is the runner's string, not a stamp this builder rendered.
-The stamps under the `When` heading are the card's own fields put through the Jakarta formatter, and
-they are bare because that heading names the zone for all of them at once.
+**`Field changes: not measured` no longer prints, and the fact it carried is now in two places at
+once.** The corner's `not confirmed` says NOA holds no measurement, and the runner's sentence says
+which reading is missing and what it would have settled. What genuinely left the block is the diff
+rows themselves, and one distinction with them: a verified change that moved a field and a verified
+change that measured nothing moving both paste as `Approved` with the runner's sentence under them,
+and only the receipt tells those two apart. The families that compose an operator-facing
+before-clause carry that split in grammar instead, which is the `None`-versus-`()` rule above said
+in a sentence rather than in a field nobody can see — *"It was `<old>` before this ran"* claims a
+comparison, *"It was `<old>` when NOA last read it"* claims only a reading, and *"NOA has no reading
+of what it was before."* is the genuinely absent `old` (`whm_account_change_runner.py`,
+`proxmox_nic_runner.py`).
 
-`Field changes: not measured` is printed rather than omitted. That facet and the unanswered-sources
-line are the two that print in all three of their states — measured, measured-as-nothing, and not
-measured — because for those two the benign reading of a hole is the one that misleads. Every other
-absent facet is simply left out: a missing `list_delta` says this family's change is not list
-membership, which is nothing to report.
+**`New values` is gone, taking the last `+07:00` with it, and this branch states no expiry at all.**
+The resolved expiry still rides on the delta, and where a branch does state one to an operator it is
+the runner's own stamp: `whm_firewall_release_outcome.py::jakarta_stamp` writes
+`11 Sep 2026, 11:06 AM (WIB)` into the sentence, with the zone on the value because the card has no
+zone-naming heading to put a bare stamp under. This branch deliberately states none — a card whose
+corner says NOA could not confirm the change must not print a precise time for a window it cannot
+confirm is in force (owner-decided, stated at the branch). So an ISO string carrying its own offset
+no longer reaches either surface: every stamp a reader sees is either bare under the `When` heading,
+which names Jakarta once for all of them, or carries `(WIB)` on its own value.
+
+**The evidence block is new here, and it is the reading the decision rested on.** `Why it was
+blocked` is the gate's own heading, written in Python beside the family whose vocabulary it is
+(`change_gate.py`, `EVIDENCE_HEADING`); the lines are CSF's grep output and Imunify's rows exactly
+as each printed them, so an operator can check either against the box; and the closing line is where
+`Evidence bound` went. **A capped reading states its cap and an uncapped one says nothing at all** —
+a sentence claiming completeness on every uncapped block would read as furniture within two cards.
+The reading above was not cut, so the line is `Read from the server before the change ran.`; one cut
+by csf's own `max_matches` of 20 ends `…before the change ran; this is the first 20 of 34 lines.`
+instead, and a `truncated` flag with no readable total still says it was cut without inventing a
+number (`lib/approvals/evidence.ts`, `closingLine`). The separating case that would otherwise let an
+unconditionally appended sentence pass is in `summary-evidence.test.ts`.
 
 ### A mail gateway list change
 
@@ -402,18 +453,8 @@ that is neither a change nor a refusal.
 ```text
 NOA approval record
 
-Whitelist — Approved, Not in force
-  The change did not complete.
-
-What changed
-  server=mail-1, action=add, target=198.51.100.7, normalized_target=198.51.100.7/32
-  Field changes: not measured. Nothing here says that nothing moved.
-  List entries added: 198.51.100.7/32
-  List entries removed: none
-  List size: 42 entries
-  Not live yet: the change was saved, and the step that puts it into effect did not run. (pmg_sync_failed)
-  Error code: pmg_sync_failed
-  Unanswered sources: not measured.
+Saved, not live — 198.51.100.7 — Approved · not live yet
+  198.51.100.7 was added to the list on mail-1 as 198.51.100.7/32, and the step that puts it into effect did not run. It cannot relay email yet.
 
 When — all times Jakarta (WIB)
   Requested: 2026-09-11 11:10:00
@@ -423,19 +464,42 @@ When — all times Jakarta (WIB)
 For support
   Requested by: operator@noa.internal
   Run id:       5c2f1a90-0000-4000-8000-000000000002
-  Tool:         pmg_whitelist
 ```
 
-`List entries added` carries the gateway's own spelling of the line, `198.51.100.7/32`, beside the
-`198.51.100.7` the operator typed — both are in the identity line for the same reason. An operator
-holding this block can go to the box and grep for either.
+**This block has no evidence section, and that absence is the gate's decision rather than a hole.**
+A PMG *add* publishes no `evidence_heading`: its matching entries are empty because the address is
+not on the list, which is why it is being added, and that emptiness *is* the before-state. The key's
+presence is the decision — heading present, the block is drawn; heading absent, nothing is drawn at
+all, never an empty heading over nothing (`lib/approvals/evidence.ts`;
+`summary-sections.ts::evidenceSection` answers `null` and `summary.ts` then emits no section, which
+is the same decision the card makes from the same key). A PMG *remove* does publish one, `What was
+on the list`, over exactly the lines the change is about to delete.
 
-The line an author of a new runner should look at hardest is `Not live yet: the change was saved,
-and the step that puts it into effect did not run. (pmg_sync_failed)`, read against the runner's own
-`The change did not complete.` under the headline, and against `Not in force` in the headline
-itself. Together they say the config moved and Postfix did not, which is the one state that sends an
-operator to the right place. A runner that answered a bare failure here would send them to re-add an
-entry that is already in the file.
+**Both spellings of the address are in the runner's sentence, which is where the identity line and
+the `List entries` rows went.** `198.51.100.7 was added to the list on mail-1 as 198.51.100.7/32`
+carries what the operator typed beside what `mynetworks` actually holds, so an operator holding this
+block can go to the box and grep for either — `mynetworks` keeps `1.2.3.4` and `1.2.3.4/32` as two
+lines and one entry, and a receipt that named only one of them cannot be checked against the file.
+On a removal that same sentence names every line the write actually took out, read off the write
+rather than recomputed from the target. The lines are still on `list_delta` for `/admin`, and the
+whole-list count that printed as `List size: 42 entries` is now on the receipt only: it comes off
+the evidence, which is the one place the whole list was counted.
+
+The line an author of a new runner should look at hardest is `…and the step that puts it into effect
+did not run. It cannot relay email yet.`, read against `not live yet` in the corner beside
+`Approved`. Together they say the config moved and Postfix did not, which is the one state that
+sends an operator to the right place. A runner that answered a bare failure here would send them to
+re-add an entry that is already in the file, and one that answered a bare success would leave a
+gateway that silently relays nothing.
+
+The code itself, `pmg_sync_failed`, prints on neither embed surface now. It is on the receipt in
+both halves of its own — the envelope's `error_code`, which the admin drawer draws as its own row,
+and the delta's `verification_cause` — and it is one half of the two-field projection the
+model-facing reader is handed, `change_verification_cause` beside `change_verification`, lifted out
+of the JSONB in SQL and described in full under the reason boundary above. `pmgconfig`'s own
+failure line stays off the sentence and rides on the payload's `sync_error`, because it is an
+engineer's text that can quote a command an operator cannot run, while the remedy the sentence gives
+does not move with it.
 
 Two things a delta must never put in this block. **A reason**: the operator's justification is
 typed at decision time and travels outward only, and the builder has nowhere to put one because the

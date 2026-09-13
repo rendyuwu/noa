@@ -260,6 +260,22 @@ row and can change nothing, and `noa_api/mcp_tools/pmg_whitelist_runner.py` perf
 and is reachable only from `core/approvals/execution.py` after an operator approved. There is no
 `reason` parameter and nowhere to add one.
 
+**What membership means, stated once and not elaborated.** Every operator-facing sentence the
+runner writes — the no-op, the verified change, the unconfirmed branch — reduces to one clause: an
+address in `mynetworks` may relay email through the gateway, one that is not may not, and that is
+all it means. No spam scoring, no ports, no delivery guarantee.
+
+**The fact is one fact; the sentence is composed per branch, and nothing binds the six spellings to
+each other.** Each branch states membership in the grammar its own moment needs — the verified one
+says what is true *now* (`may now relay` / `may no longer relay`), the not-in-force one says what is
+not true *yet* (`cannot relay email yet`), the no-op one says the list was already that way, and the
+two write-failure branches splice a shared `relay` variable because they quote a reading rather than
+assert a state. Only those last two share a built string. So a later author rewording membership has
+to edit every branch in `pmg_whitelist_runner.py` that says it, and editing the `relay` variable
+alone moves two of six. That is worth knowing before the edit rather than after: there is no test
+holding the six in step, because what has to stay identical is the *meaning*, and a check on the
+words would only pin whichever spellings happened to exist when it was written.
+
 **Both spellings of the target travel everywhere.** `ipaddress` masks host bits, so
 `203.0.113.10/24` is a request about `203.0.113.0/24` — and where the search tool only *answers*
 about the masked form, this one **writes** it. The operator's own text and the normalised form are

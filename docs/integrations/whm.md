@@ -398,7 +398,7 @@ answer names the account and the server and carries nothing else — in particul
 summary, which holds `suspendreason`.
 
 Once an operator approves, `core/approvals/execution.py` runs the **runner** registered for this
-tool name (`noa_api/mcp_tools/change_runners.py`). Three things about it:
+tool name (`noa_api/mcp_tools/change_runners.py`). Four things about it:
 
 - **It acts on the server the card described.** `evidence["server_id"]`, not the `server_ref`
   string the model passed: inventory can be edited between a request and its approval, and
@@ -419,6 +419,12 @@ tool name (`noa_api/mcp_tools/change_runners.py`). Three things about it:
   the verdict rule one system over: verification-unavailable is not verification, and it is not a
   failure either — reporting one would send an operator to re-suspend an account that may already
   be suspended.
+- **A suspended account is unreachable, whole.** `_AccountChangeDirection.consequence` on `_SUSPEND`
+  (`whm_account_change_runner.py`) carries the owner's own words — "The whole account — nothing on
+  it is reachable." — spliced into the runner's success message, which becomes the receipt the
+  operator reads back on the same approval card they decided on. `_UNSUSPEND`'s `consequence` is
+  empty and stays empty: lifting a suspension has no new consequence to state, so no mirrored
+  sentence exists for it.
 
 A server that has been deleted between approval and execution is `whm_server_unavailable`, before
 the mutation rather than after it.
