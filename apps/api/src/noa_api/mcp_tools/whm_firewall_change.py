@@ -120,6 +120,7 @@ from core.remote_exec.types import SSHConnectionConfig
 from core.servers.whm_ref import resolve_whm_server_ref
 from noa_api.mcp_tools.change_gate import (
     EVIDENCE_ASKED,
+    EVIDENCE_HEADING,
     EVIDENCE_HEADLINE,
     build_change_gate_response,
     open_change_request,
@@ -315,6 +316,10 @@ async def whm_firewall_release_and_allow(
                 f"remove {normalized_target} from the deny lists on {server_name} and allow it "
                 f"for {duration_minutes} minutes"
             ),
+            # The heading over the firewall's own lines, and it states the fact the block is
+            # there to answer: this address was blocked, and here is where. A neutral "what NOA
+            # read" heading would carry no fact at all, and the block exists to answer "why me".
+            EVIDENCE_HEADING: "Why it was blocked",
             EVIDENCE_SERVER_ID: server_id,
             EVIDENCE_SERVER_NAME: server_name,
             EVIDENCE_TARGET: normalized_target,

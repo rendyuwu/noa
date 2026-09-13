@@ -64,6 +64,7 @@ from core.integrations.pmg.mynetworks import (
 from core.integrations.pmg.pmgsh_cli import MYNETWORKS_PATH
 from noa_api.mcp_tools.change_gate import (
     EVIDENCE_ASKED,
+    EVIDENCE_HEADING,
     EVIDENCE_HEADLINE,
     build_change_gate_response,
     open_change_request,
@@ -270,6 +271,12 @@ def build_whitelist_evidence(
             f"{'add' if adding else 'remove'} {normalized_target} "
             f"{'to' if adding else 'from'} the mynetworks list on {read.server_name}"
         ),
+        # The heading over PMG's own lines, on a **remove** only. For a remove the matching
+        # entries are exactly the lines the change will delete, so they are the before-state and
+        # they get a heading. For an add there are none — the address is not on the list, which is
+        # why it is being added — and that emptiness *is* the before-state, so the key is absent
+        # and the card draws no block rather than an empty heading over nothing.
+        **({} if adding else {EVIDENCE_HEADING: "What was on the list"}),
         EVIDENCE_SERVER_ID: read.server_id,
         EVIDENCE_SERVER_NAME: read.server_name,
         EVIDENCE_ACTION: action,

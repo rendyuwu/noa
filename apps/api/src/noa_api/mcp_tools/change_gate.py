@@ -118,6 +118,20 @@ FORBIDDEN_REASON_KEYS: Final[frozenset[str]] = frozenset(
 EVIDENCE_HEADLINE: Final = "headline"
 EVIDENCE_ASKED: Final = "asked"
 
+# The heading over the target system's own text, on the tools that carry a raw evidence block —
+# `Why it was blocked`, `What was allowed`, `What was on the list`. Written in Python for the same
+# reason the two above are: the words are the family's, and a table mapping each tool to a phrase
+# in the renderer would be a second copy of six runners' vocabularies with nothing reading it
+# against them.
+#
+# **Optional by design, and its presence is the decision.** Four of the seven CHANGE tools read
+# structured fields rather than vendor free-form text and have no block to head, so this cannot
+# join the required keys below without failing four gates that are correct. The renderer draws the
+# block where the key is present and draws nothing where it is absent — which is how a PMG *add*
+# gets no empty heading, its `matches` being empty because the address was not on the list and
+# that absence being the before-state itself.
+EVIDENCE_HEADING: Final = "evidence_heading"
+
 # Required on every gate call, checked at the one seam below rather than per tool.
 REQUIRED_EVIDENCE_KEYS: Final[tuple[str, ...]] = (EVIDENCE_HEADLINE, EVIDENCE_ASKED)
 
@@ -504,6 +518,7 @@ __all__ = [
     "ACTIVE_CHANGE_GATE_BRANCH",
     "APPROVAL_CARD_PATH",
     "EVIDENCE_ASKED",
+    "EVIDENCE_HEADING",
     "EVIDENCE_HEADLINE",
     "FORBIDDEN_REASON_KEYS",
     "LOG_CHANGE_GATE_WRITE_FAILED",

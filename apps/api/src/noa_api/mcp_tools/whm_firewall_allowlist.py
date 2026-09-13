@@ -92,6 +92,7 @@ from core.remote_exec.types import SSHConnectionConfig
 from core.servers.whm_ref import resolve_whm_server_ref
 from noa_api.mcp_tools.change_gate import (
     EVIDENCE_ASKED,
+    EVIDENCE_HEADING,
     EVIDENCE_HEADLINE,
     build_change_gate_response,
     open_change_request,
@@ -282,6 +283,10 @@ async def whm_firewall_allowlist_remove(
             # An imperative, never a prediction. What the card shows beside it is the allow
             # entry that exists today, read from the server, which is what the decision rests on.
             EVIDENCE_ASKED: (f"remove {normalized_target} from the allow lists on {server_name}"),
+            # The heading over the firewall's own lines. Not the release tool's wording: the
+            # block answers a different question here — what the allow entry being removed
+            # actually says today, which is what the decision to remove it rests on.
+            EVIDENCE_HEADING: "What was allowed",
             EVIDENCE_SERVER_ID: server_id,
             EVIDENCE_SERVER_NAME: server_name,
             EVIDENCE_TARGET: normalized_target,
