@@ -1,15 +1,15 @@
 # Deployment
 
-Images, the local development stack, domain and cookie layout, and the replica and readiness
-decisions this file records. Rules live inline where enforced; this file restates rather than
-decides, except where a line says a decision was made here.
+Image, local dev stack, domain and cookie layout, replica and readiness choice — this file say
+them. Rule live where enforce; this file repeat, not decide, except where line say decision made
+here.
 
-Machine-readable blocks below are marked with a `# noa-…` comment and asserted by
-`apps/api/tests/test_deployment.py`. Editing one without the other fails a test.
+Machine-read block below mark with `# noa-…` comment and check by
+`apps/api/tests/test_deployment.py`. Edit one, not other — test angry.
 
 ## Three images, three contexts
 
-One image per deployable. The build contexts differ, and not by preference:
+One image per deployable. Build context differ, and not by taste:
 
 | Image | Context | Dockerfile | Port |
 |---|---|---|---|
@@ -26,33 +26,32 @@ docker build \
   -t noa-embed apps/web-embed
 ```
 
-The API's context is the repo root because `noa-api` is a uv workspace member and `noa-core` is
-the workspace root: an `apps/api`-scoped context cannot resolve its own dependency. The two web
-contexts are their own directories because those packages are independent artifacts with their
-own lockfiles and no shared source (AGENTS.md) — a repo-root context would put each one's
-files inside the other's image, which is the boundary rather than an optimisation.
+API context be repo root because `noa-api` be uv workspace member and `noa-core` be workspace
+root: `apps/api`-scope context cannot find own dependency. Two web context be own directory
+because those package be separate artifact with own lockfile and no shared source (AGENTS.md) —
+repo-root context put each one file inside other image, which be boundary, not optimisation.
 
-Two build facts worth knowing before a first build:
+Two build fact worth know before first build:
 
-- **`python-ldap==3.4.7` has no wheel.** `uv.lock` records an sdist only, so the API image
-  compiles it against OpenLDAP headers in a builder stage and ships only the runtime libraries.
-- **The web images need Node 22, not 20.** `engines.node` says `>=20.9.0` and `next@16.3.0`
-  agrees, so 20 would *run* the built app — but `packageManager` pins pnpm 11.x, whose own
-  `engines` demand `>=22.13`, and on Node 20 `pnpm install` dies with
-  `ERR_UNKNOWN_BUILTIN_MODULE: No such built-in module: node:sqlite` before resolving a package.
-  Measured while building this image on `node:20-bookworm-slim`. `docs/admin-web.md` said "Node
-  20 LTS" for CI runners; that clause and the `packageManager` clause contradicted each other and
-  the doc was corrected in the same change.
+- **`python-ldap==3.4.7` have no wheel.** `uv.lock` record sdist only, so API image compile it
+  against OpenLDAP header in builder stage and ship only runtime library.
+- **Web image need Node 22, not 20.** `engines.node` say `>=20.9.0` and `next@16.3.0` agree, so
+  20 would *run* built app — but `packageManager` pin pnpm 11.x, whose own `engines` demand
+  `>=22.13`, and on Node 20 `pnpm install` die with
+  `ERR_UNKNOWN_BUILTIN_MODULE: No such built-in module: node:sqlite` before resolve any package.
+  Measured while build this image on `node:20-bookworm-slim`. `docs/admin-web.md` say "Node
+  20 LTS" for CI runner; that clause and `packageManager` clause fight each other, so doc fixed
+  in same change.
 
-**The admin panel image only builds inside the Biznet Gio network.** `.npmrc` maps `@gio/*` to
-`https://bigsu.biznetgio.pt/registry/`, which resolves to an internal-only address; from outside,
-`pnpm install` fails with `ENOTFOUND bigsu.biznetgio.pt`. The access boundary is the network, not
-a token, so no credential is added to the image and none should be — see `docs/admin-web.md`,
-"Registry access and CI", for the runner requirement this puts on the pipeline.
+**Admin panel image only build inside Biznet Gio network.** `.npmrc` map `@gio/*` to
+`https://bigsu.biznetgio.pt/registry/`, which resolve to internal-only address; from outside,
+`pnpm install` fail with `ENOTFOUND bigsu.biznetgio.pt`. Access boundary be network, not token,
+so no credential go in image and none should — see `docs/admin-web.md`, "Registry access and CI",
+for runner requirement this put on pipeline.
 
 ## Configuration: build time versus runtime
 
-Two settings are baked at build time, they name one origin, and neither can be anything else.
+Two setting bake at build time, they name one origin, and neither can be anything else.
 
 | Setting | When | Read by | If unset |
 |---|---|---|---|
@@ -62,49 +61,46 @@ Two settings are baked at build time, they name one origin, and neither can be a
 | `NOA_SIGN_IN_URL` | runtime | embed 401 card | card names the state and offers no link |
 | everything else | runtime | API, from the environment | per `core/config.py`; secrets and addresses refuse dev defaults outside development |
 
-`output: 'standalone'` never executes the Next config at runtime, so `frame-ancestors` is
-compiled into the output (one `frame-ancestors` entry on every response; the framing-header
-build bakes it in). The consequence is two-sided and both sides matter: a
-runtime variable cannot **widen** the framing allowlist, and it cannot **change** it either.
-Moving LibreChat means rebuilding the embed image, and an image built for one environment cannot
-be promoted to another by retagging. Neither name therefore appears anywhere as a container
-environment variable, a compose `environment:` key or a ConfigMap entry — a setting that looks like
-it moves this value while doing nothing is exactly the silently-wrong-address failure the
-production-default refusal exists to stop, one setting over.
+`output: 'standalone'` never run Next config at runtime, so `frame-ancestors` compile into output
+(one `frame-ancestors` entry on every response; framing-header build bake it in). Consequence
+have two side and both matter: runtime variable cannot **widen** framing allowlist, and cannot
+**change** it either. Move LibreChat mean rebuild embed image, and image built for one
+environment cannot be promote to another by retag. So neither name appear anywhere as container
+environment variable, compose `environment:` key or ConfigMap entry — setting that look like it
+move this value while do nothing be exactly the silent-wrong-address failure the
+production-default refusal exist to stop, one setting over.
 
-The second name is the origin the card's frame-sizing `postMessage` is sent to, and its
-`NEXT_PUBLIC_` prefix is what makes Next compile the value into the output rather than anything to
-do with the browser. Both must be passed, with one value: pass only the first and the header is
-correct while every sizing message is dropped by the browser for an origin mismatch — a frame that
-renders and never grows, with nothing in any log. Pass only the second and the header falls back to
-the development origin, which refuses the real parent outright. `docker-compose.yml` feeds both
-build arguments from one `.env` key so they cannot disagree there. Detail and the check that the
-value survives a build: `docs/embed-frame.md`.
+Second name be origin the card frame-sizing `postMessage` go to, and its `NEXT_PUBLIC_` prefix be
+what make Next compile value into output, nothing to do with browser. Both must pass, with one
+value: pass only first and header be correct while every sizing message get drop by browser for
+origin mismatch — frame that render and never grow, with nothing in any log. Pass only second and
+header fall back to development origin, which refuse real parent flat. `docker-compose.yml` feed
+both build argument from one `.env` key so they cannot disagree there. Detail and check that
+value survive build: `docs/embed-frame.md`.
 
-Measured against the built image, three ways, because one of them alone proves nothing:
+Measured against built image, three way, because one alone prove nothing:
 
 1. `--build-arg NOA_LIBRECHAT_ORIGIN=https://chat.example.test:8443` →
-   `Content-Security-Policy: frame-ancestors https://chat.example.test:8443` on the wire. A
-   distinct origin, deliberately: measuring with `https://chat.noa.internal` cannot separate the
-   argument working from the fallback default.
-2. `--build-arg NOA_LIBRECHAT_ORIGIN='https://*.example.test'` → the **build fails** with
+   `Content-Security-Policy: frame-ancestors https://chat.example.test:8443` on wire. Distinct
+   origin, on purpose: measure with `https://chat.noa.internal` cannot tell argument working from
+   fallback default.
+2. `--build-arg NOA_LIBRECHAT_ORIGIN='https://*.example.test'` → **build fail** with
    `NOA_LIBRECHAT_ORIGIN must be a single origin like https://chat.noa.internal (scheme, host,
-   optional port — no wildcard, no path, no second origin)`. A widening value cannot ship.
-3. `printenv NOA_LIBRECHAT_ORIGIN` in the running container → absent. Same for
-   `NEXT_PUBLIC_NOA_LIBRECHAT_ORIGIN`: both are build arguments, declared in the builder stage
-   only, and `apps/api/tests/test_deployment.py` asserts each name is absent from every image's
-   `ENV` and every compose `environment:` block.
+   optional port — no wildcard, no path, no second origin)`. Widening value cannot ship.
+3. `printenv NOA_LIBRECHAT_ORIGIN` in running container → absent. Same for
+   `NEXT_PUBLIC_NOA_LIBRECHAT_ORIGIN`: both be build argument, declare in builder stage only, and
+   `apps/api/tests/test_deployment.py` assert each name absent from every image `ENV` and every
+   compose `environment:` block.
 
 ## Domains and the session cookie
 
-The `noa_session` cookie is scoped `Domain=.noa.internal`, `SameSite=Lax`, `Path=/`, httpOnly.
-Everything an operator's browser touches therefore has to sit under `noa.internal`, or
-the cookie simply does not ride: sign-in appears to succeed and then every authenticated request
-answers 401 with nothing in any log to say why. This is the same class of failure as a wrong
-address and it is why the local stack is documented at these names rather than at
-`localhost`.
+`noa_session` cookie scope `Domain=.noa.internal`, `SameSite=Lax`, `Path=/`, httpOnly. So
+everything operator browser touch must sit under `noa.internal`, or cookie simply not ride:
+sign-in look like it work and then every authenticated request answer 401 with nothing in any log
+to say why. Same class of failure as wrong address, and why local stack document at these name
+instead of `localhost`.
 
-The hosts entry is the one the render-path gate's rig already used, verbatim:
+Hosts entry be the one render-path gate rig already use, verbatim:
 
 ```
 # noa-hosts (asserted by apps/api/tests/test_deployment.py)
@@ -114,7 +110,7 @@ The hosts entry is the one the render-path gate's rig already used, verbatim:
 Remove it with
 `sudo sed -i '/noa.internal embed.noa.internal chat.noa.internal/d' /etc/hosts`.
 
-Local development origins, one per deployable plus the chat client:
+Local development origin, one per deployable plus chat client:
 
 ```
 # noa-origins (asserted by apps/api/tests/test_deployment.py)
@@ -124,15 +120,14 @@ embed      http://embed.noa.internal:3001
 librechat  http://chat.noa.internal:3080
 ```
 
-Three names, which is what the deployment decision's row specifies, because the admin panel
-shares the API's host and differs only by port. Cookies ignore ports, so the one-registrable-
-parent rule holds; the browser never calls FastAPI directly anyway (AGENTS.md), so the two ports
-never collide over a route.
+Three name, which be what deployment decision row say, because admin panel share API host and
+differ only by port. Cookie ignore port, so one-registrable-parent rule hold; browser never call
+FastAPI direct anyway (AGENTS.md), so two port never clash over route.
 
-**The parent domain above is development's, not NOA's.** The one-registrable-parent rule fixes a
-*property* — every operator-facing origin under one registrable parent, and the cookie scoped to
-that parent — and names `.noa.internal` only as what development uses. Deployed, the parent is
-`.simondayce.my.id` (the deploy overlay):
+**Parent domain above be development one, not NOA one.** One-registrable-parent rule fix a
+*property* — every operator-facing origin under one registrable parent, cookie scope to that
+parent — and name `.noa.internal` only as what development use. Deployed, parent be
+`.simondayce.my.id` (deploy overlay):
 
 | | staging | production |
 |---|---|---|
@@ -141,23 +136,22 @@ that parent — and names `.noa.internal` only as what development uses. Deploye
 | embed (approval card) | `noa-embed-staging.simondayce.my.id` | `noa-embed.simondayce.my.id` |
 | LibreChat (not this repo) | `chat.simondayce.my.id` | `chat.simondayce.my.id` |
 
-`AUTH_SESSION_COOKIE_DOMAIN=.simondayce.my.id` in both, and TLS terminates at the ingress
-(`simondayce-my-id-tls`) so `AUTH_SESSION_COOKIE_SECURE=true` holds. LibreChat sits under the same
-parent deliberately: the operator reaches the approval card *through* the chat document and signs in
-on the admin origin, so a chat host outside the parent breaks the cookie's ride before any
-`frame-ancestors` question is reached.
+`AUTH_SESSION_COOKIE_DOMAIN=.simondayce.my.id` in both, and TLS end at ingress
+(`simondayce-my-id-tls`) so `AUTH_SESSION_COOKIE_SECURE=true` hold. LibreChat sit under same
+parent on purpose: operator reach approval card *through* chat document and sign in on admin
+origin, so chat host outside parent break cookie ride before any `frame-ancestors` question come
+up.
 
-**A deployment needs a fourth name**, and it is a name rather than a path. Behind TLS there is one
-port, so the API's host cannot also serve the admin panel; `NOA_SIGN_IN_URL` points at
-`https://noa-admin.simondayce.my.id/login`. That is a deployment decision and the one place this
+**Deployment need fourth name**, and it be name, not path. Behind TLS there be one port, so API
+host cannot also serve admin panel; `NOA_SIGN_IN_URL` point at
+`https://noa-admin.simondayce.my.id/login`. That be deployment decision and the one place this
 file
-goes past that row's own three-name list. The alternative — a path prefix on the API host — was not
-taken, because it puts the admin panel and the MCP endpoint on one origin and makes
-`frame-ancestors 'none'` versus the embed's allowlist a per-path property instead of a per-origin
-one. In development the same split is by port instead, which costs nothing because cookies ignore
-ports and the browser never calls FastAPI directly.
+go past that row own three-name list. Alternative — path prefix on API host — not taken, because
+it put admin panel and MCP endpoint on one origin and make `frame-ancestors 'none'` versus embed
+allowlist a per-path property instead of per-origin one. In development same split go by port
+instead, which cost nothing because cookie ignore port and browser never call FastAPI direct.
 
-After the hosts line, set three values in the repo-root `.env` to match:
+After hosts line, set three value in repo-root `.env` to match:
 
 ```bash
 NOA_EMBED_BASE_URL=http://embed.noa.internal:3001
@@ -165,9 +159,9 @@ NOA_SIGN_IN_URL=http://noa.internal:3000/login
 NOA_LIBRECHAT_ORIGIN=http://chat.noa.internal:3080
 ```
 
-`AUTH_SESSION_COOKIE_DOMAIN=.noa.internal` is already what `.env.example` carries. Leaving the
-`localhost` defaults in place while browsing at `*.noa.internal` produces the silent 401 above;
-setting these while browsing at `localhost` produces the same thing from the other direction.
+`AUTH_SESSION_COOKIE_DOMAIN=.noa.internal` already what `.env.example` carry. Leave `localhost`
+default in place while browse at `*.noa.internal` make silent 401 above; set these while browse
+at `localhost` make same thing from other direction.
 
 ## Local development stack
 
@@ -177,93 +171,88 @@ docker compose up -d postgres          # Postgres only — no image builds
 docker compose --profile apps up -d    # Postgres, migrations, all three apps
 ```
 
-Only `postgres` is profile-free. The documented development loop runs the API from a checkout
-(`uv run uvicorn`) against a containerised database, and the admin panel image cannot be built
-outside the internal network at all — so making the full stack the default would break the
-one-liner for a reason unrelated to what it asks for.
+Only `postgres` be profile-free. Documented development loop run API from checkout
+(`uv run uvicorn`) against containerised database, and admin panel image cannot build outside
+internal network at all — so make full stack the default would break one-liner for reason
+unrelated to what it ask for.
 
-Configuration comes from the repo-root `.env` and nowhere else. This is the rule
-`apps/*/config/root-env.ts` already states: two env files for one deployment is two places for
-`NOA_API_URL` to disagree, and a proxy quietly talking to the wrong API is not a failure anyone
-sees. Each service therefore overrides **only** what the container network forces — a service
-name in place of `localhost` — and reads the rest from `.env`:
+Configuration come from repo-root `.env` and nowhere else. This be rule `apps/*/config/root-env.ts`
+already state: two env file for one deployment be two place for `NOA_API_URL` to disagree, and
+proxy quietly talk to wrong API be failure nobody see. Each service therefore override **only**
+what container network force — service name instead of `localhost` — and read rest from `.env`:
 
-- `api`, `migrate` — `POSTGRES_URL` host becomes `postgres`.
-- `admin-web`, `embed` — `NOA_API_URL` becomes `http://api:8000`.
+- `api`, `migrate` — `POSTGRES_URL` host become `postgres`.
+- `admin-web`, `embed` — `NOA_API_URL` become `http://api:8000`.
 
-The two web services are given their variables individually rather than through `env_file`. They
-read one or two settings each, and handing them the whole file would put the Fernet key, the JWT
-secret and the LDAP bind password into containers where nothing reads them.
+Two web service get their variable one by one instead of through `env_file`. They read one or two
+setting each, and hand them whole file would put Fernet key, JWT secret and LDAP bind password
+into container where nothing read them.
 
-`migrate` runs `alembic upgrade head` to completion and exits; `api` waits on
-`service_completed_successfully`. A failed migration then stops the stack with the migration's own
-error, instead of leaving a web server that answers 500 on every route.
+`migrate` run `alembic upgrade head` to end and exit; `api` wait on
+`service_completed_successfully`. Failed migration then stop stack with migration own error,
+instead of leave web server that answer 500 on every route.
 
-Every published port binds `127.0.0.1`. The Postgres credentials here are the throwaway pair
-`.env.example` already carries, and loopback publishing is what makes that safe regardless of the
-password — nothing off the host can reach the database.
+Every published port bind `127.0.0.1`. Postgres credential here be throwaway pair `.env.example`
+already carry, and loopback publish be what make that safe whatever password be — nothing off
+host can reach database.
 
 ## One replica, deliberately
 
-The API image runs a single uvicorn process: no `--workers`, and one replica per deployment. Four
-things in the design are per-process, not shared:
+API image run single uvicorn process: no `--workers`, and one replica per deployment. Four thing
+in design be per-process, not shared:
 
-- **The session-clock rule** pins session-JWT verification to zero clock leeway because mint and
-  verify share one clock. A second replica makes that two clocks, and the first symptom is not a
-  logout near expiry — it is a login whose token is rejected the instant it is issued, on
-  whichever replica is behind. The session-clock rule names ">1 API replica" as its revisit
-  trigger, and the fix then is an explicit `leeway`, not a silent widening.
-- **The approved-change executor** is an in-process asyncio task with its own DB session.
-- **The expiry sweep** and **the stranded-run reaper** are in-process loops on an interval.
-  N replicas means N sweepers competing over the same rows.
-- **The list-changed emitter's session register** is a per-process `WeakSet`, so a notifier in
-  one replica knows only the MCP sessions that replica holds.
+- **Session-clock rule** pin session-JWT verify to zero clock leeway because mint and verify
+  share one clock. Second replica make that two clock, and first symptom be not logout near
+  expiry — it be login whose token get reject the instant it issue, on whichever replica be
+  behind. Session-clock rule name ">1 API replica" as its revisit trigger, and fix then be
+  explicit `leeway`, not silent widening.
+- **Approved-change executor** be in-process asyncio task with own DB session.
+- **Expiry sweep** and **stranded-run reaper** be in-process loop on interval. N replica mean N
+  sweeper fight over same row.
+- **List-changed emitter session register** be per-process `WeakSet`, so notifier in one replica
+  know only MCP session that replica hold.
 
-Scaling out is a deliberate change carrying the session-clock rule's revisit trigger, not a
-replica count.
+Scale out be deliberate change carrying session-clock rule revisit trigger, not a replica count.
 
-TLS and forwarded headers belong to the ingress. `--proxy-headers` is deliberately **not** set on
-uvicorn: it is only safe alongside an explicit `--forwarded-allow-ips`, and a default that trusts
-the wrong hop lets a client dictate its own source address. Enable both together or neither.
+TLS and forwarded header belong to ingress. `--proxy-headers` deliberately **not** set on uvicorn:
+it safe only alongside explicit `--forwarded-allow-ips`, and default that trust wrong hop let
+client dictate own source address. Turn on both together or neither.
 
 ## Health and readiness — decided here
 
-Every process exposes a **liveness** endpoint that touches nothing: `/health` on the API
-(answers with Postgres down on purpose) and `/healthz` on both web apps. All three container
-healthchecks target exactly those, so a database or API outage is never reported as some other
-process being dead, where a restart would be the wrong remedy.
+Every process expose **liveness** endpoint that touch nothing: `/health` on API (answer with
+Postgres down on purpose) and `/healthz` on both web app. All three container healthcheck target
+exactly those, so database or API outage never get report as some other process being dead, where
+restart would be wrong cure.
 
-**There is no readiness probe, and there will not be one on the web tier.** `docs/admin-web.md`
-parked this question here: a `/readyz` that reads `NOA_API_URL` has to define readiness across two
-deployables. That is the reason to refuse it rather than a reason to design it. Such a probe makes
-one deployable's readiness a function of another's health, so a rolling API restart pulls both web
-apps out of rotation at once — one outage becomes three — and neither web app needs the API to
-serve its own error and 401 states (the 401 link-out state), which are the states an operator
-sees during exactly
+**There be no readiness probe, and there will not be one on web tier.** `docs/admin-web.md` park
+this question here: `/readyz` that read `NOA_API_URL` must define readiness across two deployable.
+That be reason to refuse it, not reason to design it. Such probe make one deployable readiness a
+function of another health, so rolling API restart pull both web app out of rotation at once — one
+outage become three — and neither web app need API to serve its own error and 401 state (the 401
+link-out state), which be the state operator see during exactly
 that window.
 
-Readiness that means something is expressed as ordering, not as an endpoint: in compose,
-`postgres` healthy plus `migrate` exited zero. Under an orchestrator, use the same liveness
-endpoints for both probe kinds on the web tier and gate the API rollout on the migration job.
+Readiness that mean something get express as ordering, not endpoint: in compose, `postgres`
+healthy plus `migrate` exit zero. Under orchestrator, use same liveness endpoint for both probe
+kind on web tier and gate API rollout on migration job.
 
 ## Not in this repo
 
-- **CI and orchestrator manifests — on `master` and `staging`, not on `main`.** `.gitlab-ci.yml`
-  and `k8s/{staging,production}/` live on those two branches and are absent from `main` **by
-  design** (the CI-lane rule, the deploy-overlay rule): the GitHub remote is public and is the
-  pull-request surface, while
-  GitLab `master` and `staging` carry `main` plus that overlay. So a reader on `main` who greps for
-  a pipeline and finds none is reading the repository correctly. `docs/admin-web.md` records the
-  internal-runner requirement the BIGSU registry forces.
+- **CI and orchestrator manifest — on `master` and `staging`, not on `main`.** `.gitlab-ci.yml`
+  and `k8s/{staging,production}/` live on those two branch and be absent from `main` **by design**
+  (CI-lane rule, deploy-overlay rule): GitHub remote be public and be pull-request surface, while
+  GitLab `master` and `staging` carry `main` plus that overlay. So reader on `main` who grep for
+  pipeline and find none be reading repository right. `docs/admin-web.md` record internal-runner
+  requirement BIGSU registry force.
 
-  Those two refs are the only ones that mean anything downstream: every pipeline job is filtered
-  to them, and the ArgoCD Applications — the owner's, configured in ArgoCD rather than here —
-  watch them and nothing else. A third branch holding the overlay would therefore build nothing
-  and sync nothing, which is why the overlay sits on `master` and `staging` directly.
-- Configuration reaches a deployed pod through those ConfigMaps and Secrets — one ConfigMap per
-  deployable and a single Secret the API alone mounts — which is what `.env.example` says at the
-  top and why no image bakes a `.env` (no secrets in git; every `.dockerignore` here excludes
-  it). Note that
-  `NOA_LIBRECHAT_ORIGIN` and `NEXT_PUBLIC_NOA_LIBRECHAT_ORIGIN` are *not* among them: both are
-  baked at build and a ConfigMap key of either name would read as the lever that moves the framing
-  origin while doing nothing at all.
+  Those two ref be the only one that mean anything downstream: every pipeline job filter to them,
+  and ArgoCD Application — owner one, configure in ArgoCD not here — watch them and nothing else.
+  Third branch hold overlay would build nothing and sync nothing, which be why overlay sit on
+  `master` and `staging` direct.
+- Configuration reach deployed pod through those ConfigMap and Secret — one ConfigMap per
+  deployable and single Secret API alone mount — which be what `.env.example` say at top and why
+  no image bake a `.env` (no secret in git; every `.dockerignore` here exclude it). Note that
+  `NOA_LIBRECHAT_ORIGIN` and `NEXT_PUBLIC_NOA_LIBRECHAT_ORIGIN` be *not* among them: both bake at
+  build and ConfigMap key of either name would read as the lever that move framing origin while
+  do nothing at all.

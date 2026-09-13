@@ -1,17 +1,12 @@
 # BIGSU rules for coding agents
 
-This application is built on **BIGSU** (Biznet Gio Standard UI). These rules are
-mandatory for any code you generate or modify in **`apps/admin-web`**. They do
-not apply anywhere else in this repo: `apps/web-embed` is deliberately not a
-BIGSU app (its own ESLint config refuses `@gio/*`), and `apps/api` is Python.
+App build on **BIGSU** (Biznet Gio Standard UI). Rules MANDATORY for code you make or change in **`apps/admin-web`**. Rules no work other place in repo: `apps/web-embed` on purpose not BIGSU app (own ESLint config say NO to `@gio/*`), and `apps/api` be Python.
 
-The full documentation lives on the BIGSU docs site; the `bigsu` MCP server
-serves it as tools, and machine-readable docs are at `<docs>/llms.txt`.
+Full doc live on BIGSU docs site; `bigsu` MCP server give it as tools, machine-read doc at `<docs>/llms.txt`.
 
 ## Mandatory imports
 
-UI comes from the BIGSU packages — never from other component libraries and
-never hand-rolled:
+UI come from BIGSU packages — never other component library, never hand-make:
 
 ```ts
 import { AppShell, PageHeader, Breadcrumb } from '@gio/bigsu-app-shell'
@@ -19,37 +14,25 @@ import { Button, Card, DataTable, FormField, StatusChip, ConfirmDialog, bigsuToa
 import { BigsuIcon } from '@gio/bigsu-icons'
 ```
 
-`@gio/bigsu-charts` is deliberately not installed — nothing in this panel charts
-yet. Adding it is a dependency decision — pins are exact — not an import.
+`@gio/bigsu-charts` on purpose not install — nothing in panel make chart yet. Add it be dependency decision — pins be exact — not import.
 
 ## Layout
 
-- Every page renders inside the shared `AppFrame` (`src/components/app-frame.tsx`),
-  which wires BIGSU `AppShell`. Never build a custom layout, sidebar, or top bar.
-- Page order: Breadcrumb → PageHeader → optional KPI cards → filter/search →
-  main content → detail panel or dialog when needed.
+- Every page live inside shared `AppFrame` (`src/components/app-frame.tsx`), which wire BIGSU `AppShell`. Never build own layout, sidebar, top bar.
+- Page order: Breadcrumb → PageHeader → maybe KPI cards → filter/search → main content → detail panel or dialog when need.
 
 ## Responsiveness (mandatory)
 
-- The app is **fully responsive — use 100% of the viewport**. Content is fluid:
-  it fills the available width and reflows as the viewport changes. AppShell
-  ships this (its default is `contentWidth="full"`); never build a fixed-width
-  page and never letterbox content with dead space on wide screens.
-- Build with fluid primitives: responsive grids (`sm:grid-cols-2 xl:grid-cols-3`),
-  `min-w-0`, flex-wrap. Tables, charts, and cards reflow.
-- Do NOT reimplement responsive chrome — the shell already handles the sidebar
-  (expanded → 72px rail → mobile drawer) and breakpoint padding.
-- The 1440px cap (`contentWidth="standard"`) is opt-in, only for reading-heavy
-  prose pages — not operational screens.
+- App be **fully responsive — use 100% of viewport**. Content flow: fill width, reflow when viewport change. AppShell give this (default `contentWidth="full"`); never build fixed-width page, never letterbox content with dead space on wide screen.
+- Build with fluid primitives: responsive grid (`sm:grid-cols-2 xl:grid-cols-3`), `min-w-0`, flex-wrap. Table, chart, card reflow.
+- Do NOT rebuild responsive chrome — shell already do sidebar (expanded → 72px rail → mobile drawer) and breakpoint padding.
+- 1440px cap (`contentWidth="standard"`) be opt-in, only for read-heavy prose page — not work screen.
 
 ## Colors: semantic tokens ONLY
 
-Style exclusively with semantic-token utilities (`bg-surface`, `bg-app`,
-`text-text-primary`, `text-text-secondary`, `border-border-default`,
-`bg-action-primary`, `text-status-danger`, `bg-status-success-soft`, …) or
-`var(--bigsu-*)` CSS variables.
+Style only with semantic-token utility (`bg-surface`, `bg-app`, `text-text-primary`, `text-text-secondary`, `border-border-default`, `bg-action-primary`, `text-status-danger`, `bg-status-success-soft`, …) or `var(--bigsu-*)` CSS variable.
 
-**Forbidden** (these fail lint/review):
+**Forbidden** (these break lint/review):
 
 ```
 bg-green-500   text-red-600   border-slate-200      ← raw Tailwind palette
@@ -65,56 +48,47 @@ import { Home } from 'lucide-react'        // ❌ never
 import { HomeIcon } from '@heroicons/...'  // ❌ never
 ```
 
-Icon-only buttons use `IconButton` with a required `aria-label`.
+Icon-only button use `IconButton` with required `aria-label`.
 
 ## Buttons and actions
 
-- Exactly **one primary action** per page (the `PageHeader` `primaryAction`
-  slot) and one per dialog. Everything else is `secondary`, `outline`, or `ghost`.
-- `variant="destructive"` only for dangerous actions, and every destructive or
-  irreversible action **must** confirm through `ConfirmDialog`
-  (`tone="danger"`, explicit `confirmLabel` — never just "OK").
+- Exactly **one primary action** per page (`PageHeader` `primaryAction` slot) and one per dialog. All else be `secondary`, `outline`, or `ghost`.
+- `variant="destructive"` only for danger action, and every destructive or no-undo action **must** confirm through `ConfirmDialog` (`tone="danger"`, explicit `confirmLabel` — never just "OK").
 
 ## Required states
 
-- Every `DataTable`/list: loading, empty (`emptyState`), and error states, plus
-  pagination for long lists, `StatusChip` for statuses, and row actions.
-- Every form field: a visible label and an error state via `FormField`
-  (placeholder-only inputs are forbidden). Forms validate with Zod through
-  `react-hook-form` + `@hookform/resolvers/zod`.
-- Statuses use only the 11 standard values rendered through `StatusChip`:
-  Draft, Submitted, Pending, In Review, Approved, Rejected, Failed, Completed,
-  Archived, Active, Inactive.
+- Every `DataTable`/list: loading, empty (`emptyState`), error state, plus pagination for long list, `StatusChip` for status, and row action.
+- Every form field: visible label and error state via `FormField` (placeholder-only input forbidden). Form validate with Zod through `react-hook-form` + `@hookform/resolvers/zod`.
+- Status use only 11 standard value render through `StatusChip`: Draft, Submitted, Pending, In Review, Approved, Rejected, Failed, Completed, Archived, Active, Inactive.
 
 ## Theme
 
-Light mode only. No `dark:` classes, no theme toggles.
+Light mode only. No `dark:` class, no theme toggle.
 
 ## Forbidden patterns — final checklist
 
-Before finishing any change, verify NONE of these appear in your diff:
+Before you finish any change, check NONE of these in your diff:
 
-- [ ] Raw palette classes (`bg-green-500`, `text-red-600`, `border-zinc-*`, …)
-- [ ] Arbitrary hex colors (`bg-[#...]`, `text-[#...]`, inline `style` colors)
-- [ ] Direct `lucide-react` / `@heroicons/*` / other icon imports
-- [ ] UI components from non-BIGSU libraries (MUI, AntD, Chakra, shadcn copies, …)
-- [ ] Custom page chrome instead of `AppFrame`/`AppShell`
+- [ ] Raw palette class (`bg-green-500`, `text-red-600`, `border-zinc-*`, …)
+- [ ] Any hex color (`bg-[#...]`, `text-[#...]`, inline `style` color)
+- [ ] Direct `lucide-react` / `@heroicons/*` / other icon import
+- [ ] UI component from non-BIGSU library (MUI, AntD, Chakra, shadcn copy, …)
+- [ ] Own page chrome instead of `AppFrame`/`AppShell`
 - [ ] More than one primary Button per page or dialog
-- [ ] Destructive action without `ConfirmDialog`
-- [ ] Table without loading/empty/error states
-- [ ] Form input without a label or error wiring
+- [ ] Destructive action with no `ConfirmDialog`
+- [ ] Table with no loading/empty/error state
+- [ ] Form input with no label or error wiring
 - [ ] Any `dark:` class or dark-mode logic
-- [ ] Recreated/approximated Biznet Gio logo (use the official SVG assets only)
+- [ ] Remade/guessed Biznet Gio logo (use official SVG asset only)
 
-If no BIGSU component fits, do not invent a new visual pattern — leave a
-proposal note for the design-system team instead.
+If no BIGSU component fit, do not invent new visual pattern — leave proposal note for design-system team instead.
 
 <!-- BEGIN:nextjs-agent-rules -->
 
 # This is NOT the Next.js you know
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+This version got breaking change — API, convention, file structure all maybe differ from your training data. Read right guide in `node_modules/next/dist/docs/` (resolve from this file directory; in monorepo the `next` package maybe not visible from repo root) before you write any code. Heed deprecation notice.
 
-This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+This block get write and re-add by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Remove it from diff only make uncommitted change again; commit it with your work keep tree clean.
 
 <!-- END:nextjs-agent-rules -->

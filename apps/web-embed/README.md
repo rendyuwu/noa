@@ -1,218 +1,105 @@
 # apps/web-embed
 
-Next.js 16 app served on the NOA origin. Hosts the approval card and the large-result table surface.
+Next.js 16 app on NOA origin. Hold approval card and big-result table surface.
 
-Scaffold, session proxy, framing header, approval card, polling loop and receipt, 401 link-out and
-large-result table surface: all built.
-The render gate that used to block all of them cleared 2026-08-08: LibreChat puts the
-frame's `src` on this app's origin, the `noa_session` cookie rides in, and an in-frame `fetch` POST
-authenticates.
+Scaffold, session proxy, framing header, approval card, poll loop and receipt, 401 link-out and big-result table: all built. Render gate that block them all break open 2026-08-08: LibreChat put frame `src` on this app origin, `noa_session` cookie ride in, in-frame `fetch` POST authenticate.
 
 | Route | Purpose |
 |---|---|
-| `/healthz` | Liveness. Touches nothing else. |
-| `/api/[...path]` | Same-origin proxy to the NOA API. Allowlisted, see below. |
-| `/approvals/[id]` | Approval card. The reason input lives here and nowhere else. |
+| `/healthz` | Liveness. Touch nothing else. |
+| `/api/[...path]` | Same-origin proxy to NOA API. Allowlisted, see below. |
 | `/tables/[token]` | Large READ result table |
+| `/approvals/[id]` | Approval card. Reason input live here, nowhere else. |
 
 ## The card
 
-`/approvals/[id]` reads the incoming `Cookie` header and fetches the card from the API **server-side**
-(`src/app/approvals/[id]/page.tsx` → `src/lib/approvals/detail.ts`), so the HTML that reaches the
-frame is already the authenticated card — no moment where an operator watches an empty box, and the
-CSRF token arrives as part of the render rather than through a second round trip a page could make
-without having been allowed to read the request first.
+`/approvals/[id]` read incoming `Cookie` header, fetch card from API **server-side** (`src/app/approvals/[id]/page.tsx` → `src/lib/approvals/detail.ts`), so HTML that reach frame already be authenticated card — no moment where operator stare at empty box, and CSRF token come with render, not through second trip page could make before being allowed to read request.
 
-The token comes from the card's own `GET /action-requests/{id}` — there is no minting route —
-and the API sends `null` for anything already decided or expired — so a card with no live token
-renders no reason box and no buttons.
+Token come from card own `GET /action-requests/{id}` — no minting route — and API send `null` for anything already decided or expired — so card with no live token draw no reason box, no buttons.
 
-That first read seeds `src/app/approvals/[id]/card-view.tsx`, which renders everything and then
-keeps asking. A reason `<textarea>` and two `<button type="button">` elements POST the decision via
-`fetch` (`decision-controls.tsx`). **There is no `<form>` anywhere in that tree**, and that is a rule
-rather than taste — the sandbox LibreChat applies to this frame omits `allow-forms` (measured
-live), so a native submit would do nothing at all. The browser lane proves it both ways:
-`e2e/approvals.browser.e2e.ts` clicks Approve inside a frame carrying that exact sandbox string and
-reads the upstream's hit counter, and a second document in the *same* sandbox shows a `fetch`
-arriving where a form submit does not.
+That first read seed `src/app/approvals/[id]/card-view.tsx`, which draw everything then keep asking. Reason `<textarea>` and two `<button type="button">` POST decision by `fetch` (`decision-controls.tsx`). **No `<form>` anywhere in that tree** — rule, not taste: sandbox LibreChat put on this frame leave out `allow-forms` (measured live), so native submit do nothing at all. Browser lane prove both ways: `e2e/approvals.browser.e2e.ts` click Approve inside frame carrying that exact sandbox string and read upstream hit counter, and second document in *same* sandbox show `fetch` arrive where form submit do not.
 
 ## Following the run
 
-Approve returns 202 and the change runs somewhere else entirely; the state lives in the database,
-never in that connection. So the card re-reads its own row through the `/api/*` proxy
-(`src/lib/approvals/poll.ts`) until there is nothing left to wait for, and the outcome lands on the
-URL that asked the question.
+Approve give back 202 and change run somewhere else entirely; state live in database, never in that connection. So card re-read own row through `/api/*` proxy (`src/lib/approvals/poll.ts`) until nothing left to wait for, and outcome land on URL that ask question.
 
 | State | What happens |
 |---|---|
-| `PENDING` | re-read every 15s — the only change available is the expiry sweep, and an expired card must stop offering a decision the door would refuse |
-| `APPROVED` + run `STARTED` | re-read every 2s — somebody clicked Approve and is watching |
+| `PENDING` | re-read every 15s — only change available be expiry sweep, and expired card must stop offering decision door would refuse |
+| `APPROVED` + run `STARTED` | re-read every 2s — somebody click Approve and watch |
 | `APPROVED` + run `COMPLETED`/`FAILED`, `DENIED`, `EXPIRED` | stop |
-| an unrecognised status | stop — a build that cannot say what a status means cannot say what would end it |
+| unknown status | stop — build that cannot say what status mean cannot say what would end it |
 
-A 401 or 404 discovered mid-poll replaces the card with the same explicit state the first read would
-have rendered: a session that expires under an open frame must not leave a live Approve
-button standing. A transient failure is the one answer that changes nothing — the card stays and the
-loop keeps going, because "NOA could not be reached just now" is not "there is nothing more to wait
-for".
+401 or 404 found mid-poll swap card for same explicit state first read would draw: session that die under open frame must not leave live Approve button standing. Transient failure be the one answer that change nothing — card stay, loop keep going, because "NOA could not be reached just now" not same as "nothing more to wait for".
 
 ## When NOA does not know who you are
 
-Two mechanisms authenticate two different principals. LibreChat's server reaches `/mcp` with a
-per-user bearer token; this card is a document in the **operator's browser** and authenticates
-with the `noa_session` cookie. The browser never holds the MCP token, so a 401 in here
-means the operator has a working LibreChat token and no NOA browser session.
+Two mechanisms authenticate two different principals. LibreChat server reach `/mcp` with per-user bearer token; this card be document in **operator browser** and authenticate with `noa_session` cookie. Browser never hold MCP token, so 401 in here mean operator have working LibreChat token and no NOA browser session.
 
-The remedy lives outside this app — no login page, no LDAP form, no credential handling — and
-*no LDAP redirect inside the iframe*. So `sign-in-notice.tsx` renders three things and
-navigates nothing: a "Sign in to NOA" link that opens a **new top-level tab**, the same address
-printed as text, and a **Try again** that re-reads the card in place through the same reader the poll
-uses (`lib/approvals/poll.ts`). A session picked up in the other tab turns the notice into the card
-without the frame going anywhere.
+Remedy live outside this app — no login page, no LDAP form, no credential handling — and *no LDAP redirect inside iframe*. So `sign-in-notice.tsx` draw three things and navigate nothing: "Sign in to NOA" link that open **new top-level tab**, same address printed as text, and **Try again** that re-read card in place through same reader poll use (`lib/approvals/poll.ts`). Session picked up in other tab turn notice into card without frame going anywhere.
 
-**The address is printed as well as linked, and that is measured rather than belt-and-braces.**
-LibreChat frames this card at two render sites and only one grants `allow-popups` (measured:
-`ToolCallInfo` = `allow-scripts allow-same-origin`, `MCPUIResource` = that plus `allow-popups`).
-Where it is absent a `target="_blank"` click is refused with nothing the operator can see — the same
-silent failure a form submit hits, one mechanism over — so the printed address is what makes the state answerable there.
-`e2e/approvals.browser.e2e.ts` asserts both: no tab opens under the first string, and a tab does open
-under the second, which is the control that keeps the first from passing against a broken link.
+**Address printed as well as linked, and that measured, not belt-and-braces.** LibreChat frame this card at two render sites and only one grant `allow-popups` (measured: `ToolCallInfo` = `allow-scripts allow-same-origin`, `MCPUIResource` = that plus `allow-popups`). Where it missing, `target="_blank"` click get refused with nothing operator can see — same silent failure form submit hit, one mechanism over — so printed address be what make state answerable there. `e2e/approvals.browser.e2e.ts` assert both: no tab open under first string, tab do open under second, which be control that keep first from passing against broken link.
 
-That same lane records one more thing about the tab a click *does* open: it **inherits the frame's
-sandbox**, so a native `<form>` submit inside it reaches nothing (measured 2026-08-09 — the probe
-document's `fetch` arrived, its form submit did not, and the tab never navigated). A login page
-reached by clicking is therefore only usable if it posts by `fetch`; one reached by copying the
-address into a fresh tab is an ordinary document. Two doors, and the printed one is the door that
-does not depend on any of this.
+That same lane record one more thing about tab a click *do* open: it **inherit frame sandbox**, so native `<form>` submit inside it reach nothing (measured 2026-08-09 — probe document `fetch` arrive, its form submit do not, tab never navigate). Login page reached by clicking therefore only usable if it post by `fetch`; one reached by copying address into fresh tab be ordinary document. Two doors, and printed one be door that depend on none of this.
 
-The address comes from `NOA_SIGN_IN_URL` (repo-root `.env`), read **per request** on the server and
-passed into the card — not baked like the framing origin, and deliberately not `NEXT_PUBLIC_*`.
-Absent, blank, or anything that is not an `http`/`https` URL renders **no link at all**
-(`src/lib/sign-in.ts`): a door to a host nobody deployed reads as an action that was refused, and a
-`javascript:` value would be script execution configured by environment variable.
+Address come from `NOA_SIGN_IN_URL` (repo-root `.env`), read **per request** on server and passed into card — not baked like framing origin, and on purpose not `NEXT_PUBLIC_*`. Absent, blank, or anything not `http`/`https` URL draw **no link at all** (`src/lib/sign-in.ts`): door to host nobody deployed read as action that got refused, and `javascript:` value would be script execution set by environment variable.
 
-**The run poll is capped at 150 reads (~5 minutes) and the pending poll is not.** A `PENDING` request
-has a server-side terminator in the sweep, and a `STARTED` run has one too — its executor
-writes a terminal status, and its reaper resolves a run whose process died. Both terminators are
-measured in minutes to a quarter of an hour, which is longer than this cap, so the cap still speaks
-first on a slow change. Giving up says *"NOA is still running this change. Reload this card to check
-again."* — never that it failed, because there is no evidence of that.
+**Run poll capped at 150 reads (~5 minutes), pending poll not capped.** `PENDING` request have server-side terminator in sweep, and `STARTED` run have one too — its executor write terminal status, its reaper resolve run whose process die. Both terminators measured in minutes to quarter hour, longer than this cap, so cap still speak first on slow change. Giving up say *"NOA is still running this change. Reload this card to check again."* — never that it fail, because no evidence of that.
 
-**The receipt renders as two halves, never as one word** (`DECISIONS.md` section 6.5). Every approved
-change that reaches a terminal state writes an `action_receipts` row
-state — the before-state the operator approved against, and what the change actually did. The card's
-`GET` carries it under `receipt` and the card shows the pair: the before-state where the gate's
-preflight evidence was already displayed, and a *What the change did* section beside the run with the
-verdict, the named cause when there is one, and the after-state as data. A change that failed keeps
-its before-state, which is the case a "done"-only card would drop.
+**Receipt draw as two halves, never one word** (`DECISIONS.md` section 6.5). Every approved change that reach terminal state write `action_receipts` row state — before-state operator approve against, and what change actually do. Card `GET` carry it under `receipt` and card show pair: before-state where gate preflight evidence already shown, and *What the change did* section beside run with verdict, named cause when there be one, and after-state as data. Change that fail keep its before-state — the case a "done"-only card would drop.
 
-Until a receipt exists the section is absent rather than empty: nothing has recorded an outcome, and
-an empty outcome block would be a claim NOA cannot make.
+Until receipt exist, section absent, not empty: nothing recorded outcome, and empty outcome block would be claim NOA cannot make.
 
-Blankness of the reason is not judged here. That gate sits on the endpoint (409
-`change_reason_required`, checked under the row lock against the same rule the database CHECK holds),
-so the card submits what was typed and renders the refusal.
+Blankness of reason not judged here. That gate sit on endpoint (409 `change_reason_required`, checked under row lock against same rule database CHECK hold), so card submit what got typed and draw refusal.
 
-The 401 state is `src/components/sign-in-notice.tsx`, shared with the table surface —
-two copies of "cannot authenticate here" would be two places for the printed address to go missing
-from one of them.
+401 state be `src/components/sign-in-notice.tsx`, shared with table surface — two copies of "cannot authenticate here" would be two places for printed address to go missing from one.
 
 ## The table
 
-`/tables/[token]` is where a large READ's rows are read. A tool whose answer is a listing —
-`whm_list_accounts`, `pmg_whitelist_list` — parks the rows in `tool_result_tables`
-and answers the model with a short summary plus this page's address, so the body costs no tokens and
-never enters a transcript LibreChat's administrator can read. Both are built:
-`whm_list_accounts` was this route's first producer, and `pmg_whitelist_list` is the second — a
-different system, a different transport, the same page and no per-tool branch anywhere in it.
+`/tables/[token]` be where big READ rows get read. Tool whose answer be listing — `whm_list_accounts`, `pmg_whitelist_list` — park rows in `tool_result_tables` and answer model with short summary plus this page address, so body cost no tokens and never enter transcript LibreChat administrator can read. Both built: `whm_list_accounts` be this route first producer, `pmg_whitelist_list` be second — different system, different transport, same page, no per-tool branch anywhere in it.
 
-Read the same way the card is: the page is a **server component**, it forwards the incoming `Cookie`
-header (`src/lib/tables/detail.ts`), and the HTML that reaches the frame is already the operator's
-table. Nothing polls — a parked table is written once — so this surface needed **no new proxy entry**,
-and the allowlist below is still four.
+Read same way as card: page be **server component**, it forward incoming `Cookie` header (`src/lib/tables/detail.ts`), and HTML that reach frame already be operator table. Nothing poll — parked table written once — so this surface need **no new proxy entry**, and allowlist below still four.
 
-**Read-only, and the absences are asserted by name**: no Approve, no Deny, no reason box, no `<form>`,
-no `input`, no CSRF token. There is nothing here to authorise; the approval card is the surface that
-decides. The browser lane (`e2e/tables.browser.e2e.ts`) renders the table inside the measured
-sandbox and reads the stub's counter to show the page issued no POST at all — asserted on the
-counter rather than on an exception, because a request never made throws nothing.
+**Read-only, and absences asserted by name**: no Approve, no Deny, no reason box, no `<form>`, no `input`, no CSRF token. Nothing here to authorise; approval card be surface that decide. Browser lane (`e2e/tables.browser.e2e.ts`) draw table inside measured sandbox and read stub counter to show page issue no POST at all — asserted on counter, not on exception, because request never made throw nothing.
 
-**The bound is on the page, always**. A parked table holds at most `RESULT_TABLE_MAX_ROWS`
-rows and stores the count *before* that cut, so the page says either "1,240 rows, all of them shown"
-or "1,240 rows matched. This page shows the first 25" — one sentence with two numbers, never a
-warning that only appears when something was dropped. `RESULT_TABLE_TTL_SECONDS` is how long the
-address stays live; past it the surface answers exactly as it does for an unknown token, which is
-also its answer for another operator's and for one whose requester was deleted.
+**Bound be on page, always**. Parked table hold at most `RESULT_TABLE_MAX_ROWS` rows and store count *before* that cut, so page say either "1,240 rows, all of them shown" or "1,240 rows matched. This page shows the first 25" — one sentence, two numbers, never warning that only show up when something got dropped. `RESULT_TABLE_TTL_SECONDS` be how long address stay live; past it surface answer exactly as for unknown token, which also be its answer for another operator token and for one whose requester got deleted.
 
 ## Reaching the API
 
-The browser never calls FastAPI directly (`AGENTS.md`). It calls `/api/*` on this origin and the
-proxy forwards the request server-side to `NOA_API_URL`, carrying the `noa_session` cookie the
-registrable domain already put here. That is what lets the in-frame decision POST be a plain
-same-origin `fetch` with no CORS surface to configure.
+Browser never call FastAPI direct (`AGENTS.md`). It call `/api/*` on this origin and proxy forward request server-side to `NOA_API_URL`, carrying `noa_session` cookie registrable domain already put here. That be what let in-frame decision POST be plain same-origin `fetch` with no CORS surface to configure.
 
-`NOA_API_URL` is server-only and has no `NEXT_PUBLIC_*` fallback. It comes from the repo-root
-`.env`, which `next.config.ts` loads via `config/root-env.ts` — anything already in the real
-environment wins, and there is deliberately no per-app `.env.local` (two files for one deployment
-is two places for the value to disagree).
+`NOA_API_URL` server-only, no `NEXT_PUBLIC_*` fallback. It come from repo-root `.env`, which `next.config.ts` load by `config/root-env.ts` — anything already in real environment win, and on purpose no per-app `.env.local` (two files for one deployment be two places for value to disagree).
 
-**The proxy carries an allowlist, not the whole API** (`src/lib/proxy/routes.ts`):
+**Proxy carry allowlist, not whole API** (`src/lib/proxy/routes.ts`):
 
 | Method | Path | For |
 |---|---|---|
-| `GET` | `/api/auth/me` | identity, and the 401 state |
-| `GET` | `/api/action-requests/{id}` | polling the run to terminal |
+| `GET` | `/api/auth/me` | identity, and 401 state |
+| `GET` | `/api/action-requests/{id}` | poll run to terminal |
 | `POST` | `/api/action-requests/{id}/approve` | the decision |
 | `POST` | `/api/action-requests/{id}/deny` | the decision |
 
-Anything else answers `404 route_not_proxied` and is never forwarded. This is the only NOA origin
-LibreChat may frame — the admin app answers `frame-ancestors 'none'` — so a pass-through proxy
-would put `POST /auth/login` on an origin with no credential handling, and `/admin/*` inside
-the frame with the operator's cookie. Adding a route means editing `routes.ts` and the pinned list in
-`routes.test.ts` — on purpose, not by accident. `Authorization` is stripped on the way out for the
-same reason: MCP bearer tokens are LibreChat's to send, never a browser's.
+Anything else answer `404 route_not_proxied` and never get forwarded. This be only NOA origin LibreChat may frame — admin app answer `frame-ancestors 'none'` — so pass-through proxy would put `POST /auth/login` on origin with no credential handling, and `/admin/*` inside frame with operator cookie. Adding route mean editing `routes.ts` and pinned list in `routes.test.ts` — on purpose, not by accident. `Authorization` stripped on way out for same reason: MCP bearer tokens be LibreChat to send, never browser.
 
 ## Who may frame it
 
-Every response carries `Content-Security-Policy: frame-ancestors <chat origin>`, set by
-`headers()` in `next.config.ts` from `config/framing.ts`. One entry on `/(.*)`, so the pages, the
-`/api/*` proxy, `/healthz` and the 404 are all covered — a route added later inherits the guard
-instead of having to remember it.
+Every response carry `Content-Security-Policy: frame-ancestors <chat origin>`, set by `headers()` in `next.config.ts` from `config/framing.ts`. One entry on `/(.*)`, so pages, `/api/*` proxy, `/healthz` and 404 all covered — route added later inherit guard instead of having to remember it.
 
-No `X-Frame-Options`: `frame-ancestors` supersedes it, and `ALLOW-FROM` — the only form that could
-name a single origin — is dead. Adding one back would break framing in a client that honours XFO
-over CSP, so its absence is asserted.
+No `X-Frame-Options`: `frame-ancestors` beat it, and `ALLOW-FROM` — only form that could name single origin — be dead. Adding one back would break framing in client that honour XFO over CSP, so its absence asserted.
 
-The origin comes from `NOA_LIBRECHAT_ORIGIN` (repo-root `.env`), defaulting to
-`https://chat.noa.internal` — the same value `.env.example` and `core/config.py` carry. Absent or
-blank falls back to that default, so the header is never omitted; a value that would widen the
-allowlist (a wildcard, a second origin, a path, a bare hostname) **throws**, which under
-`next build`/`next dev` is a build or boot failure rather than a header nobody meant.
+Origin come from `NOA_LIBRECHAT_ORIGIN` (repo-root `.env`), default `https://chat.noa.internal` — same value `.env.example` and `core/config.py` carry. Absent or blank fall back to that default, so header never missing; value that would widen allowlist (wildcard, second origin, path, bare hostname) **throws**, which under `next build`/`next dev` be build or boot failure, not header nobody meant.
 
-**It is baked at build time.** `output: 'standalone'` never executes `next.config.ts` at runtime, so
-a runtime variable cannot widen the allowlist — and cannot change it either. Moving LibreChat to a
-different origin means rebuilding with the new value (a build arg).
+**It baked at build time.** `output: 'standalone'` never run `next.config.ts` at runtime, so runtime variable cannot widen allowlist — and cannot change it either. Moving LibreChat to different origin mean rebuild with new value (build arg).
 
-The browser-level check is `e2e/framing.browser.e2e.ts`: one parent server
-(`e2e/support/framing-parent.mjs`) reached under two hostnames, so the parent origin is the only
-variable between the frame that loads and the frame Chromium refuses. Both names are pointed at
-loopback with a `--host-resolver-rules` flag; serving the parent from an intercepted response
-instead made *both* frames fail with `ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS` before any
-response, which would have made the refusal pass with no CSP header in existence.
+Browser-level check be `e2e/framing.browser.e2e.ts`: one parent server (`e2e/support/framing-parent.mjs`) reached under two hostnames, so parent origin be only variable between frame that load and frame Chromium refuse. Both names point at loopback with `--host-resolver-rules` flag; serving parent from intercepted response instead make *both* frames fail with `ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS` before any response — which would make refusal pass with no CSP header in existence.
 
 ## Stack
 
-Next.js 16, React 19, TypeScript, hand-written CSS. **No design system**: BIGSU lives in
-`apps/admin-web`; this app renders a form and two buttons inside a small iframe, and a full design
-system there is cost without return. `eslint.config.mjs` holds that decision as a rule — adopting
-BIGSU here means deleting the rule on purpose.
+Next.js 16, React 19, TypeScript, hand-written CSS. **No design system**: BIGSU live in `apps/admin-web`; this app draw form and two buttons inside small iframe, and full design system there be cost with no return. `eslint.config.mjs` hold that decision as rule — adopting BIGSU here mean deleting rule on purpose.
 
-Independent package: own `package.json`, own `pnpm-lock.yaml`, own CI, own deploy artifact. Shares
-no source, deps or aliases with `apps/admin-web` — also an eslint rule.
+Independent package: own `package.json`, own `pnpm-lock.yaml`, own CI, own deploy artifact. Share no source, deps or aliases with `apps/admin-web` — also eslint rule.
 
-Every dependency is pinned exactly — `next`, `react` and `react-dom` by name — because a bump on any
-of them re-opens the render gate against the pinned LibreChat commit. `tests/pins.test.ts`
-holds it.
+Every dependency pinned exact — `next`, `react` and `react-dom` by name — because bump on any of them re-open render gate against pinned LibreChat commit. `tests/pins.test.ts` hold it.
 
 ## Commands
 
@@ -226,26 +113,16 @@ pnpm test:e2e     # playwright — boots the dev server and a stub upstream itse
 pnpm build
 ```
 
-The e2e lane boots three processes itself: the dev server, a stub upstream on `127.0.0.1:8099`
-(`e2e/support/upstream-stub.mjs`, which `NOA_API_URL` points at) and a framing parent on
-`127.0.0.1:8110` (`e2e/support/framing-parent.mjs`). It does not reuse a dev server someone else
-started — a reused one was given a different upstream and a different `NOA_LIBRECHAT_ORIGIN`, and
-the specs would then measure something else.
+E2e lane boot three processes itself: dev server, stub upstream on `127.0.0.1:8099` (`e2e/support/upstream-stub.mjs`, which `NOA_API_URL` point at) and framing parent on `127.0.0.1:8110` (`e2e/support/framing-parent.mjs`). It do not reuse dev server someone else start — reused one got different upstream and different `NOA_LIBRECHAT_ORIGIN`, and specs would then measure something else.
 
-Port 3001 is part of the contract, not a preference: it is the origin the API builds approval URLs
-from (`NOA_EMBED_BASE_URL` in the repo-root `.env.example`), and the session cookie is scoped
-`Domain=.noa.internal` so it reaches both apps.
+Port 3001 be part of contract, not preference: it be origin API build approval URLs from (`NOA_EMBED_BASE_URL` in repo-root `.env.example`), and session cookie scoped `Domain=.noa.internal` so it reach both apps.
 
-Playwright needs a browser once: `pnpm exec playwright install chromium`.
+Playwright need browser once: `pnpm exec playwright install chromium`.
 
 ## Still to come
 
-Nothing of this app's own. `/tables/[token]` has two producers in production:
-`whm_list_accounts` and `pmg_whitelist_list` — both API-side, and neither
-needed a change here.
+Nothing of this app own. `/tables/[token]` have two producers in production: `whm_list_accounts` and `pmg_whitelist_list` — both API-side, neither need change here.
 
-This app has no login page, no LDAP form and no credential handling, and nothing in it navigates the
-frame — see *When NOA does not know who you are* above.
+This app have no login page, no LDAP form, no credential handling, and nothing in it navigate frame — see *When NOA does not know who you are* above.
 
-`AGENTS.md` and `CLAUDE.md` in this directory are written by `next dev` itself and committed so the
-tree stays clean; see the note inside them.
+`AGENTS.md` and `CLAUDE.md` in this directory written by `next dev` itself and committed so tree stay clean; see note inside them.
