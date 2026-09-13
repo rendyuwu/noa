@@ -1007,9 +1007,11 @@ silently — which is exactly the defect above, one level deeper.
 ## 15. DECIDED — the copied summary carries one identifier, not four (2026-09-12)
 
 **The rule: the block an operator pastes out of the frame carries exactly one identifier an
-administrator can look the run up by — `tool_runs.id` — beside the requester's email and the raw
-tool name. The action-request id, the conversation reference and the LibreChat account id are not
-in it.**
+administrator can look the run up by — `tool_runs.id` — beside the requester's email. The
+action-request id, the conversation reference and the LibreChat account id are not in it.**
+
+**Amended 2026-09-13, and the amendment moves the boundary in both directions at once: the raw tool
+name left, and the run id gained a second surface.** See section 15.2.
 
 This reverses the argument that used to sit in `apps/web-embed/src/lib/approvals/summary.ts`: carry
 all four, because a ticket is searched by them. What settles it is who reads the block. It exists
@@ -1040,9 +1042,35 @@ its rows on what a decision turns on. The admin drawer is where they live.
 
 This is recorded because the failure mode is specific and quiet. A reader who notices the card is
 missing them, checks why, and finds a reason that is no longer true will put them back on the card
-— and will be right to, given what the comment said. `apps/web-embed/src/lib/approvals/before-state.ts`
-carries the same correction for the same pair, its admin-only rows having leaned on the same
-"one copy away" clause.
+— and will be right to, given what the comment said. The same correction was carried at the
+before-state renderer, whose admin-only rows leaned on the same "one copy away" clause; that module
+no longer exists, for the reason section 15.2 gives.
+
+### 15.2 AMENDED 2026-09-13 — the tool name left, and the run id gained the card
+
+**The rule now: the run id renders on the completed card *and* in the copied block, for every tool,
+one label and one spelling in the same position on both. The raw tool name renders on neither.**
+
+The new evidence is the approval surfaces being rewritten so that every clause on them is measured,
+documented or owner-stated, with everything an engineer or an administrator needs reached from
+`/admin` instead. Read against that rule the pair comes apart, and it comes apart cleanly, because
+section 15's own reasoning is what separates them — *who reads the block*:
+
+- The **run id** is the one technical value that is the user's business as well. It is the string a
+  person pastes into a ticket and the string an administrator looks a run up by directly, so it
+  crosses the gap between the two readers. That argument was made about the copied block and it
+  never had anything to do with copying: the card has the same reader. So it gains the card rather
+  than losing the block.
+- The **raw tool name** is an administrator's string with no such crossing. `whm_firewall_release_and_allow`
+  is what somebody greps for; the reader of these surfaces wants the label, and the surfaces now
+  carry a headline written for them in the operator's own words. It renders in the audit list's
+  `Tool` column and in the action-request drawer, which is where its reader already is.
+
+**A PENDING card carries no run id and nothing is substituted.** A run id exists only once a run has
+started; a placeholder reading `none` states an identifier that does not exist, and the
+action-request id is explicitly not put in its place. The line appears from the moment there is a
+run — which is the same absence-renders-as-absence rule the receipt facets obey, applied to an
+identifier.
 
 ---
 
@@ -1071,10 +1099,42 @@ old one is what restores the old shape: the `formatJakarta` docstring in that mo
 docstring of `apps/web-embed/src/lib/approvals/summary.ts`. Restating one and leaving the other
 would hand the next reader a per-line offset to put back with a comment agreeing that it belongs.
 
-One stamp is deliberately not under a heading and names its zone on the value instead: the
-before-state row rendering `account.suspendtime` (`apps/web-embed/src/lib/approvals/before-state.ts`),
-which sits in a block that has no heading to satisfy. Heading above it or zone on the value — never
-neither.
+Heading above it or zone on the value — never neither. The exception this section used to name was
+the before-state row rendering `account.suspendtime`, which sat in a block with no heading to
+satisfy and so put `(WIB)` on the value. That block and that module are both gone (section 15.2),
+so the exception is gone with them and is recorded here only because a reader who finds the rule and
+not the case it was written against will wonder which one moved.
+
+### 16.1 AMENDED 2026-09-13 — there is a second stamp function, and it is in Python
+
+**The TypeScript control is intact and was never spent.** `formatJakarta` in
+`apps/web-embed/src/lib/format/jakarta-time.ts` is still the only thing in that package that renders
+an absolute instant. No second variant was written there, so the argument above — that a shorter
+sibling beside it is precisely how a bare wall-clock time reaches a ticket with nothing over it —
+still holds with nothing replacing it. What changed is that a stamp now also exists on the **Python**
+side, and a rule that is enforceable in one language and unstated in the other is a rule with a door
+in it.
+
+**What exists: `jakarta_stamp` in `apps/api/src/noa_api/mcp_tools/whm_firewall_release_outcome.py`**,
+answering `12 Sep 2026, 8:26 PM (WIB)` for the one sentence a firewall runner composes around an
+expiry. **It appends `(WIB)` to the value unconditionally and takes no parameter that can suppress
+it.** That shape is what replaces the one-function control rather than weakening it: written this
+way the stamp has no bare form to escape in, so there is no call site that could produce one and no
+flag a later caller could reach for. Written with an optional suffix it would defeat the rule
+outright, which is the trade this is recording.
+
+**Why the stamp is composed in Python at all**, rather than the card formatting an instant the
+runner hands it: the sentence around it — `The allow entry expires <stamp>.` — is the firewall
+family's own vocabulary, and the branch that drops that sentence altogether is a Python branch. A
+renderer composing it would be a table mapping each tool to a phrasing, which is a second copy of
+six runners' vocabularies with nothing reading it against them: blank the day a runner is added,
+stale the day one is reworded. The approval card renders the runner's bytes with no transformation,
+so the stamp has to be born where the sentence is.
+
+**A card has no zone-naming heading the way the copied block does.** The copied block states
+`When — all times Jakarta (WIB)` once above bare stamps; a card has one sentence and nowhere to put
+a heading, so on that surface the zone rides on the value or it is not stated at all. That is the
+same trade section 16 settled, taken in the only direction the surface leaves open.
 
 ---
 
@@ -1132,13 +1192,67 @@ tied group is not wall-clock truth. Accepted knowingly: it trades a defect that 
 shorter than 38 seconds for a risk that needs two nodes to drift.
 
 What remains after the fix is one host stepping its own clock backwards mid-run, which is what an
-NTP correction is. That hazard is guarded at both ends and named at both sites: `_duration_ms`
-clamps at zero (`core/audit/tool_run_reads.py`) rather than rendering a negative, and the embed's
-duration answers `null` rather than averaging one away
-(`apps/web-embed/src/lib/format/jakarta-time.ts`).
+NTP correction is. `_duration_ms` in `core/audit/tool_run_reads.py` clamps at zero rather than
+rendering a negative, which is where the hazard is now guarded and named. The embed had the second
+guard — a duration formatter answering `null` rather than averaging a backwards step away — and it
+went with the card's execution block when the approval surfaces were rewritten to carry only what an
+operator reads (section 15.2). No elapsed time renders on those surfaces at all now, so there is
+nothing left there to render wrongly; `/admin` is the one surface that states a duration and it is
+the one still holding the clamp.
 
 **NTP on the Kubernetes node and on the database VM is a separate task and the owner's.** It is not
 blocked by this change and it is not replaced by it. The code fix makes NOA's own stamps comparable
 **to each other**, which is what a duration and a decision order are made of. NTP is what makes them
 comparable to anything NOA did not write — the clock in a screenshot, a target system's log line, a
 certificate's validity window. Both are wanted; neither substitutes for the other.
+
+---
+
+## 18. DECIDED — every clause on an approval surface is measured, documented or owner-stated (2026-09-13)
+
+**The rule: a clause that reaches the PENDING card, the completed card or the copied block carries
+one of exactly three provenances, and a clause with none of them does not get written — not
+softened, not hedged, not deferred.**
+
+- **MEASURED** — it restates a value NOA read on this run. The reading exists in the evidence the
+  gate wrote or in the delta the runner published, and the clause can be pointed at the field it
+  came from.
+- **DOCUMENTED** — it states behaviour written down in this repo, in `docs/` or in the module that
+  implements it. `<server> has no deny entry and no allow entry for <address>` is documented: that
+  is what the `not_found` verdict means here, and the sentence states the documented meaning rather
+  than softening the token into a friendlier word.
+- **OWNER-STATED** — it is one of the facts the owner supplied about how these systems behave. Two
+  examples, both shipping: *the whole account is suspended, nothing on it is reachable*, and *an
+  address in `mynetworks` may relay mail through the gateway, one that is not may not, and that is
+  all it means*.
+
+**Translating a measured value into plain words is welcome. Adding a consequence nobody read is
+not.** That single line is the whole distinction and it is the one an author crosses without
+noticing, because the sentence that crosses it is always the helpful one. `103.94.170.25 is no
+longer blocked on web08cpnpool03` is a measured verdict said in words. *You can tell the customer to
+try again now* is a consequence nobody measured, and it is wrong on precisely the branch where it
+matters — the one where a second backend went silent and NOA cannot say the address is fully
+unblocked.
+
+**An owner-stated fact must be recorded in `docs/integrations/*` as part of shipping**, or it stops
+being citable the day someone checks. A sentence on an operator's card whose only record is a
+conversation is a sentence the next reader cannot verify, cannot correct, and will eventually delete
+as unsourced — or worse, will keep and extend.
+
+**Why this is a decision and not a style note.** These surfaces are read to decide whether to touch a
+production machine, and the failure they are exposed to is not a wrong fact but a *confident* one: a
+clause with no provenance reads exactly like a clause with one, and nothing in a test suite can tell
+them apart. The nearest mechanical guard the repo has is the rule that no text on these surfaces is
+authored at runtime — the runner composes it in Python beside the family that holds the vocabulary,
+and the card renders those bytes with no transformation — which narrows *where* an unsourced clause
+can be written to one file per family, but does not stop one being written there. The rest is this
+rule, stated at the sites that can break it.
+
+**The corollary, and it is the half that gets lost:** a fact whose row is deleted from these surfaces
+has to land somewhere or be declared gone. Four honesty properties survived the rewrite by moving
+rather than by staying — the names of sources that could not answer moved into the runner's sentence
+(named, never counted); the cap on a capped reading moved onto the evidence block's closing line;
+the split between "nothing was measured" and "the runner compared and nothing moved" moved into the
+before-clause the runner composes; and the four verification states moved into the corner word, all
+four still distinguishable. Deleting the assertion that guarded one of those because it went red is
+how an honesty property leaves without anyone deciding it should.
