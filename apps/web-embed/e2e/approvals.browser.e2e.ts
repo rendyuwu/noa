@@ -75,19 +75,25 @@ async function visibleCardText(page: Page): Promise<string> {
   })
 }
 
-test('the card renders its provenance and before-state inside the frame', async ({ page }) => {
-  // What an operator is asked to recognise, and the preflight the model never sees.
+test('the card renders what was asked and who asked it, inside the frame', async ({ page }) => {
+  // What an operator is asked to recognise, in the words the gate composed for it.
   const card = await frameCard(page, APPROVAL_IDS.pending)
 
-  // Both halves of the heading. The label is what an operator reads; the raw tool name is what
-  // they quote to an administrator and what `/admin` shows, so it has to stay reachable from the
-  // same element. Asserting only the label would let the raw name be dropped silently.
-  await expect(card.locator('h1')).toHaveText('Suspend Account')
+  // Both halves of the heading. The headline is what an operator reads; the raw tool name is what
+  // they quote to an administrator and what `/admin` shows, and this element is now the only
+  // surface carrying it — the copied block dropped its `Tool:` row. Asserting only the headline
+  // would let the raw name be dropped silently.
+  await expect(card.locator('h1')).toHaveText('Suspend an account — acmeco')
   await expect(card.locator('h1')).toHaveAttribute('title', 'whm_suspend_account')
 
+  // The request restated as an imperative, never as a prediction: "acmeco will be suspended" is a
+  // claim with nothing measured behind it, and the grammar is the whole difference.
+  await expect(cardBody(card)).toContainText('Asked: suspend the acmeco account on alpha')
   await expect(cardBody(card)).toContainText('operator@noa.internal')
-  await expect(cardBody(card)).toContainText('acme.example')
   await expect(card.getByRole('button', { name: 'Approve' })).toBeVisible()
+  // The one clock this card states, and it is the approval window rather than any window a change
+  // itself gets — stated beside the buttons, which is what names it.
+  await expect(cardBody(card)).toContainText(/You have .+ to answer\./)
 
   // The LibreChat account id left the display first and the copied block after it, so this pair
   // now says *gone from both* rather than *moved*. The block carries one identifier, not four: the
@@ -102,10 +108,11 @@ test('the card renders its provenance and before-state inside the frame', async 
 
   // One control per surface for the two absences above. Without them either line would also pass
   // against a helper that returned an empty string or a block that never rendered at all —
-  // assertions that cannot fail. The raw tool name is the right positive for the block: it is one
-  // of the three things the block still carries, in place of the four identifiers it dropped.
+  // assertions that cannot fail. The headline is the right positive for the block: the raw tool
+  // name left it along with the three identifiers and lives in the heading's `title` and in
+  // `/admin`, so asserting that here would now be asserting the opposite of what is true.
   expect(await visibleCardText(page)).toContain('operator@noa.internal')
-  await expect(card.locator('[data-noa-copy-block]')).toContainText('whm_suspend_account')
+  await expect(card.locator('[data-noa-copy-block]')).toContainText('Suspend an account — acmeco')
 })
 
 test('the frame is on NOA’s own origin, and the operator’s cookie reached the API', async ({
@@ -240,13 +247,16 @@ test('the card follows its run to a terminal state, on the same URL', async ({
   const id = APPROVAL_IDS.polling
   const card = await frameCard(page, id)
 
-  await expect(cardBody(card)).toContainText('STARTED')
+  // The corner, and the pair it moves between is the one it exists for: a run still in flight is
+  // not a run that finished having recorded nothing.
+  await expect(cardBody(card)).toContainText('Approved · running')
   // No receipt while the run is in flight, so what appears below is something the frame fetched.
-  await expect(cardBody(card)).not.toContainText('What the change did')
+  await expect(cardBody(card)).not.toContainText('acmeco is suspended on alpha')
 
-  // The stub answers STARTED twice and COMPLETED after that, so this is a transition the page had
+  // The stub answers STARTED twice and terminal after that, so this is a transition the page had
   // to go and fetch — not the first answer it ever saw.
-  await expect(cardBody(card)).toContainText('COMPLETED', { timeout: 20_000 })
+  await expect(cardBody(card)).toContainText('Approved', { timeout: 20_000 })
+  await expect(cardBody(card)).not.toContainText('Approved · running', { timeout: 20_000 })
 
   // And the run's own envelope is deliberately not printed beside it. `result_summary` is the
   // payload the receipt's `after` half renders as labelled rows further down, so a `Result` row
@@ -256,15 +266,13 @@ test('the card follows its run to a terminal state, on the same URL', async ({
   // status and receipt assertions around it are what stop this one passing vacuously.
   await expect(cardBody(card)).not.toContainText(STUB_RUN_RESULT)
 
-  // The card's receipt render, run-plus-receipt, and DECISIONS section 6.5: the answer this URL
-  // owns is the receipt's two halves, rendered in the frame measured live — the before-state
-  // the operator authorised against, and what the
-  // change did, never one word standing in for both.
-  await expect(cardBody(card)).toContainText('What the change did')
-  await expect(cardBody(card)).toContainText('Completed')
+  // The answer this URL owns, rendered in the frame measured live: the runner's own sentence in
+  // place of the request, and a corner that states what the change then did. Never one word
+  // standing in for both.
+  await expect(cardBody(card)).toContainText('acmeco is suspended on alpha')
   await expect(cardBody(card)).toContainText(STUB_RECEIPT_AFTER)
-  await expect(cardBody(card)).toContainText('Before state')
-  await expect(cardBody(card)).toContainText('acme.example')
+  // And the request it replaced is gone: one fact, one place on the card.
+  await expect(cardBody(card)).not.toContainText('Asked: suspend')
 
   // And the reads came from the browser through the same proxy, not only from the page's own
   // server-side render: that first read is hit 1, so anything past it is the poll.

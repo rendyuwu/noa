@@ -8,42 +8,37 @@ import { COPY_BLOCK_IGNORE } from '@/components/copy-summary'
 import { CardView } from './card-view'
 import {
   CARD_ID,
+  FIREWALL_EVIDENCE,
+  RECEIPT_AFTER,
   TOOL_RUN_ID,
   approvalCard,
   approvedBody,
   cardBody,
+  receiptBody,
 } from '../../../../tests/support/approval-card'
 
 /**
- * What the card renders, as opposed to what keeps it true.
+ * What the card says, as opposed to what keeps it true.
  *
- * A second file beside `card-view.test.tsx` because the two have different subjects and because
- * one file could not hold both: that one is the poll — that it starts, uses the right door and
- * interval, and stops — and this one is the rendering. Together they came to 512 lines against
- * this package's 450-line ceiling for a `.tsx`, which is a real limit here rather than a
- * formality, since the largest file in the repository sits at 449.
+ * A second file beside `card-view.test.tsx` because the two have different subjects and because one
+ * file could not hold both against this package's 450-line ceiling for a `.tsx`: that one is the
+ * poll — that it starts, uses the right door and interval, and stops — and this one is the
+ * rendering.
+ *
+ * **The rule every case here serves: no text on this surface is authored at runtime.** The headline
+ * and the sentence are the runner's own bytes, the imperative and the evidence heading are the
+ * gate's, and the lines under that heading are the target system's. What this app contributes is
+ * the corner, the `Asked: ` label, and the order. So the assertions compare *whole strings against
+ * the fixture's own*, never substrings: a substring match cannot tell a byte that arrived from one
+ * a renderer happened to compose.
  *
  * **Every removal is asserted by name, never by counting rows.** A count goes green for the right
- * field spelled wrongly, and green-against-a-break is worse than no check at all. Each one was
- * watched failing by deleting its path from the production hide-set in `card-view.tsx` — never by
- * touching an assertion in here, because deleting an assertion reddens nothing and so measures
- * nothing — and the spec went red naming the row it then found.
- *
- * **What is removed here is removed from a render and from nowhere else**, and it falls into two
- * groups that reach an operator by different routes. Of the four identifiers — the LibreChat
- * account, the conversation reference, the run id and the request id — the copied summary now
- * carries the run id alone (`lib/approvals/summary.ts`), because the audit list is keyed on it and
- * an operator who cannot open the admin panel needs one string to hand to somebody who can; the
- * other three render in that panel's drawer and nowhere else. The before-state paths are in neither
- * and are not meant to be: `server_id` is a machine's row id,
- * `api_username` the credential a preflight was read with, and the six `account.*` paths are the
- * identity fields of the WHM row — an administrator's question, answered on `/admin` (held by
- * `apps/api/tests/test_admin_action_request_routes.py`). Every one of them stays in the database
- * and in the API's body regardless; only which surface prints them changes.
- *
- * **The before-state block is flattened, so these specs read dotted paths**, and the account record
- * is no longer dropped whole. The fields a suspension actually moves live inside it, and a PENDING
- * card has no execution or outcome block to show them in instead.
+ * label spelled wrongly. What is removed here is removed from a render and from nowhere else: the
+ * arguments, the before-state, the run's status and duration, the per-backend rows, the evidence
+ * bound as a labelled row, the error code and the dump of everything the runner reported are all in
+ * the database, in the API's body, and rendered whole in the admin drawer
+ * (`apps/admin-web/src/components/admin/audit/action-request-detail-drawer.tsx` prints the approval
+ * context and all three receipt halves as JSON).
  *
  * The clock is pinned per spec rather than read. Relative times against a live clock are a suite
  * that fails at a month boundary on a slow machine.
@@ -55,156 +50,15 @@ import {
  * The off-screen block is in the DOM deliberately — a selection cannot cover a `display: none`
  * element — and Testing Library does not filter on visibility, so an assertion that a value is
  * *not* printed matches the copy of it in there and reads as a pass. The selector is the copy
- * control's own export, because both halves of it are load-bearing and the reason is written
- * where the block is: a card keeping its own spelling of it is one edit away from the half that
- * does the work going missing.
+ * control's own export, because both halves of it are load-bearing and the reason is written where
+ * the block is.
  *
  * `script, style` is Testing Library's own default, restated because passing `ignore` replaces it.
- *
- * Used on the assertions that would otherwise pass or drift silently: absences, and counts. A
- * presence assertion needs no scoping — it throws on the ambiguity rather than swallowing it.
  */
 const CARD_ONLY = { ignore: COPY_BLOCK_IGNORE } as const
 
 /** 17 minutes after the fixture was opened, and 43 before it expires. */
 const NOW = new Date('2026-08-08T09:17:00+00:00')
-
-const SERVER_ID = '3d1b0c4e-0000-4000-8000-00000000000f'
-
-/**
- * A WHM account preflight with the keys the gate persists, from
- * `apps/api/src/noa_api/mcp_tools/whm_account_change.py`, its record filled the way
- * `core/integrations/whm/accounts.py` normalises a `listaccts` row. The shared fixture's evidence
- * is two flat keys and carries no nested record at all, so it cannot show either half of this.
- *
- * `owner` is deliberately the same string at both levels: the gate copies `account["owner"]` to
- * the top level, so the two rows hold one value by construction and no value assertion anywhere
- * could tell a path filter from a leaf-name one.
- */
-const WHM_EVIDENCE = {
-  server_id: SERVER_ID,
-  server: 'alpha',
-  api_username: 'root',
-  host: 'alpha.example',
-  owner: 'reseller1',
-  account: {
-    user: 'acmeco',
-    domain: 'acme.example',
-    email: 'billing@acme.example',
-    contactemail: 'ops@acme.example',
-    owner: 'reseller1',
-    suspendreason: 'Smoke Test Rendy',
-    suspended: false,
-    suspendtime: 1789109810,
-    is_locked: false,
-  },
-}
-
-/** What that gate persists beside it — `username`, not `account`: that key names the WHM row. */
-const WHM_ARGUMENTS = { server_ref: 'alpha', username: 'acmeco' }
-
-/**
- * One preflight per CHANGE tool, and the field of it the tool's own change moves.
- *
- * The shapes are copied from each gate's `evidence={...}` and from the record builders it calls:
- * `whm_firewall_change_common.py::firewall_state`, `proxmox_nic.py::VMNICState.as_evidence`,
- * `proxmox_password.py::VMCloudInitState.as_evidence` and
- * `pmg_whitelist.py::build_whitelist_evidence`.
- *
- * **The list of tools is hand-kept and nothing binds it to the registry.** This package is
- * TypeScript and the tool map is Python, so an eighth CHANGE tool will not redden anything in
- * here. Said rather than implied — the Python side holds that count
- * (`apps/api/tests/test_change_receipt_halves.py` drives every registered tool).
- */
-const FIREWALL_STATE = {
-  available_backends: { csf: true, imunify: false },
-  sudo_required: false,
-  combined_verdict: 'blocked',
-  unanswered_backends: ['imunify'],
-  matches: [{ backend: 'csf', line: 'deny 203.0.113.9' }],
-  total_matches: 1,
-  truncated: false,
-  csf: { ok: true, verdict: 'blocked' },
-}
-
-const CHANGE_TOOLS = [
-  { tool: 'whm_suspend_account', evidence: WHM_EVIDENCE, moves: ['account.suspended', 'account.is_locked'] },
-  { tool: 'whm_unsuspend_account', evidence: WHM_EVIDENCE, moves: ['account.is_locked', 'account.suspended'] },
-  {
-    tool: 'whm_firewall_release_and_allow',
-    evidence: {
-      server_id: SERVER_ID,
-      server: 'alpha',
-      target: '203.0.113.9',
-      duration_minutes: 30,
-      firewall: FIREWALL_STATE,
-    },
-    moves: ['firewall.combined_verdict', 'firewall.total_matches'],
-  },
-  {
-    tool: 'whm_firewall_allowlist_remove',
-    evidence: { server_id: SERVER_ID, server: 'alpha', target: '203.0.113.9', firewall: FIREWALL_STATE },
-    moves: ['firewall.combined_verdict'],
-  },
-  {
-    tool: 'proxmox_vm_nic',
-    evidence: {
-      server_id: SERVER_ID,
-      server: 'alpha',
-      node: 'pve1',
-      vmid: 108,
-      net: 'net0',
-      action: 'disable',
-      nic: {
-        net: 'net0',
-        model: 'virtio',
-        mac_address: 'AA:BB:CC:DD:EE:01',
-        bridge: 'vmbr0',
-        link_state: 'up',
-        auto_selected: true,
-      },
-      vm: {
-        name: 'web-1',
-        run_status: 'running',
-        nics: [{ net: 'net0', link_state: 'up' }],
-        unavailable_reads: [],
-      },
-    },
-    moves: ['nic.link_state', 'vm.run_status'],
-  },
-  {
-    tool: 'proxmox_reset_vm_password',
-    evidence: {
-      server_id: SERVER_ID,
-      server: 'alpha',
-      node: 'pve1',
-      vmid: 108,
-      username: 'ubuntu',
-      vm: {
-        name: 'web-1',
-        ciuser: 'ubuntu',
-        has_cloudinit_password: true,
-        run_status: 'running',
-        unavailable_reads: [],
-      },
-    },
-    moves: ['vm.has_cloudinit_password', 'vm.ciuser'],
-  },
-  {
-    tool: 'pmg_whitelist',
-    evidence: {
-      server_id: SERVER_ID,
-      server: 'mail1',
-      action: 'add',
-      target: '198.51.100.0/24',
-      normalized_target: '198.51.100.0/24',
-      matches: [],
-      total_entries: 312,
-      mynetworks_endpoint: '/config/mynetworks',
-    },
-    moves: ['total_entries'],
-  },
-] as const
 
 function load(body: Record<string, unknown>): ApprovalCardLoad {
   return { kind: 'card', card: approvalCard(body) }
@@ -223,35 +77,36 @@ function renderCardView(initial: ApprovalCardLoad) {
   )
 }
 
-/**
- * The Before state block as the rows it rendered: dotted path to printed value.
- *
- * Scoped to that one block rather than to the card, because the filter's subject is that block and
- * a path missing from it may legitimately be printed elsewhere — `server_ref` is an argument as
- * well as a preflight key. It reads the rendered `<dt>`/`<dd>` pairs rather than the payload, so a
- * path that survives the filter and then fails to render still counts as absent.
- *
- * It throws rather than answering `{}` when the block is not there. An absence assertion over an
- * empty map is an assertion that cannot fail, and every spec below leans on absence.
- */
-function beforeState(): Record<string, string> {
-  const section = screen.getByRole('heading', { level: 2, name: 'Before state' }).parentElement
-  if (section === null) throw new Error('the before-state heading has no block around it')
-
-  const values = Array.from(section.querySelectorAll('dd'))
-  return Object.fromEntries(
-    Array.from(section.querySelectorAll('dt')).map((key, index) => [
-      key.textContent ?? '',
-      values[index]?.textContent ?? '',
-    ]),
-  )
+/** Every `<dt>` the visible card renders, so an absent row is asserted by its label. */
+function labels(): string[] {
+  const card = screen.getByRole('main')
+  return Array.from(card.querySelectorAll('dt')).map((node) => node.textContent ?? '')
 }
 
-describe('CardView rendering', () => {
+/**
+ * One node carrying exactly this text on the visible card.
+ *
+ * Scoped and un-normalised, and both halves matter. The copy block repeats the body, so an
+ * unscoped presence query resolves to two nodes and throws on the ambiguity rather than asserting
+ * anything. And Testing Library's default normaliser collapses runs of spaces — which is exactly
+ * what a firewall line is full of, so a verbatim claim asserted through it is not a verbatim claim.
+ */
+function onCard(text: string): HTMLElement {
+  return screen.getByText(text, { ...CARD_ONLY, normalizer: (value) => value })
+}
+
+/** Every line inside the evidence block, exactly as the DOM carries them. */
+function evidenceLines(): string[] {
+  const block = screen.getByRole('main').querySelector('[data-noa-evidence]')
+  return Array.from(block?.querySelectorAll('li') ?? []).map((row) => row.textContent ?? '')
+}
+
+describe('the card’s own words', () => {
   beforeEach(() => {
-    // Fake timers so the clock can be pinned, and so the pending card's own poll timer is armed
-    // but never fires — nothing here advances it, and nothing here stubs `fetch`.
+    // Fake timers so the clock can be pinned, and so the pending card's own poll timer is armed but
+    // never fires — nothing here advances it, and nothing here stubs `fetch`.
     vi.useFakeTimers()
+    vi.setSystemTime(NOW)
     vi.restoreAllMocks()
   })
 
@@ -261,165 +116,277 @@ describe('CardView rendering', () => {
     vi.useRealTimers()
   })
 
-  it('renders the name and the times the way an operator reads them', async () => {
-    // The reshaped values, and the rule they all follow: nothing this card renders as a rendering
-    // of something else is only available reshaped. The raw tool name is what an operator quotes
-    // to an administrator and the ISO stamp is what they paste into a ticket, so both stay on the
-    // row they were reshaped on.
-    vi.setSystemTime(NOW)
+  it('renders the gate’s headline and imperative byte for byte', () => {
+    // The whole bytes, both of them, against the fixture's own strings. `Asked: ` is the card's own
+    // label and the only string on this surface that is neither measured nor quoted; everything
+    // after it is what the gate composed.
     renderCardView(load(cardBody()))
 
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Suspend an account — acmeco')
+    expect(onCard('Asked: suspend the acmeco account on alpha')).toBeTruthy()
+  })
+
+  it('states what was asked as an imperative, never as a prediction', () => {
+    // The grammar is the whole difference. "203.0.113.24 will be unblocked" is a claim with nothing
+    // measured behind it; the gate composed the imperative on purpose, and this card renders it.
+    renderCardView(load(cardBody({ tool_name: 'whm_firewall_release_and_allow', evidence: FIREWALL_EVIDENCE })))
+
+    expect(
+      onCard('Asked: remove 203.0.113.24 from the deny lists on alpha and allow it for 60 minutes'),
+    ).toBeTruthy()
+    expect(screen.queryByText(/will be/i, CARD_ONLY)).toBeNull()
+  })
+
+  it('prefers the runner’s headline and sentence once a run has written them', () => {
+    // What happened replaces what was asked for the moment there is a run that can say so — and the
+    // bytes are the runner's, unchanged.
+    renderCardView(load(approvedBody({ status: 'COMPLETED' }, receiptBody())))
+
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(RECEIPT_AFTER['headline'])
+    expect(onCard(String(RECEIPT_AFTER['message']))).toBeTruthy()
+    // And the gate's two strings are off the card, because one fact belongs in one place on it.
+    expect(screen.queryByText('Suspend an account — acmeco', CARD_ONLY)).toBeNull()
+    expect(screen.queryByText(/^Asked:/, CARD_ONLY)).toBeNull()
+  })
+
+  it('falls back to the humanised tool name on a card that predates the headline keys', () => {
+    // **Permanent, not transitional.** Every `action_requests` row opened before those keys shipped
+    // carries neither, and those cards still have to render.
+    renderCardView(load(cardBody({ evidence: { suspended: false } })))
+
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Suspend Account')
-    expect(screen.getByTitle('whm_suspend_account')).toBeTruthy()
-    expect(screen.getByText('17 minutes ago')).toBeTruthy()
-    expect(screen.getByText('in 43 minutes')).toBeTruthy()
-    expect(screen.getByTitle('2026-08-08T09:00:00+00:00')).toBeTruthy()
-    expect(screen.queryByText('2026-08-08T09:00:00+00:00', CARD_ONLY)).toBeNull()
+    // Nothing takes the imperative's place either: a gate that stated no request has none to show.
+    expect(screen.queryByText(/^Asked:/, CARD_ONLY)).toBeNull()
   })
 
-  it('collapses the run’s two stamps into one duration', async () => {
+  it('puts a verification state this build has never heard of on the screen, quoted', () => {
+    // The one failure mode the four-state split exists to prevent, asserted at the render rather
+    // than only at the function: an unrecognised value folded into the benign word would be NOA
+    // claiming a measurement it does not have, on the line an operator acts on.
+    renderCardView(
+      load(
+        approvedBody(
+          { status: 'COMPLETED' },
+          receiptBody({ delta: { identity: { server: 'alpha' }, verification: 'refuted_by_neighbour' } }),
+        ),
+      ),
+    )
+
+    expect(onCard('Approved · NOA reported "refuted_by_neighbour"')).toBeTruthy()
+  })
+
+  it('keeps a confirmed change apart from one NOA could not read back', () => {
+    // The two share a headline on every family, by design — WHM accepted the call either way — so
+    // the corner is the only thing separating them and it has to actually do it.
+    const { unmount } = renderCardView(load(approvedBody({ status: 'COMPLETED' }, receiptBody())))
+    expect(onCard('Approved')).toBeTruthy()
+    unmount()
+
+    renderCardView(
+      load(
+        approvedBody(
+          { status: 'COMPLETED' },
+          receiptBody({ delta: { identity: { server: 'alpha' }, verification: 'unavailable' } }),
+        ),
+      ),
+    )
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(RECEIPT_AFTER['headline'])
+    expect(onCard('Approved · not confirmed')).toBeTruthy()
+  })
+
+  it('names the machine beside the corner', () => {
+    // Two of the seven families name only the node in their `asked` sentence — "disable net0 on VM
+    // 108 (pve1)" — so an operator could not tell which Proxmox it is on without this.
+    renderCardView(load(cardBody()))
+
+    expect(screen.getByText('alpha', CARD_ONLY)).toBeTruthy()
+  })
+
+  it('draws no machine where the gate named none', () => {
+    // The separating case for the row above. Absent is absent, never a guess and never a dash.
+    const { container } = renderCardView(load(cardBody({ evidence: { headline: 'Something' } })))
+
+    // Scoped to the corner itself: the copy control lives in the same header and renders a
+    // paragraph per section of the record it hands the clipboard.
+    expect(container.querySelectorAll('[class*="corner"] p')).toHaveLength(1)
+  })
+})
+
+describe('the evidence block', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
     vi.setSystemTime(NOW)
-    renderCardView(
-      load(approvedBody({ status: 'COMPLETED', completed_at: '2026-08-08T09:31:34+00:00' })),
-    )
-
-    expect(screen.getByText('1m 34s')).toBeTruthy()
-    // Named, not counted: both of the labels the duration replaced.
-    expect(screen.queryByText('Started', CARD_ONLY)).toBeNull()
-    expect(screen.queryByText('Finished', CARD_ONLY)).toBeNull()
   })
 
-  it('says when a run in flight started, having no duration to state yet', async () => {
-    // The separating case. A run with no end has not taken any amount of time, and a `0s` there
-    // would be a measurement nobody made. The run's start is moved off the decision's timestamp,
-    // which the fixture shares with it: two rows reading one phrase cannot show which is which.
-    vi.setSystemTime(new Date('2026-08-08T09:33:00+00:00'))
-    renderCardView(load(approvedBody({ created_at: '2026-08-08T09:31:00+00:00' })))
-
-    expect(screen.getByText('2 minutes ago')).toBeTruthy()
-    expect(screen.getByText('Started')).toBeTruthy()
-    expect(screen.queryByText('Duration', CARD_ONLY)).toBeNull()
+  afterEach(() => {
+    cleanup()
+    vi.useRealTimers()
   })
 
-  it('leaves the request’s own identifiers off the card, each asserted by name', async () => {
+  it('draws the gate’s heading over the server’s own lines', () => {
+    renderCardView(load(cardBody({ tool_name: 'whm_firewall_release_and_allow', evidence: FIREWALL_EVIDENCE })))
+
+    expect(screen.getByRole('heading', { level: 2, name: 'Why it was blocked' })).toBeTruthy()
+    // Verbatim means the double space csf printed survives too, which is why this reads the node
+    // rather than going through a matcher that would normalise it away.
+    expect(evidenceLines()).toEqual(['DENY  203.0.113.24 # lfd: too many login failures'])
+    expect(onCard('Read from the server before the change ran.')).toBeTruthy()
+  })
+
+  it('draws no block at all for a family the gate published no heading for', () => {
+    // The account fixture: structured fields, no vendor text to head. An empty heading over nothing
+    // reads as a renderer that broke.
+    renderCardView(load(cardBody()))
+
+    expect(screen.queryByText(/read from the server/i, CARD_ONLY)).toBeNull()
+    expect(screen.getByRole('main').querySelector('[data-noa-evidence]')).toBeNull()
+  })
+
+  it('shows the same block before and after the change ran', () => {
+    // A card whose evidence changed between deciding and reading back would be two readings of one
+    // moment. Both states read `evidence`, never `receipt.before`.
+    const pending = renderCardView(
+      load(cardBody({ tool_name: 'whm_firewall_release_and_allow', evidence: FIREWALL_EVIDENCE })),
+    )
+    const before = screen.getByRole('main').querySelector('[data-noa-evidence]')?.textContent
+    pending.unmount()
+
     renderCardView(
-      load(approvedBody({ status: 'COMPLETED', completed_at: '2026-08-08T09:31:34+00:00' })),
+      load(
+        approvedBody(
+          { status: 'COMPLETED' },
+          receiptBody({ before: { evidence_heading: 'Something else', matches: ['changed'] } }),
+          { tool_name: 'whm_firewall_release_and_allow', evidence: FIREWALL_EVIDENCE },
+        ),
+      ),
     )
 
-    expect(screen.queryByText('LibreChat account', CARD_ONLY)).toBeNull()
+    expect(screen.getByRole('main').querySelector('[data-noa-evidence]')?.textContent).toBe(before)
+  })
+})
+
+describe('the rows this card no longer carries', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(NOW)
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.useRealTimers()
+  })
+
+  it('drops the arguments, the before-state and the execution block, each by name', () => {
+    renderCardView(
+      load(approvedBody({ status: 'COMPLETED', completed_at: '2026-08-08T09:31:34+00:00' }, receiptBody())),
+    )
+
+    for (const heading of ['Arguments', 'Before state', 'Execution']) {
+      expect(screen.queryByRole('heading', { name: heading })).toBeNull()
+    }
+    // And their values with them: the argument keys, the preflight's own fields, the run's status.
+    //
+    // `operator words WHM would echo back` is the one this list cannot lose. It is WHM's echo of
+    // the operator's own typed reason, which the gate evidence genuinely carries, and the rule it
+    // holds is a hard one: no surface renders a reason back. The render path now refuses it by
+    // construction — a closed allowlist of gate keys rather than the denylist of dotted paths the
+    // deleted before-state renderer used, and a denylist fails open on the key nobody listed — so
+    // this is the check that the allowlist stays closed as keys are added to it.
+    for (const value of ['server_ref', 'acmeco', 'domain', 'COMPLETED', 'operator words WHM would echo back']) {
+      expect(screen.queryByText(value, CARD_ONLY)).toBeNull()
+    }
+    // The separating case — the card did render, so the absences above are rows leaving rather than
+    // a card that failed to draw.
+    expect(screen.getByRole('heading', { level: 1 })).toBeTruthy()
+  })
+
+  it('drops the verification sentences, the backends, the bound row and the error code', () => {
+    renderCardView(
+      load(
+        approvedBody(
+          { status: 'FAILED' },
+          receiptBody({
+            ok: false,
+            error_code: 'ssh_sudo_required',
+            delta: {
+              identity: { server: 'alpha' },
+              verification: 'unavailable',
+              backends: [{ name: 'csf', driven: true, answered: false, verdict: null, error_code: null }],
+              unanswered: ['csf'],
+              bound: { total: 20, truncated: true },
+            },
+          }),
+        ),
+      ),
+    )
+
+    // The four facts these rows carried are not gone: the silent source is named in the runner's own
+    // sentence, the cap is on the evidence block's closing line, the `null`/`()` split is in the
+    // before-clause the runner composes, and the four verification states are in the corner — which
+    // is asserted here on the same render, so this is rows leaving rather than a card going blank.
+    expect(onCard('Approved · not confirmed')).toBeTruthy()
+    for (const gone of ['Backends', 'Reported by the runner', 'Reading covered', 'Error code', 'Because']) {
+      expect(screen.queryByText(gone, CARD_ONLY)).toBeNull()
+    }
+    expect(labels()).not.toContain('Outcome')
+    expect(screen.queryByText(/neither confirmed nor ruled out/i, CARD_ONLY)).toBeNull()
+    expect(screen.queryByText(/no answer from/i, CARD_ONLY)).toBeNull()
+  })
+})
+
+describe('the identifiers and the clock', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(NOW)
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.useRealTimers()
+  })
+
+  it('carries the run id once there is a run, and substitutes nothing before', () => {
+    // The audit list is keyed on the run id, so it is the one string that gets an operator who
+    // cannot open `/admin` an answer from somebody who can. A row reading `none` would state an
+    // identifier that does not exist, and the action-request id is not put in its place.
+    const pending = renderCardView(load(cardBody()))
+    expect(labels()).not.toContain('Run id')
+    expect(screen.queryByText(CARD_ID, CARD_ONLY)).toBeNull()
+    pending.unmount()
+
+    renderCardView(load(approvedBody({ status: 'COMPLETED' }, receiptBody())))
+    expect(screen.getByText(TOOL_RUN_ID, CARD_ONLY)).toBeTruthy()
+  })
+
+  it('leaves the request’s other identifiers off the card, each by name', () => {
+    renderCardView(load(approvedBody({ status: 'COMPLETED' }, receiptBody())))
+
     expect(screen.queryByText('librechat-user-1', CARD_ONLY)).toBeNull()
-    expect(screen.queryByText('Conversation', CARD_ONLY)).toBeNull()
     expect(screen.queryByText('1f0c2e5a-7b41-4d2e-9a3c-0b5d8e6f4a12', CARD_ONLY)).toBeNull()
-    expect(screen.queryByText('Run', CARD_ONLY)).toBeNull()
-    expect(screen.queryByText(TOOL_RUN_ID, CARD_ONLY)).toBeNull()
-
     // The identity that stays: who asked, which is the one an operator recognises.
     expect(screen.getByText('operator@noa.internal', CARD_ONLY)).toBeTruthy()
   })
 
-  it('prints what a suspension moves and none of the account’s identity', async () => {
-    renderCardView(load(cardBody({ evidence: WHM_EVIDENCE, arguments: WHM_ARGUMENTS })))
+  it('states the approval window as a span beside the buttons, and drops the Expires row', () => {
+    // Two clocks used to sit on one screen with nothing saying they were different clocks. This one
+    // is how long there is to answer; the firewall entry's own window is inside the gate's `asked`
+    // sentence, in the minutes the schema takes.
+    renderCardView(load(cardBody()))
 
-    const before = beforeState()
-
-    // Why this block is on a PENDING card at all: the fields the operation itself moves, at the
-    // moment the operator decides and before any execution or outcome block exists. `is_locked` is
-    // the one that answers "will this work" rather than "what is this" — a suspension lock refuses
-    // `unsuspendacct` outright.
-    expect(before['account.suspended']).toBe('false')
-    // Read as a time rather than as the epoch second WHM hands over, and with the zone on the
-    // value: this is the one stamp on the card with no relative rendering and no heading above it
-    // naming a zone, so a screenshot of it would otherwise reach a ticket meaning nothing in
-    // particular.
-    expect(before['account.suspendtime']).toBe('2026-09-11 13:56:50 WIB')
-    expect(before['account.is_locked']).toBe('false')
-
-    // The identity beside them, each asserted by path. NOA needs the first two and the operator
-    // does not; the rest name the account rather than saying anything about the change.
-    expect(before['server_id']).toBeUndefined()
-    expect(before['api_username']).toBeUndefined()
-    expect(before['account.user']).toBeUndefined()
-    expect(before['account.domain']).toBeUndefined()
-    expect(before['account.email']).toBeUndefined()
-    expect(before['account.contactemail']).toBeUndefined()
-
-    // Its own assertion, because it is the one hidden path that does move with the change. WHM
-    // stores the operator's typed NOA reason in that field and echoes it back on every later read,
-    // so it carries nothing a decision rests on, and it is reason-bearing on the API side
-    // (`core/approvals/delta.py`).
-    expect(before['account.suspendreason']).toBeUndefined()
-
-    // The rest of the preflight still renders: the filter takes paths, not the block.
-    expect(before['host']).toBe('alpha.example')
+    expect(onCard('You have 43 minutes to answer.')).toBeTruthy()
+    expect(labels()).not.toContain('Expires')
+    expect(screen.queryByText('in 43 minutes', CARD_ONLY)).toBeNull()
+    // The relative time that stays, which is what a decision turns on.
+    expect(onCard('17 minutes ago')).toBeTruthy()
+    expect(screen.getByTitle('2026-08-08T09:00:00+00:00')).toBeTruthy()
   })
 
-  it('hides the owner on the record while the top-level owner stays', async () => {
-    // The reason the filter matches full paths, and the reason the flatten happens before it rather
-    // than at the call site. `owner` is a top-level evidence key — the reseller the machine answers
-    // to — and `account.owner` is the same identity repeated on the record. A leaf-name filter
-    // deletes both, and because the gate copies one into the other the two rows hold an identical
-    // string, so nothing but the label can separate them.
-    renderCardView(load(cardBody({ evidence: WHM_EVIDENCE, arguments: WHM_ARGUMENTS })))
+  it('says the window has closed rather than counting backwards', () => {
+    // The separating case. A negative countdown rendered as "43 minutes" would read as an
+    // instruction to hurry on a request nothing will accept.
+    vi.setSystemTime(new Date('2026-08-08T10:30:00+00:00'))
+    renderCardView(load(cardBody()))
 
-    const before = beforeState()
-
-    expect(before['owner']).toBe('reseller1')
-    expect(before['account.owner']).toBeUndefined()
-  })
-
-  it.each(CHANGE_TOOLS)(
-    'gives $tool a field its own change can move, and no machine row id',
-    ({ tool, evidence, moves }) => {
-      renderCardView(load(cardBody({ tool_name: tool, evidence })))
-
-      const before = beforeState()
-
-      // Each one a labelled row, not a line of JSON inside a record: five of the seven carry a
-      // nested object, and unflattened they arrived as one unreadable line.
-      for (const path of moves) expect(before[path]).toBeDefined()
-
-      // The one plumbing key all seven preflights share, so the filter is exercised against every
-      // shape rather than only against the one it was derived from. **This is not a leakage check
-      // for the rest of those shapes**: the other tools' nested records were enumerated once by
-      // hand and carry no id and no credential, and nothing here would notice if that changed.
-      expect(before['server_id']).toBeUndefined()
-    },
-  )
-
-  it('keeps the run’s envelope out of the Execution block', async () => {
-    // `result_summary` is a JSON dump of the payload the receipt's `after` half renders as labelled
-    // rows below it, so the row was one value under two headings and the less readable of the two.
-    // Asserted as a label by name and as the string itself: a check on only one of the two passes
-    // against a card that still prints the dump under some other word.
-    renderCardView(
-      load(
-        approvedBody({
-          status: 'COMPLETED',
-          completed_at: '2026-08-08T09:31:34+00:00',
-          result_summary: '{"ok": true, "message": "acmeco is suspended on alpha."}',
-        }),
-      ),
-    )
-
-    const execution = screen.getByRole('heading', { level: 2, name: 'Execution' }).parentElement
-    if (execution === null) throw new Error('the Execution heading has no block around it')
-    const labels = Array.from(execution.querySelectorAll('dt')).map((node) => node.textContent)
-
-    expect(labels).not.toContain('Result')
-    expect(screen.queryByText(/"ok": true/, CARD_ONLY)).toBeNull()
-    // The separating case: the block still renders, so the three assertions above are about one
-    // row leaving rather than about a section that stopped being drawn at all.
-    expect(labels).toContain('Status')
-    expect(screen.getByText('1m 34s')).toBeTruthy()
-  })
-
-  it('renders a nested argument as rows rather than a line of JSON', async () => {
-    renderCardView(
-      load(cardBody({ arguments: { server_ref: 'alpha', window: { minutes: 30, unit: 'm' } } })),
-    )
-
-    expect(screen.getByText('window.minutes')).toBeTruthy()
-    expect(screen.getByText('30')).toBeTruthy()
-    expect(screen.queryByText('{"minutes":30,"unit":"m"}', CARD_ONLY)).toBeNull()
+    expect(onCard('You have no time left to answer.')).toBeTruthy()
   })
 })

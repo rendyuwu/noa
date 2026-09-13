@@ -17,7 +17,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { formatCountdown, formatDuration, formatJakarta, formatRelative } from './jakarta-time'
+import { formatJakarta, formatRelative, formatRemaining } from './jakarta-time'
 
 /** 13:48:01 in Jakarta, 02:48 the same morning in New York. */
 const MIDDAY = '2026-09-09T06:48:01.500Z'
@@ -84,46 +84,44 @@ describe('formatRelative', () => {
   })
 })
 
-describe('formatCountdown', () => {
+describe('formatRemaining', () => {
   const now = new Date(MIDDAY)
 
-  it('counts down while the window is open', () => {
-    expect(formatCountdown('2026-09-09T06:59:01.500Z', now)).toBe('in 11 minutes')
+  it('answers a bare span, so a caller can put it inside a sentence', () => {
+    // `in 11 minutes` is a whole phrase and cannot be embedded in one — "You have in 11 minutes to
+    // answer" is the sentence the relative formatter would have produced.
+    expect(formatRemaining('2026-09-09T06:59:01.500Z', now)).toBe('11 minutes')
   })
 
-  it('says expired once the window has closed', () => {
-    expect(formatCountdown('2026-09-09T06:40:01.500Z', now)).toBe('expired')
+  it('picks the same unit the relative stamp beside it would', () => {
+    // Two readings of one instant on one card have to round alike, which is why both formatters go
+    // through one unit chooser.
+    expect(formatRemaining('2026-09-09T08:48:01.500Z', now)).toBe('2 hours')
+    expect(formatRelative('2026-09-09T08:48:01.500Z', now)).toBe('in 2 hours')
   })
 
-  it('says expired at the instant itself, not just past it', () => {
+  it('says a closed window is closed rather than counting backwards', () => {
+    // A window that has run out is a different state, not a negative countdown: `11 minutes` there
+    // would read as an instruction to hurry on a request nothing will accept.
+    expect(formatRemaining('2026-09-09T06:40:01.500Z', now)).toBe('no time left')
+  })
+
+  it('says so at the instant itself, not just past it', () => {
     // The boundary is the whole question a countdown answers, and an off-by-one here shows an
-    // operator a live-looking window on a request nothing will accept.
-    expect(formatCountdown(MIDDAY, now)).toBe('expired')
-  })
-})
-
-describe('formatDuration', () => {
-  it('renders a short run to a tenth of a second', () => {
-    expect(formatDuration('2026-09-09T06:48:01.500Z', '2026-09-09T06:48:03.900Z')).toBe('2.4s')
+    // operator a live-looking window.
+    expect(formatRemaining(MIDDAY, now)).toBe('no time left')
   })
 
-  it('breaks a long run into minutes and seconds', () => {
-    expect(formatDuration('2026-09-09T06:48:01Z', '2026-09-09T06:49:35Z')).toBe('1m 34s')
+  it('never answers zero of anything while there is time left', () => {
+    // Under a second there is no honest unit left, and `0 seconds` beside a live Approve button is
+    // the one answer that reads as a broken string rather than as a small number.
+    expect(formatRemaining('2026-09-09T06:48:01.900Z', now)).toBe('1 second')
   })
 
-  it('has no answer while the run is still going', () => {
-    expect(formatDuration(MIDDAY, null)).toBeNull()
-  })
-
-  it('has no answer when the end precedes the start', () => {
-    // A host clock that stepped backwards mid-run did not take a negative amount of time, and
-    // clamping to zero would print a measurement nobody made. The elapsed time is then on no
-    // surface at all — the copied block prints the finish alone — and that is the cheaper loss.
-    expect(formatDuration('2026-09-09T06:48:03Z', '2026-09-09T06:48:01Z')).toBeNull()
-  })
-
-  it('has no answer when either stamp is unparseable', () => {
-    expect(formatDuration('', '2026-09-09T06:48:03Z')).toBeNull()
-    expect(formatDuration(MIDDAY, 'whenever')).toBeNull()
+  it('has no answer for a stamp it cannot read, and the caller then prints no sentence', () => {
+    // A window nobody can parse is not a window of any particular length. The card parser's
+    // fallback for a missing string field is `''`, so this path is reachable from a body the API is
+    // free to send.
+    expect(formatRemaining('')).toBeNull()
   })
 })

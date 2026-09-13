@@ -55,6 +55,19 @@ const UNITS: readonly (readonly [Intl.RelativeTimeFormatUnit, number])[] = [
   ['day', 86_400_000],
 ]
 
+/**
+ * The largest unit a gap fills, and its size in milliseconds.
+ *
+ * One definition, because two formatters below choose a unit and they must choose the same one: a
+ * countdown that rounded to hours where the relative stamp beside it rounded to minutes would put
+ * two readings of one instant on one card.
+ */
+function largestUnit(gap: number): readonly [Intl.RelativeTimeFormatUnit, number] {
+  let chosen = UNITS[0]!
+  for (const candidate of UNITS) if (Math.abs(gap) >= candidate[1]) chosen = candidate
+  return chosen
+}
+
 type Stamp = { date: string; time: string }
 
 /** The pieces of one instant in Jakarta, or `null` when the string is not an instant. */
@@ -102,62 +115,36 @@ export function formatRelative(iso: string, now: Date = new Date()): string {
   // it reads as a broken string rather than as a small number.
   if (Math.abs(gap) < 1000) return 'just now'
 
-  let unit: Intl.RelativeTimeFormatUnit = 'second'
-  let span = 1000
-  for (const [candidate, size] of UNITS) {
-    if (Math.abs(gap) >= size) {
-      unit = candidate
-      span = size
-    }
-  }
+  const [unit, span] = largestUnit(gap)
   return RELATIVE.format(Math.round(gap / span), unit)
 }
 
 /**
- * `in 11 minutes` while the window is open, `expired` once it has closed.
+ * `43 minutes`, `no time left`, or `null` when the string is not an instant.
  *
- * The caller composes the sentence around it, so both answers are whole phrases: an approval
- * window that has run out is not a negative countdown, it is a different state, and rendering it
- * as `11 minutes ago` would read as an instruction to hurry.
+ * **A bare span rather than `in 43 minutes`**, because the card puts it inside a sentence — "You
+ * have 43 minutes to answer." — and the relative formatter's own output is a whole phrase that
+ * cannot be embedded in one. `Intl.NumberFormat` in unit style is what states a quantity without
+ * the preposition, and it picks its unit through `largestUnit` so the countdown and the relative
+ * stamp on the same card round to the same unit.
+ *
+ * **A window that has run out is a different state, not a negative countdown.** `43 minutes ago`
+ * where the sentence expects a span would read as an instruction to hurry, so the closed window
+ * gets its own phrase that the same sentence still reads correctly.
+ *
+ * `null` is an expiry string this app cannot parse, and the caller prints no sentence at all:
+ * an approval window nobody can read is not an approval window that has any particular length.
  */
-export function formatCountdown(iso: string, now: Date = new Date()): string {
+export function formatRemaining(iso: string, now: Date = new Date()): string | null {
   const at = new Date(iso)
-  if (Number.isNaN(at.getTime())) return iso
-  return at.getTime() <= now.getTime() ? 'expired' : formatRelative(iso, now)
-}
+  if (Number.isNaN(at.getTime())) return null
 
-/**
- * `2.4s`, `1m 34s`, or `null` when there is no end yet.
- *
- * `null` is also the answer when the two stamps cannot yield a duration — either is unparseable,
- * or the end sits before the start. A run whose host clock stepped backwards mid-execution has not
- * taken a negative amount of time, and clamping it to zero would state a measurement nobody made.
- *
- * **That silence now costs the reader the elapsed time outright**, and the guard stays anyway. The
- * copied summary used to print the run's start beside its finish, so a `null` there lost nothing;
- * it prints the finish alone now (`lib/approvals/summary.ts`), and the card prints this duration
- * alone, with the start in that row's `title`. On a `null` the card falls back to the start — one
- * row either way, one stamp either way — so the run's two ends are split one per surface, the
- * start on the card and the finish in the copied block, and how long it took is stated on neither.
- * Both stamps sit together only on the `/admin` audit row, whose own derived duration answers zero
- * rather than a negative (`core/audit/tool_run_reads.py`), so it does not state the elapsed time
- * either.
- *
- * Rare rather than impossible: both stamps come from one clock now (`core.clock.now_utc`, via
- * `core/db/columns.py`), so the cross-host gap that used to reach here is gone and an NTP step on
- * that one host mid-run is what is left. A clock that steps mid-run is exactly the case this
- * refuses to average away.
- */
-export function formatDuration(startIso: string, endIso: string | null): string | null {
-  if (endIso === null) return null
+  const gap = at.getTime() - now.getTime()
+  if (gap <= 0) return 'no time left'
 
-  const start = new Date(startIso).getTime()
-  const end = new Date(endIso).getTime()
-  if (Number.isNaN(start) || Number.isNaN(end) || end < start) return null
-
-  const elapsed = end - start
-  if (elapsed < 60_000) return `${(elapsed / 1000).toFixed(1)}s`
-
-  const seconds = Math.round(elapsed / 1000)
-  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+  const [unit, span] = largestUnit(gap)
+  // Rounding, never a floor: the last fraction of a unit is still time left, and `0 seconds` beside
+  // a live Approve button is the one answer that reads as a broken string.
+  const count = Math.max(1, Math.round(gap / span))
+  return new Intl.NumberFormat('en', { style: 'unit', unit, unitDisplay: 'long' }).format(count)
 }

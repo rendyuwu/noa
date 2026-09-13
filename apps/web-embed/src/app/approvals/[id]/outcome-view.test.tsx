@@ -2,31 +2,25 @@ import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import type { ApprovalReceipt } from '@/lib/approvals/card'
-import {
-  type ChangeDelta,
-  VERIFICATION_MISMATCH,
-  VERIFICATION_NOT_IN_FORCE,
-  VERIFICATION_UNAVAILABLE,
-  VERIFICATION_VERIFIED,
-} from '@/lib/approvals/delta'
+import { type ChangeDelta, VERIFICATION_VERIFIED } from '@/lib/approvals/delta'
+import { type EvidenceBlock, evidenceBlock } from '@/lib/approvals/evidence'
 
-import { Fact, Outcome } from './outcome-view'
+import { EvidenceBlockView, Fact, Outcome, Statement } from './outcome-view'
 
 /**
- * The receipt section, and the absences it has to keep apart.
+ * The pieces a card is drawn from, at the render.
  *
- * **Every absence rule here needs a negative control or it measures nothing.** "An absent facet
- * renders nothing" passes perfectly against a renderer that drops that facet unconditionally, so
- * each of those specs is paired with a fixture where the facet is *present* — and where it is a
- * present `false`, because a measured negative and a missing measurement are the two things this
- * section exists to tell apart.
+ * What each piece *says* is decided in `lib/` and asserted there — the corner in `verdict.test.ts`,
+ * the block's strings in `evidence.test.ts`. This file is the other half: that the strings reach
+ * the DOM unchanged, in the shape the frame needs them in.
  *
- * Fixtures are built here rather than taken from the shared card fixtures: what is under test is a
- * component that takes a receipt, and a body that had to go through the card parser first would put
- * a second subject between the delta and the assertion.
+ * **The line-break rule is split across two lanes on purpose.** jsdom computes no styles, so
+ * "`white-space: pre-line` turns the runner's `\n` into a visible break" is a claim it cannot make
+ * and would silently pass. What it *can* prove is the half a component can break: that the newline
+ * reaches the DOM at all, rather than being split or stripped on the way. The rendering half is in
+ * `e2e/card-evidence.browser.e2e.ts`, against a real computed style.
  */
 
-/** Every facet absent — the shape a runner that measured nothing beyond its identity publishes. */
 function delta(overrides: Partial<ChangeDelta> = {}): ChangeDelta {
   return {
     identity: { server: 'alpha', username: 'acmeco' },
@@ -46,280 +40,142 @@ function delta(overrides: Partial<ChangeDelta> = {}): ChangeDelta {
 function receipt(overrides: Partial<ApprovalReceipt> = {}): ApprovalReceipt {
   return {
     ok: true,
-    before: { suspended: false },
-    after: { suspended: true, suspended_at: '2026-09-11T09:31:00+00:00' },
+    before: {},
+    after: { message: 'acmeco is suspended on alpha.' },
     errorCode: null,
     delta: delta(),
     ...overrides,
   }
 }
 
-function renderOutcome(overrides: Partial<ApprovalReceipt> = {}) {
-  return render(<Outcome receipt={receipt(overrides)} />)
+/** A block built through the real resolver, so no spec here can describe one it cannot produce. */
+function block(evidence: Record<string, unknown>): EvidenceBlock {
+  const resolved = evidenceBlock(evidence)
+  if (resolved === null) throw new Error('fixture evidence carries no heading')
+  return resolved
 }
 
-/** The verification sentence as it reaches the screen, whatever state produced it. */
-function verificationLine(container: HTMLElement): string {
-  return container.querySelector('[data-noa-verification]')?.textContent ?? ''
-}
+describe('Statement', () => {
+  it('renders the runner’s bytes with nothing between them and the DOM', () => {
+    // The rule the whole surface rests on: no text here is authored at runtime. A renderer that
+    // trimmed, re-wrapped or re-punctuated would be composing a sentence about a machine it never
+    // read, and this is the assertion that would go red first.
+    const sentence = 'Allowed 203.0.113.24 on alpha.\ncsf-beta did not answer.'
+    const { container } = render(<Statement text={sentence} />)
 
-/** The state behind that sentence, as the DOM carries it for a reader checking a screenshot. */
-function verificationState(container: HTMLElement): string {
-  return container.querySelector('[data-noa-verification]')?.getAttribute('data-noa-verification') ?? ''
-}
-
-/** The headline row — the value beside the `Outcome` label, not merely the word somewhere. */
-function outcomeLine(container: HTMLElement): string {
-  const label = Array.from(container.querySelectorAll('dt')).find(
-    (node) => node.textContent === 'Outcome',
-  )
-  return label?.nextElementSibling?.textContent ?? ''
-}
-
-describe('Outcome', () => {
-  afterEach(cleanup)
-
-  it('gives each verification state its own sentence, and never folds an unknown one into verified', () => {
-    // Four states, four sentences — the merge this forbids is "unavailable" and "mismatch" both
-    // printing as "not confirmed", which puts a non-answer and a measured disagreement on the card
-    // as one word. The fifth is the state a later API grows: it must reach the screen as itself and
-    // be undecidable, never fail open into the verified sentence.
-    const states = [
-      VERIFICATION_VERIFIED,
-      VERIFICATION_UNAVAILABLE,
-      VERIFICATION_MISMATCH,
-      VERIFICATION_NOT_IN_FORCE,
-      'refuted_by_neighbour',
-    ]
-
-    const sentences = states.map((verification) => {
-      const { container } = render(<Outcome receipt={receipt({ delta: delta({ verification }) })} />)
-      const line = verificationLine(container)
-      cleanup()
-      return line
-    })
-
-    expect(new Set(sentences).size).toBe(5)
-    // Named rather than left to the count above: these are the two most likely to be collapsed, and
-    // a set of five would still be five if some other pair were merged and a sixth string appeared.
-    expect(sentences[1]).not.toBe(sentences[2])
-    expect(sentences[0]).not.toBe(sentences[1])
-    // The unknown state is on the card verbatim, so an operator and an administrator quote the same
-    // word at each other.
-    expect(sentences[4]).toContain('refuted_by_neighbour')
+    expect(container.querySelector('p')?.textContent).toBe(sentence)
   })
 
-  it('renders one line per changed field, old and new', () => {
-    const { container } = renderOutcome({
-      delta: delta({
-        changedFields: [
-          { field: 'suspended', old: false, new: true },
-          { field: 'reason_code', old: 'none', new: 'abuse' },
-        ],
-      }),
-    })
+  it('leaves the line break in the document rather than splitting the sentence', () => {
+    // The newline is the contract — four of the five composing families spell it that way — so the
+    // renderer moves and the runners do not. Splitting here would be this component deciding where
+    // a runner's sentence ends; the stylesheet renders the break instead.
+    const { container } = render(<Statement text={'first.\nsecond.'} />)
 
-    expect(screen.getByText('suspended: false → true')).toBeTruthy()
-    expect(screen.getByText('reason_code: none → abuse')).toBeTruthy()
-    // One row is one line: nothing here is a column that a narrow frame could pull out of line.
+    expect(container.querySelectorAll('p')).toHaveLength(1)
+    expect(container.textContent).toContain('\n')
+  })
+})
+
+describe('EvidenceBlockView', () => {
+  it('renders the heading and every line, one row each', () => {
+    const lines = ['DENY  203.0.113.24 # lfd', 'DENY  203.0.113.24 # manual']
+    const { container } = render(
+      <EvidenceBlockView block={block({ evidence_heading: 'Why it was blocked', firewall: { matches: lines } })} />,
+    )
+
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Why it was blocked')
+    expect(Array.from(container.querySelectorAll('li')).map((row) => row.textContent)).toEqual(lines)
+  })
+
+  it('keeps a line the server holds twice, rather than collapsing it to one', () => {
+    // A firewall reading concatenates two backends' matches and both can carry the same rule.
+    // Collapsing the pair would understate what is on the box — and a naive key would do it
+    // silently, which is why the key carries the index.
+    const same = 'DENY  203.0.113.24'
+    const { container } = render(
+      <EvidenceBlockView block={block({ evidence_heading: 'x', firewall: { matches: [same, same] } })} />,
+    )
+
     expect(container.querySelectorAll('li')).toHaveLength(2)
   })
 
-  it('says nothing changed for an empty field list, and says something else for no delta at all', () => {
-    // The distinction most likely to be got wrong, and the one that is invisible in a rendered card
-    // unless the card spells it out. `[]` is a claim: NOA read the target and nothing had moved.
-    // `null` delta is the absence of a claim, and a change may well have landed.
-    const { unmount } = renderOutcome({ delta: delta({ changedFields: [] }) })
-    expect(screen.getByText('Nothing changed.')).toBeTruthy()
-    unmount()
-
-    renderOutcome({ delta: null, ok: false, errorCode: 'postflight_unavailable' })
-    expect(screen.getByText(/no delta recorded/i)).toBeTruthy()
-    expect(screen.queryByText('Nothing changed.')).toBeNull()
-    // And the named cause is on the card verbatim beside it: an absent delta with no code at all
-    // would leave an operator with nothing to quote.
-    expect(screen.getByText('postflight_unavailable')).toBeTruthy()
-  })
-
-  it('labels the API error code as an error code, never as a reason', () => {
-    // A reason in this repository is one thing: the justification an operator types at decision
-    // time, which the model never authors, relays or sees. One word must not name two facts.
-    renderOutcome({ ok: false, errorCode: 'ssh_sudo_required' })
-
-    expect(screen.getByText('Error code')).toBeTruthy()
-    expect(screen.queryByText('Reason')).toBeNull()
-    expect(screen.getByText('ssh_sudo_required')).toBeTruthy()
-  })
-
-  it('shows both spellings of a normalised target', () => {
-    // The operator typed one string and the target system holds another: a mail gateway keeps
-    // `198.51.100.7` and `198.51.100.7/32` as two lines and one entry. Showing one of the two would
-    // decide for the operator which spelling they get to check against the box.
-    //
-    // The keys are the ones `pmg_whitelist_runner.py::_common` actually publishes, not invented
-    // ones — a fixture that renamed them would pass here and describe a record no runner sends.
-    // Rendering the identity as it stands is also what makes this work with no special case: the
-    // pair is in the record because the runner put it there.
-    renderOutcome({
-      delta: delta({
-        identity: {
-          server: 'mail-1',
-          action: 'add',
-          target: '198.51.100.7',
-          normalized_target: '198.51.100.7/32',
-        },
-      }),
-    })
-
-    expect(screen.getByText('198.51.100.7')).toBeTruthy()
-    expect(screen.getByText('198.51.100.7/32')).toBeTruthy()
-  })
-
-  it('renders per-backend rows even when the change did not complete', () => {
-    // Those falses were earned by a postflight that answered. A refused change still measured which
-    // backend refused it and which ones answered, and gating the rows on the envelope's `ok` would
-    // drop the evidence exactly where an operator most needs it.
-    renderOutcome({
-      ok: false,
-      errorCode: 'firewall_partial',
-      delta: delta({
-        verification: VERIFICATION_MISMATCH,
-        backends: [
-          { name: 'csf-alpha', driven: true, answered: true, verdict: 'blocked', errorCode: null },
-          { name: 'csf-beta', driven: false, answered: false, verdict: null, errorCode: 'ssh_sudo_required' },
-        ],
-      }),
-    })
-
-    expect(screen.getByText('csf-alpha: ran the change, answered, says blocked')).toBeTruthy()
-    // The negative control for the row above: a present `false` reads differently from a present
-    // `true`, so a renderer that printed the same row for both would go red here.
-    expect(screen.getByText('csf-beta: not driven, silent, ssh_sudo_required')).toBeTruthy()
-  })
-
-  it('renders nothing at all for a backend list nobody recorded', () => {
-    // The absence half of the pair above. Absent is absent: never "no backends", never a cross.
-    const { container } = renderOutcome({ delta: delta({ backends: null }) })
-
-    expect(screen.queryByText('Backends')).toBeNull()
-    expect(container.querySelectorAll('li')).toHaveLength(0)
-  })
-
-  it('says an empty backend list outright, and never as a heading over nothing', () => {
-    // Three states, three renderings, and the middle one is the point. `[]` is a change that drove
-    // no backend and heard from none — the empty-gather shape — so it must not render as the
-    // absent case, and a heading with no rows under it reads as a renderer that broke rather than
-    // as a measurement.
-    const { container } = renderOutcome({ delta: delta({ backends: [] }) })
-
-    expect(screen.getByText('No backend was driven, and none answered.')).toBeTruthy()
-    expect(screen.queryByText('Backends')).toBeNull()
+  it('says which empty it is, and never draws a heading over an empty list', () => {
+    // A heading with no rows under it reads as a renderer that broke. The two sentences are the
+    // model's, so the card and the copied block cannot disagree about which empty this was.
+    const { container, unmount } = render(
+      <EvidenceBlockView block={block({ evidence_heading: 'What was on the list', matches: [] })} />,
+    )
+    expect(screen.getByText('NOA read the server and found no matching lines.')).toBeTruthy()
     expect(container.querySelectorAll('ul')).toHaveLength(0)
-  })
-
-  it('names the source that did not answer, and prints no such line when they all did', () => {
-    const { unmount } = renderOutcome({
-      delta: delta({
-        verification: VERIFICATION_UNAVAILABLE,
-        unanswered: ['csf-beta'],
-      }),
-    })
-    // By name, never as a count: "one backend was silent" does not say which server to go and look
-    // at.
-    expect(screen.getByText(/csf-beta/)).toBeTruthy()
-    expect(screen.getByText(/no answer from/i)).toBeTruthy()
     unmount()
 
-    // The separating case. Without it, "the silent source is named" would pass against a renderer
-    // that printed the line unconditionally.
-    const answered = renderOutcome({ delta: delta({ unanswered: [] }) })
-    expect(screen.queryByText(/no answer from/i)).toBeNull()
-    answered.unmount()
-
-    // And the third state, pinned rather than defaulted into: `null` is a family with no
-    // per-source accounting to make, which is not a silent source either. It renders the same
-    // nothing as `[]` — the two are folded here on purpose, and the reasoning is at the fold. This
-    // case is what makes that a decision rather than an accident of the fixture default.
-    renderOutcome({ delta: delta({ unanswered: null }) })
-    expect(screen.queryByText(/no answer from/i)).toBeNull()
+    render(<EvidenceBlockView block={block({ evidence_heading: 'What was on the list' })} />)
+    expect(screen.getByText('NOA has no reading of the server to show here.')).toBeTruthy()
   })
 
-  it('ships the bound of a capped reading, and separates a full one from an absent one', () => {
-    const { unmount } = renderOutcome({
-      delta: delta({ bound: { total: 240, truncated: true } }),
-    })
-    expect(screen.getByText(/240 lines, and the reading was cut short/)).toBeTruthy()
+  it('states the cap of a capped reading, and nothing extra on a complete one', () => {
+    // One of the four honesty properties the old delta section carried: a claim resting on twenty
+    // of thirty-four lines says so. The uncapped case is what stops this passing against a block
+    // that appends the cap sentence unconditionally.
+    const capped = {
+      evidence_heading: 'Why it was blocked',
+      firewall: { matches: ['a', 'b'], total_matches: 34, truncated: true },
+    }
+    const { unmount } = render(<EvidenceBlockView block={block(capped)} />)
+    expect(
+      screen.getByText('Read from the server before the change ran; this is the first 2 of 34 lines.'),
+    ).toBeTruthy()
     unmount()
 
-    // Present and `false`: a reading that covered everything is a different claim from one that was
-    // cut, and both are different from a bound nobody recorded.
-    const full = renderOutcome({ delta: delta({ bound: { total: 12, truncated: false } }) })
-    expect(screen.getByText(/12 lines, all of them/)).toBeTruthy()
-    full.unmount()
-
-    renderOutcome({ delta: delta({ bound: null }) })
-    expect(screen.queryByText(/lines/)).toBeNull()
+    render(
+      <EvidenceBlockView
+        block={block({ ...capped, firewall: { matches: ['a', 'b'], total_matches: 2, truncated: false } })}
+      />,
+    )
+    expect(screen.getByText('Read from the server before the change ran.')).toBeTruthy()
   })
+})
 
-  it('renders a list delta with the target system spelling of each line', () => {
-    renderOutcome({
-      delta: delta({
-        listDelta: { added: ['1.2.3.4/32'], removed: ['10.0.0.0/8'], totalEntries: 42 },
-      }),
-    })
-
-    expect(screen.getByText('added 1.2.3.4/32')).toBeTruthy()
-    expect(screen.getByText('removed 10.0.0.0/8')).toBeTruthy()
-    expect(screen.getByText('42')).toBeTruthy()
-  })
-
-  it('says an empty list delta explicitly, rather than rendering an empty block', () => {
-    // The no-op a runner discovers only after the approval: it re-read and found the world already
-    // as the operator wanted it. An empty block would read as a renderer that broke.
-    renderOutcome({
-      delta: delta({ listDelta: { added: [], removed: [], totalEntries: null } }),
-    })
-
-    expect(screen.getByText(/nothing entered or left the list/i)).toBeTruthy()
-    expect(screen.queryByText('Entries in the list')).toBeNull()
-  })
-
-  it('carries the delivered-credential slot and the new values, and neither when absent', () => {
-    const { unmount } = renderOutcome({
-      delta: delta({
-        deliveredCredential: 'https://yopass.noa.internal/#/s/token',
-        newValues: { expires_at: '2026-09-12T09:00:00+00:00' },
-      }),
-    })
-    // The facet's presence is the whole claim: a credential may now be live.
+describe('Outcome, what only a finished change has', () => {
+  it('renders the delivered credential’s link, and nothing at all without one', () => {
+    // The facet's presence is the whole claim: a credential may now be live. NOA never held the old
+    // value and must not record the new one, so there is nothing to pair it with.
+    const url = 'https://yopass.noa.internal/#/s/token'
+    const { unmount } = render(
+      <Outcome receipt={receipt({ delta: delta({ deliveredCredential: url }) })} />,
+    )
     expect(screen.getByText('Credential delivered')).toBeTruthy()
-    expect(screen.getByText('https://yopass.noa.internal/#/s/token')).toBeTruthy()
-    expect(screen.getByText('expires_at')).toBeTruthy()
+    expect(screen.getByText(url)).toBeTruthy()
     unmount()
 
-    renderOutcome()
-    expect(screen.queryByText('Credential delivered')).toBeNull()
-    expect(screen.queryByText('Now set')).toBeNull()
+    // The separating case, and it is also the whole of what this component draws now: a receipt
+    // with no credential adds no block at all.
+    const { container } = render(<Outcome receipt={receipt()} />)
+    expect(container.innerHTML).toBe('')
   })
 
-  it('names the cause of a non-answer, and carries none on an answer', () => {
-    const { unmount } = renderOutcome({
-      delta: delta({
-        verification: VERIFICATION_UNAVAILABLE,
-        verificationCause: 'postflight_unavailable',
-      }),
-    })
-    expect(screen.getByText('postflight_unavailable')).toBeTruthy()
-    unmount()
+  it('renders the link once, not once per surface it used to appear on', () => {
+    // It used to be here twice — as this row and again as a `yopass_url` key in the dump of
+    // everything the runner reported. The dump is gone and so is the second copy.
+    const url = 'https://yopass.noa.internal/#/s/token'
+    render(
+      <Outcome
+        receipt={receipt({
+          after: { yopass_url: url, message: 'Password reset.' },
+          delta: delta({ deliveredCredential: url }),
+        })}
+      />,
+    )
 
-    renderOutcome()
-    expect(screen.queryByText('Because')).toBeNull()
+    expect(screen.getAllByText(url)).toHaveLength(1)
   })
+})
 
-  it('puts the exact value behind a rendered one where a caller supplies it', () => {
-    // The card renders a relative time and keeps the absolute one reachable from the same row. The
-    // tooltip belongs to the value, not the label: a hover over "Opened" would explain the wrong
-    // half.
+describe('Fact', () => {
+  it('puts the exact value behind a rendered one on the value, never on the label', () => {
+    // The card renders a relative time and keeps the absolute one reachable from the same row. A
+    // hover over "Opened" would explain the wrong half.
     const { container } = render(
       <Fact label="Opened" value="4 minutes ago" title="2026-09-11T09:00:00+00:00" />,
     )
@@ -327,90 +183,6 @@ describe('Outcome', () => {
     expect(container.querySelector('dd')?.title).toBe('2026-09-11T09:00:00+00:00')
     expect(container.querySelector('dt')?.title).toBe('')
   })
-
-  it('still renders the verdict and what the runner reported', () => {
-    // The section's other job, unchanged by the delta: the envelope's own answer, and the after
-    // half of the receipt as data rather than as the word "done".
-    renderOutcome()
-
-    expect(screen.getByText('Completed')).toBeTruthy()
-    expect(screen.getByText('suspended_at')).toBeTruthy()
-    expect(screen.getByText('2026-09-11T09:31:00+00:00')).toBeTruthy()
-  })
-
-  it('headlines an unmeasured outcome as unknown, beside the state that says why', () => {
-    // The incident this case exists for: a suspension WHM completed, reported to the operator as
-    // a failure because the call timed out on the way back. The envelope's `ok: false` is true —
-    // the call did not return a success — and "did not complete" is the claim NOA cannot make
-    // over a block saying it holds no reading. The top line is the one an operator acts on.
-    const { container } = renderOutcome({
-      ok: false,
-      errorCode: 'timeout',
-      delta: delta({ verification: VERIFICATION_UNAVAILABLE, verificationCause: 'timeout' }),
-    })
-
-    expect(outcomeLine(container)).toBe('Outcome unknown')
-    // Headline and state, asserted on the same render: the word above and the sentence below have
-    // to be answers to the same receipt, and a card whose top line was reconciled by hand could
-    // pass the first of these with the second saying something else.
-    expect(verificationState(container)).toBe(VERIFICATION_UNAVAILABLE)
-    expect(verificationLine(container)).toContain('neither confirmed nor ruled out')
-  })
-
-  it('does not headline a change that was written but never applied as completed', () => {
-    // The same defect mirrored. Here the envelope says the write succeeded, so the old headline
-    // did too — over a sentence explaining that the step which applies it never ran. An operator
-    // told "completed" does not go and run it.
-    const { container } = renderOutcome({
-      ok: true,
-      delta: delta({ verification: VERIFICATION_NOT_IN_FORCE }),
-    })
-
-    expect(outcomeLine(container)).not.toBe('Completed')
-    expect(outcomeLine(container)).toBe('Not in force')
-  })
-
-  it('leaves a verified receipt reading as the success it is', () => {
-    // The negative control, and it is what keeps every spec around it from passing against a
-    // headline that stopped reading the receipt at all and simply printed one word.
-    const { container } = renderOutcome()
-
-    expect(outcomeLine(container)).toBe('Completed')
-  })
-
-  it('headlines a contradicted reading the same way whichever way the call returned', () => {
-    // A contradicted reading arrives with `ok: false` today, where the envelope agrees and there
-    // is nothing to reconcile. The pair is the point: the same delta over a payload reporting
-    // success headlined "completed" above a sentence saying NOA looked afterwards and the change
-    // is not there, which is the same self-contradiction the unmeasured and never-applied cases were
-    // fixed for. A headline that disagrees with the verification block printed beneath it is the
-    // defect, so the headline reads the verification state rather than the call's return.
-    const { container: refused } = renderOutcome({
-      ok: false,
-      errorCode: 'postflight_mismatch',
-      delta: delta({ verification: VERIFICATION_MISMATCH }),
-    })
-    expect(outcomeLine(refused)).toBe('Did not complete')
-    cleanup()
-
-    const { container: reportedOk } = renderOutcome({
-      ok: true,
-      delta: delta({ verification: VERIFICATION_MISMATCH }),
-    })
-    expect(outcomeLine(reportedOk)).not.toBe('Completed')
-    expect(outcomeLine(reportedOk)).toBe('Did not complete')
-    // Asserted on the same render as the headline: the word above and the sentence below have to
-    // be answers to one receipt.
-    expect(verificationState(reportedOk)).toBe(VERIFICATION_MISMATCH)
-    expect(verificationLine(reportedOk)).toContain('the change is not there')
-  })
-
-  it('falls back to the envelope when there is no delta to read', () => {
-    // A receipt with no delta is NOA having no statement about what moved, which is compatible
-    // with a change that landed — but there is nothing here to headline it with, so the envelope
-    // is the only thing there is to report and it reports exactly that.
-    const { container } = renderOutcome({ ok: false, errorCode: 'ssh_failed', delta: null })
-
-    expect(outcomeLine(container)).toBe('Did not complete')
-  })
 })
+
+afterEach(cleanup)

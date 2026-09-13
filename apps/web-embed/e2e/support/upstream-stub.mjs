@@ -42,23 +42,33 @@ const RECEIPT_AFTER = process.env.STUB_RECEIPT_AFTER ?? ''
 /**
  * The card whose values REFLOW, for the oscillation the self-sizing could have shipped.
  *
- * `.factValue` is monospace with `word-break: break-word`, so its line count depends on the width
- * of the card's content box — and that width changes by the width of a scrollbar when the frame
- * grows past the content. That is the loop: taller frame, no overflow, scrollbar removed, box
+ * `.evidenceLines` is monospace with `word-break: break-word`, so its line count depends on the
+ * width of the card's content box — and that width changes by the width of a scrollbar when the
+ * frame grows past the content. That is the loop: taller frame, no overflow, scrollbar removed, box
  * wider, wrapped lines fit, measurement drops, frame shrinks, scrollbar back.
  *
- * The lengths are staggered on purpose, so at least one value sits near a line boundary at the
- * frame's width instead of all of them wrapping comfortably in the middle of a line.
+ * The lengths are staggered on purpose, so at least one line sits near a line boundary at the
+ * frame's width instead of all of them wrapping comfortably in the middle of a row.
+ *
+ * It rides in the evidence block because that is where an unbounded number of long monospace
+ * strings reaches this card now: the arguments block it used to use is not drawn any more, and a
+ * fixture that stayed there would be measuring a surface nobody sees.
  */
 const REFLOW_ID = process.env.STUB_REFLOW_ID ?? ''
 
-function reflowArguments() {
+function reflowEvidence() {
   const unit = 'noa-reflow-probe-value-'
-  const argument = {}
-  for (const [index, length] of [74, 116, 158, 200].entries()) {
-    argument[`payload_${index}`] = unit.repeat(12).slice(0, length)
+  return {
+    headline: 'Unblock an IP — 203.0.113.24',
+    asked: 'remove 203.0.113.24 from the deny lists on alpha',
+    evidence_heading: 'Why it was blocked',
+    server: 'alpha',
+    firewall: {
+      matches: [74, 116, 158, 200].map((length) => unit.repeat(12).slice(0, length)),
+      total_matches: 4,
+      truncated: false,
+    },
   }
-  return argument
 }
 
 /**
@@ -76,11 +86,12 @@ function reflowArguments() {
 const DELTA_ACCOUNT_ID = process.env.STUB_DELTA_ACCOUNT_ID ?? ''
 const DELTA_FIREWALL_ID = process.env.STUB_DELTA_FIREWALL_ID ?? ''
 
-/** A finished run and the receipt it wrote, for the two delta cards. */
-function deltaCardBody(id, toolName, delta, after) {
+/** A finished run and the receipt it wrote, for the two evidence cards. */
+function deltaCardBody(id, toolName, delta, after, evidence) {
   return {
     ...cardBody(id, { pending: false }),
     tool_name: toolName,
+    ...(evidence === undefined ? {} : { evidence }),
     run: {
       tool_run_id: TOOL_RUN_ID,
       status: 'COMPLETED',
@@ -171,9 +182,17 @@ function cardBody(id, { pending }) {
     conversation_ref: '1f0c2e5a-7b41-4d2e-9a3c-0b5d8e6f4a12',
     requester: { email: 'operator@noa.internal', librechat_user_id: 'librechat-user-1' },
     arguments: { server_ref: 'alpha', account: 'acmeco' },
-    // The before-state the card exists to show — a value, so a spec asserting it is
-    // rendered is asserting against something rather than against an empty object.
-    evidence: { suspended: false, domain: 'acme.example' },
+    // What the gate composed for this card: the change in the operator's words, the request
+    // restated as an imperative, and the machine. No `evidence_heading` — the account family reads
+    // structured fields and has no vendor text to head, so the card draws no evidence block and a
+    // spec can assert that it does not.
+    evidence: {
+      headline: 'Suspend an account — acmeco',
+      asked: 'suspend the acmeco account on alpha',
+      server: 'alpha',
+      suspended: false,
+      domain: 'acme.example',
+    },
     created_at: '2026-08-08T09:00:00+00:00',
     expires_at: '2126-08-08T10:00:00+00:00',
     decided_at: pending ? null : '2026-08-08T09:30:00+00:00',
@@ -313,7 +332,8 @@ const server = createServer((request, response) => {
     if (id === REFLOW_ID) {
       json(response, 200, {
         ...cardBody(id, { pending: true }),
-        arguments: reflowArguments(),
+        tool_name: 'whm_firewall_release_and_allow',
+        evidence: reflowEvidence(),
       })
       return
     }
@@ -330,7 +350,18 @@ const server = createServer((request, response) => {
             verification: 'verified',
             changed_fields: [{ field: 'suspended', old: false, new: true }],
           },
-          { ok: true, suspended: true, suspended_at: RECEIPT_AFTER },
+          {
+            ok: true,
+            headline: 'Account suspended — acmeco',
+            // A newline inside the runner's message, because four of the five composing families
+            // spell one that way and this lane is the only one that can prove the card renders it
+            // as a break rather than as a space.
+            // Short enough that both sentences fit on one line at the harness frame's width, so
+            // the second line box below is the newline doing the work rather than a wrap.
+            message: 'acmeco is suspended on alpha.\nSessions were closed.',
+            suspended: true,
+            suspended_at: RECEIPT_AFTER,
+          },
         ),
       )
       return
@@ -370,7 +401,31 @@ const server = createServer((request, response) => {
             new_values: { expires_at: '2026-08-08T11:06:12+07:00', duration_minutes: 60 },
             bound: { total: 20, truncated: true },
           },
-          { ok: true, verdict: 'allowed' },
+          {
+            ok: true,
+            headline: 'IP unblocked — 203.0.113.24',
+            message:
+              'Allowed 203.0.113.24 on alpha for 60 minutes.\n' +
+              'csf-beta.storage-11.jakarta-dc2.internal.acme.example did not answer, so this is ' +
+              'not confirmed.',
+            verdict: 'allowed',
+          },
+          {
+            headline: 'Unblock an IP — 203.0.113.24',
+            asked: 'remove 203.0.113.24 from the deny lists on alpha and allow it for 60 minutes',
+            evidence_heading: 'Why it was blocked',
+            server: 'alpha',
+            firewall: {
+              // Names long enough that a narrow frame has to wrap them, which is the whole point of
+              // this fixture: an evidence line that could not wrap would run off the card.
+              matches: [
+                'DENY  203.0.113.24 # lfd: csf-beta.storage-11.jakarta-dc2.internal.acme.example',
+                'DENY  203.0.113.24 # manual: added by ops during the jakarta-dc2 incident',
+              ],
+              total_matches: 34,
+              truncated: true,
+            },
+          },
         ),
       )
       return
@@ -408,8 +463,14 @@ const server = createServer((request, response) => {
           ? {
               ok: true,
               before: { suspended: false, domain: 'acme.example' },
-              after: { suspended: true, suspended_at: RECEIPT_AFTER },
+              after: {
+                headline: 'Account suspended — acmeco',
+                message: `acmeco is suspended on alpha at ${RECEIPT_AFTER}.`,
+                suspended: true,
+                suspended_at: RECEIPT_AFTER,
+              },
               error_code: null,
+              delta: { identity: { server: 'alpha', username: 'acmeco' }, verification: 'verified' },
             }
           : null,
         seen_cookie: request.headers['cookie'] ?? null,

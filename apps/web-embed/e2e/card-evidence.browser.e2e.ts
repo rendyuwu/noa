@@ -13,13 +13,14 @@ import {
 } from './support/frame'
 
 /**
- * The receipt's delta section, measured in the frame LibreChat serves.
+ * The evidence block and the runner's sentence, measured in the frame LibreChat serves.
  *
- * **Both claims here are layout claims, which is why neither is in the component lane.** jsdom
- * computes no layout at all — no widths, no wrapping, no `max-height`, and
- * `getBoundingClientRect()` returns zeros — so "the card fits" and "the lines do not break" are
- * assertions it cannot make and would silently pass. The component lane holds what the renderer
- * says (`src/app/approvals/[id]/outcome-view.test.tsx`); this file holds what it looks like.
+ * **Every claim here is a layout claim, which is why none of them is in the component lane.** jsdom
+ * computes no layout and no styles at all — no widths, no wrapping, no `max-height`,
+ * `getBoundingClientRect()` returns zeros, and a CSS module resolves to a bare class name — so "the
+ * card fits", "the lines do not break" and "the newline is a break" are assertions it cannot make
+ * and would silently pass. The component lane holds what the renderer says
+ * (`src/app/approvals/[id]/outcome-view.test.tsx`); this file holds what it looks like.
  *
  * Same harness as the other card lanes: the parent origin the app allows framing from, the sandbox
  * string the host was measured applying, and the session cookie. Everything the header of
@@ -59,15 +60,16 @@ async function cardMetrics(framed: Frame) {
 }
 
 /**
- * Every delta line, with the numbers a wrap claim needs.
+ * Every evidence line, with the numbers a wrap claim needs.
  *
  * Selected by the stylesheet's own class rather than by `main li`, because the copy-summary block
- * puts a second list in this document — the rich-text flavour it hands to the clipboard — and a
- * spec that counted both would be measuring markup that is never laid out for reading.
+ * puts a second list in this document — the rich-text flavour it hands to the clipboard, carrying
+ * the very same lines — and a spec that counted both would be measuring markup that is never laid
+ * out for reading.
  */
-async function deltaLines(framed: Frame) {
+async function evidenceLines(framed: Frame) {
   return await framed.evaluate(() =>
-    Array.from(document.querySelectorAll('[class*="deltaLines"] li')).map((line) => {
+    Array.from(document.querySelectorAll('[class*="evidenceLines"] li')).map((line) => {
       const style = getComputedStyle(line)
       return {
         text: line.textContent ?? '',
@@ -112,36 +114,32 @@ async function settledFrame(page: Page): Promise<number> {
   return (await frameBox(page)).applied
 }
 
-test('the whole card fits the frame it asks for, receipt and delta included', async ({ page }) => {
+test('the whole card fits the frame it asks for, evidence block included', async ({ page }) => {
   // The surface has to be worth one screenshot: one shot, no scrolling, at the frame the host
-  // opened with plus whatever the document asked for. The delta section is the newest thing on the
-  // card and the one most able to break that, because it is several blocks that appear at once
-  // when a receipt lands.
-  const card = await frameCard(page, APPROVAL_IDS.deltaAccount, undefined, {
+  // opened with plus whatever the document asked for. The evidence block is the part most able to
+  // break that, because it is an unbounded list of the target system's own lines.
+  const card = await frameCard(page, APPROVAL_IDS.deltaFirewall, undefined, {
     height: HOST_OPENING_HEIGHT,
   })
   await expect(card.locator('main')).toBeVisible()
 
-  // The delta really rendered. Without these two the fit below would be a claim about whatever card
+  // The block really rendered. Without these the fit below would be a claim about whatever card
   // happened to load, and it would pass most convincingly against one that rendered nothing.
   //
-  // Scoped to the delta list for the reason `deltaLines` states: the same sentence also appears in
-  // the copy-summary's off-screen block, which is markup for the clipboard rather than for the
-  // screen, and an unscoped match would resolve to both.
-  await expect(card.locator('[data-noa-verification]')).toHaveCount(1)
-  await expect(
-    card.locator('[class*="deltaLines"] li').filter({ hasText: 'suspended: false → true' }),
-  ).toHaveCount(1)
+  // Scoped for the reason `evidenceLines` states: the copy-summary's off-screen block carries the
+  // very same lines, and an unscoped match would resolve to both.
+  await expect(card.locator('[data-noa-statement]')).toHaveCount(1)
+  await expect(card.locator('[data-noa-evidence] h2')).toHaveText('Why it was blocked')
+  await expect(card.locator('[class*="evidenceLines"] li')).toHaveCount(2)
 
-  // The control for that scoping: the block carries the same field diff, in its own vocabulary.
-  // `renderValue` prints a boolean as `yes`/`no` (`lib/approvals/summary.ts`), so the block says
-  // `no → yes` where the card's list says `false → true` — a line about a boolean rather than
-  // about an account, once it is out of the frame and into a ticket. Asserting the block's own
-  // spelling is what keeps the scoping above honest: the two surfaces really do both carry this
-  // diff, and if the block ever printed the card's spelling again the selector above would
-  // silently start matching twice.
+  // The control for that scoping, and it is the whole point of the shared body: the block really
+  // does carry the same bytes. If it ever stopped, the selectors above would silently start
+  // matching once instead of twice — and the card and the ticket would be two statements of one
+  // measurement, which the parity spec in the component lane exists to refuse.
   await expect(
-    card.locator('[data-noa-copy-block]').filter({ hasText: 'suspended: no → yes' }),
+    card
+      .locator('[data-noa-copy-block]')
+      .filter({ hasText: 'this is the first 2 of 34 lines' }),
   ).toHaveCount(1)
 
   const applied = await settledFrame(page)
@@ -160,23 +158,23 @@ test('the whole card fits the frame it asks for, receipt and delta included', as
   expect(applied).toBeLessThan(CARD_FRAME_POLICY.ceiling)
 })
 
-test('the delta lines stay legible and unbroken in a narrow frame', async ({ page }) => {
-  // The widest answer any runner produces — two backend rows, a silent source named in full, a
-  // resolved expiry and a capped reading — in the narrowest frame an operator plausibly reads it
-  // in. One line per row is the layout decision this measures: nothing here is a column, so a
-  // long value wraps inside its own line instead of pushing a neighbour off the card.
+test('the evidence lines stay legible and unbroken in a narrow frame', async ({ page }) => {
+  // The widest reading any gate produces — a firewall's own deny lines, carrying an internal FQDN
+  // in their comment — in the narrowest frame an operator plausibly reads it in. One line per row
+  // is the layout decision this measures: nothing here is a column, so a long line wraps inside its
+  // own row instead of pushing a neighbour off the card.
   const card = await frameCard(page, APPROVAL_IDS.deltaFirewall, undefined, {
     height: HOST_OPENING_HEIGHT,
   })
   await expect(card.locator('main')).toBeVisible()
-  await expect(card.locator('[data-noa-verification]')).toHaveCount(1)
+  await expect(card.locator('[data-noa-statement]')).toHaveCount(1)
 
   await narrowFrame(page, NARROW_FRAME_WIDTH)
   await settledFrame(page)
 
   const framed = await framedDocument(page)
   const metrics = await cardMetrics(framed)
-  const lines = await deltaLines(framed)
+  const lines = await evidenceLines(framed)
 
   // The frame really is narrow, and the card really is holding the wide fixture.
   expect(metrics.clientWidth).toBeLessThanOrEqual(NARROW_FRAME_WIDTH)
@@ -184,21 +182,20 @@ test('the delta lines stay legible and unbroken in a narrow frame', async ({ pag
   expect(
     lines.some((line) => line.text.includes('csf-beta.storage-11.jakarta-dc2.internal.acme.example')),
   ).toBe(true)
+  // And verbatim really is verbatim: the double space csf printed between the verdict and the
+  // address is still there in the laid-out node, not collapsed by a renderer on the way.
+  expect(lines.some((line) => line.text.includes('DENY  203.0.113.24'))).toBe(true)
 
   // Nothing scrolls sideways: not the card, and not a single line inside it. A line wider than its
   // box is the failure this spec exists for — the end of it is simply not on the card, and an
   // operator reading a hostname that stops halfway cannot tell that from a backend whose row was
   // cut short by NOA.
   //
-  // **What this binds, and what it does not.** Forbidding these lines to wrap — `white-space:
-  // nowrap` on the delta list — makes it fail, at 169px of hidden line. Removing
-  // `word-break: break-word` from the same rule does **not**, and that is a fact about the content
-  // rather than a weak assertion: the fixture's backend names are full internal FQDNs, 55
-  // characters against a 287px line box at 7.8px per character, and they still fit because a
-  // browser already breaks at their hyphens. Every value this section renders in production is
-  // that shape — hostnames, addresses, field names, short verdicts — so the declaration is
-  // defensive against a long opaque value no runner sends today, and no fixture here can bind it
-  // without being invented. It is bound one class over, on `.factValue`, by the reflow lane.
+  // **What this binds.** Forbidding these lines to wrap — `white-space: nowrap` on the evidence
+  // list — makes it fail, at a measured width of hidden line. `word-break: break-word` is bound by
+  // the same fixture now that the lines are the firewall's own: a deny line carrying a 55-character
+  // internal FQDN inside a comment is exactly the string a browser has to be allowed to break
+  // somewhere other than a space.
 
   expect(metrics.scrollWidth - metrics.clientWidth).toBeLessThanOrEqual(1)
   for (const line of lines) {
@@ -215,4 +212,52 @@ test('the delta lines stay legible and unbroken in a narrow frame', async ({ pag
 
   // And it still fits vertically at this width, where every wrapped line has made the card taller.
   expect(metrics.scrollHeight - metrics.clientHeight).toBeLessThanOrEqual(1)
+})
+
+test('a newline in the runner’s sentence is a line break on the card', async ({ page }) => {
+  // **The half jsdom cannot stand in for.** A `\n` inside `message` is the contract — four of the
+  // five composing families spell one that way — and a plain `<p>` collapses it to a space, so the
+  // break the runner wrote never appears. The component lane proves the byte reaches the DOM; only
+  // a real computed style can prove it is rendered.
+  //
+  // The fixture's two sentences fit on one line at this frame's width, so the second line box is
+  // the newline and not a wrap — and switching the declaration off from inside the frame is the
+  // negative control that says so. Without it, "two line boxes" would pass against a paragraph that
+  // was merely too long.
+  const card = await frameCard(page, APPROVAL_IDS.deltaAccount, undefined, {
+    height: HOST_OPENING_HEIGHT,
+  })
+  await expect(card.locator('[data-noa-statement]')).toHaveCount(1)
+
+  const framed = await framedDocument(page)
+  const measured = await framed.evaluate(() => {
+    const statement = document.querySelector('[data-noa-statement]')
+    if (!(statement instanceof HTMLElement)) throw new Error('no statement on the card')
+
+    // A Range over the contents, not the element's own box: a block-level `<p>` has exactly one
+    // border box however many lines it holds, so counting its rects would answer 1 for both halves
+    // of this measurement and the spec would fail for a reason that has nothing to do with the rule.
+    //
+    // Counted by distinct vertical position rather than by rect, because a range spanning a
+    // preserved newline yields more rects than there are lines — the break itself gets one.
+    const lineBoxes = (): number => {
+      const range = document.createRange()
+      range.selectNodeContents(statement)
+      const tops = Array.from(range.getClientRects()).map((rect) => Math.round(rect.top))
+      return new Set(tops).size
+    }
+
+    const whiteSpace = getComputedStyle(statement).whiteSpace
+    const broken = lineBoxes()
+    statement.style.whiteSpace = 'normal'
+    const collapsed = lineBoxes()
+    return { whiteSpace, broken, collapsed, text: statement.textContent ?? '' }
+  })
+
+  expect(measured.text).toContain('\n')
+  expect(measured.whiteSpace).toBe('pre-line')
+  expect(measured.broken).toBe(2)
+  // The control: with the declaration off, the same bytes are one line. So the break above is the
+  // stylesheet doing the work, on a sentence that had room for both halves.
+  expect(measured.collapsed).toBe(1)
 })

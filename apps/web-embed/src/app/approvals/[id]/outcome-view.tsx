@@ -1,56 +1,34 @@
 import type { JSX } from 'react'
 
 import type { ApprovalReceipt } from '@/lib/approvals/card'
-import type { ChangeDelta } from '@/lib/approvals/delta'
-// The headline and the verification sentence live in `lib/` rather than here because the copied
-// summary block prints the same two, and a second copy of a sentence about a measurement is a
-// second answer to "did this work".
-import {
-  RUNNER_MESSAGE_KEY,
-  outcomeText,
-  runnerSentence,
-  verificationText,
-} from '@/lib/approvals/verdict'
+import type { EvidenceBlock } from '@/lib/approvals/evidence'
 
 import styles from './card.module.css'
 
 /**
- * What the change did, once something recorded it.
+ * The pieces a card is drawn from, and the one block only a finished change has.
  *
- * **One component owns the whole section.** The card renders this and holds none of the logic,
- * because every rule below is a rule about a *delta* and a rule about a delta has one place to
- * live. Two renderers for one receipt would be two answers to "what does absence look like", free
- * to drift the moment either is edited.
+ * **What used to be here is not lost, it moved to a plainer sentence.** This section once carried a
+ * verdict word, a verification sentence, the per-backend rows, the named silent sources, the
+ * evidence bound, the error code, the field diffs and a dump of every `after` key the blocks above
+ * had not stated. Each of those facts now reaches an operator somewhere it reads as English:
  *
- * **Two halves, never one word.** An operator reads back the state they authorised against *and*
- * what the change did to it, separately — so a failed change still shows its before-state (the
- * card's own block, above this one), and a successful one shows more than "done". The verdict line
- * is a third thing beside them and not a replacement for either.
+ * - the names of the sources that went silent are **in the runner's own sentence**, named rather
+ *   than counted, composed in Python beside the family that knows them;
+ * - the cap on a capped reading is **on the evidence block's closing line** below;
+ * - the `null` / `()` split — a value NOA never held against one the target system holds as empty —
+ *   is **in the before-clause the runner composes**, for the same reason;
+ * - the four verification states are **in the corner** (`lib/approvals/verdict.ts`), all four still
+ *   distinguishable, including a fifth this build has never heard of.
  *
- * **The delta is the runner's own statement, rendered and never re-derived.** It knows things
- * neither half of the receipt records: which backend answered the confirming read, whether the
- * write landed and the step that puts it into effect did not, whether a credential was delivered.
- * `docs/change-delta.md` is where the shape and the rules a newcomer breaks are written down; this
- * file is the reader that has to hold them at the screen.
+ * Everything that is no longer drawn anywhere on this surface is still in the database, still in
+ * the API's body, and still rendered whole on `/admin`
+ * (`apps/admin-web/src/components/admin/audit/action-request-detail-drawer.tsx` shows the approval
+ * context and all three receipt halves as JSON). Only the surface printing it changed.
  *
- * **Absence is the hard part, and it is three different things.** A facet that is absent renders
- * nothing at all — never "no", never a red cross, because a fabricated negative reads exactly like
- * a measured one. An empty `changedFields` renders an explicit "nothing changed", because that is
- * a claim the runner made and an empty block reads as a rendering failure. And a receipt with no
- * delta at all renders as *that*, never as "nothing changed": a non-answer must not fold into the
- * benign value.
- *
- * `errorCode` is the API's own string, shown verbatim. It is the word an operator will quote to an
- * administrator, and translating it here would make the card and the audit trail disagree.
+ * **Nothing here writes a sentence about a change.** Every string a card shows is the runner's, the
+ * gate's, or the target system's own text; what this file owns is where each one sits.
  */
-
-/** A JSONB value as text. Nested values are shown as JSON rather than dropped. */
-export function factText(value: unknown): string {
-  if (typeof value === 'string') return value
-  // `JSON.stringify` answers `undefined` for `undefined` itself, which would render the word as if
-  // a runner had sent it. A key the payload does not carry is unrecorded, and says so.
-  return JSON.stringify(value) ?? 'unrecorded'
-}
 
 export function Fact({
   label,
@@ -78,315 +56,86 @@ export function Fact({
 }
 
 /**
- * A flat payload as a fact list.
+ * The one paragraph under the heading: the runner's own words, or the gate's restatement of the
+ * request until a run has any.
  *
- * Exported alongside `Fact` so the card's other payload blocks — the arguments, the before-state —
- * can read one definition rather than keeping a second copy of it.
+ * **Byte for byte, and the stylesheet is what makes that possible.** Several runner branches put a
+ * `\n` inside `message` — four of the five composing families spell it that way — and a plain `<p>`
+ * collapses it to a space, so the break the runner wrote simply did not appear. `white-space:
+ * pre-line` on this class renders it, without this component touching the string: splitting the
+ * sentence here would be the renderer deciding where a runner's sentence ends. The copied block
+ * makes the same repair at its own seam (`lib/approvals/summary.ts`), so the two halves of one
+ * measurement agree about it.
+ *
+ * Body font rather than monospace, which is the rule every sentence on this card follows: these are
+ * read, not checked character by character against a target system the way an evidence line is.
  */
-export function FactList({ values }: { values: Record<string, unknown> }): JSX.Element {
-  const entries = Object.entries(values)
+export function Statement({ text }: { text: string }): JSX.Element {
+  return (
+    <p className={styles.verification} data-noa-statement>
+      {text}
+    </p>
+  )
+}
 
-  if (entries.length === 0) return <p className={styles.empty}>Nothing recorded.</p>
+/**
+ * The target system's own text, under the gate's own heading.
+ *
+ * **One block, two surfaces, one source.** The model is `lib/approvals/evidence.ts` and both this
+ * and the copied summary render the strings it resolved — the heading, the verbatim lines, the
+ * closing provenance line, and the cap appended to it only where the reading was capped. Two
+ * builders for one reading would be two answers to what the server said.
+ *
+ * **The lines are monospace and one per row**, sharing the class the delta lines used: these are
+ * the strings an operator checks character by character against the box, and one row per line is
+ * what lets a long one wrap inside itself instead of scrolling the card sideways at a narrow frame
+ * (bound in `e2e/card-evidence.browser.e2e.ts`).
+ *
+ * The two empty states render as the sentence the model chose between, never as an empty list: a
+ * heading over no rows reads as a renderer that broke rather than as a reading that came back
+ * empty, and a reading that came back empty is not one nobody took.
+ */
+export function EvidenceBlockView({ block }: { block: EvidenceBlock }): JSX.Element {
+  return (
+    <section className={styles.section} data-noa-evidence>
+      <h2 className={styles.sectionTitle}>{block.heading}</h2>
+      {block.lines === null ? (
+        <p className={styles.empty}>{block.note}</p>
+      ) : (
+        <ul className={styles.evidenceLines}>
+          {block.lines.map((line, index) => (
+            // The index is part of the key because a target system may hold one line twice — a
+            // firewall reading concatenates two backends' matches, and both can carry the same
+            // rule. Dropping one as a duplicate key would understate the reading.
+            <li key={`${index}-${line}`}>{line}</li>
+          ))}
+        </ul>
+      )}
+      <p className={styles.empty}>{block.closing}</p>
+    </section>
+  )
+}
+
+/**
+ * What a finished change adds to the card that a pending one cannot have.
+ *
+ * One row today, and it is the row with a rule of its own: a credential NOA generated may now be
+ * live, and the link that delivers it belongs on the screen of the operator who asked for it and
+ * **never** in the block they paste into a ticket (`lib/approvals/summary-sections.ts` states the
+ * reason — a reusable link is readable by everyone who reads that ticket until it expires). The
+ * facet's presence is the whole claim: NOA never held the old value and must not record the new
+ * one, so there is nothing to pair it with.
+ *
+ * It used to render here twice — once as this row and again as a `yopass_url` key in the dump of
+ * everything the runner reported. That dump is gone, and with it the second copy.
+ */
+export function Outcome({ receipt }: { receipt: ApprovalReceipt }): JSX.Element | null {
+  const credential = receipt.delta?.deliveredCredential ?? null
+  if (credential === null) return null
 
   return (
     <dl className={styles.facts}>
-      {entries.map(([key, value]) => (
-        <Fact key={key} label={key} value={factText(value)} />
-      ))}
+      <Fact label="Credential delivered" value={credential} />
     </dl>
-  )
-}
-
-/**
- * A labelled block of one-line-per-row facts.
- *
- * **One line per row is the layout decision, and it was made for the frame.** Nothing here has to
- * stay aligned in a column, so nothing here can break when the frame is narrow: a long value wraps
- * inside its own line and the line below it is still a whole row. A two-column table of old
- * against new would have had to either scroll sideways or collapse, and both of those are a
- * receipt an operator cannot read in the box LibreChat opens with.
- */
-function Lines({ label, items }: { label: string; items: string[] }): JSX.Element {
-  return (
-    <div className={styles.deltaGroup}>
-      <h3 className={styles.sectionTitle}>{label}</h3>
-      <ul className={styles.deltaLines}>
-        {items.map((item) => (
-          <li key={item}>{item}</li>
-        ))}
-      </ul>
-    </div>
-  )
-}
-
-/**
- * What moved, per field.
- *
- * `null` and `[]` are different claims and this is where the difference is finally visible.
- * `null` is "NOA cannot say" and renders nothing at all; `[]` is "nothing moved, and NOA has
- * grounds for saying so" and renders a sentence, because an empty block reads as a renderer that
- * broke rather than as a measurement.
- *
- * The rows are the runner's own list of what changed — it is the only party that held both
- * vocabularies, the evidence's and the payload's — so nothing is filtered or re-compared here.
- */
-function ChangedFields({ rows }: { rows: ChangeDelta['changedFields'] }): JSX.Element | null {
-  if (rows === null) return null
-  if (rows.length === 0) return <p className={styles.empty}>Nothing changed.</p>
-
-  return (
-    <Lines
-      label="Fields changed"
-      items={rows.map((row) => `${row.field}: ${factText(row.old)} → ${factText(row.new)}`)}
-    />
-  )
-}
-
-/**
- * What entered and left a list.
- *
- * Each line carries the target system's own spelling, never a tidied one: a mail gateway holds
- * `1.2.3.4` and `1.2.3.4/32` as two lines and one entry, so a receipt that said "removed" without
- * saying which line cannot be checked against the box.
- *
- * An empty pair is the same explicit "nothing changed" as an empty `changedFields`, for a runner
- * that re-read and found the world already as the operator wanted it.
- */
-function ListDelta({ delta }: { delta: NonNullable<ChangeDelta['listDelta']> }): JSX.Element {
-  const moved = [
-    ...delta.added.map((entry) => `added ${entry}`),
-    ...delta.removed.map((entry) => `removed ${entry}`),
-  ]
-
-  return (
-    <>
-      {moved.length === 0 ? (
-        <p className={styles.empty}>Nothing entered or left the list.</p>
-      ) : (
-        <Lines label="List" items={moved} />
-      )}
-      {delta.totalEntries === null ? null : (
-        <dl className={styles.facts}>
-          <Fact label="Entries in the list" value={String(delta.totalEntries)} />
-        </dl>
-      )}
-    </>
-  )
-}
-
-/**
- * One row per backend, and it renders whether or not the envelope said the change worked.
- *
- * A refused change still measured which backend refused it and which ones answered, and those
- * falses are earned by a postflight that answered rather than assumed by a reader. `driven` and
- * `answered` are two facts about two different moments — a backend that ran the commands and then
- * went silent on the confirming read is the case the pair exists for, and one boolean could not
- * say it.
- */
-function Backends({ rows }: { rows: NonNullable<ChangeDelta['backends']> }): JSX.Element {
-  /*
-   * An empty list is a sentence, and it is deliberately not the same as an absent one.
-   *
-   * A heading over no rows reads as a renderer that broke, which is why the sibling facets each
-   * have their own empty wording. Rendering nothing at all would be worse than either: absent
-   * already means "this family has no per-source accounting to make", and `[]` means a change that
-   * drove no backend and heard from none — the empty-gather shape the zero-backend rule exists to
-   * refuse. Folding those two together would hide the one that matters, which is the same mistake
-   * the unanswered fold above is careful not to make in the other direction.
-   *
-   * Not reachable from a live runner today: the mechanism raises before a delta with no backends
-   * can be built. It is on the wire because an empty tuple serialises as `[]`, so the card states
-   * it rather than trusting a producer to keep being careful.
-   */
-  if (rows.length === 0) {
-    return <p className={styles.empty}>No backend was driven, and none answered.</p>
-  }
-
-  return (
-    <Lines
-      label="Backends"
-      items={rows.map((row) => {
-        const said = [
-          row.driven ? 'ran the change' : 'not driven',
-          row.answered ? 'answered' : 'silent',
-        ]
-        if (row.verdict !== null) said.push(`says ${row.verdict}`)
-        if (row.errorCode !== null) said.push(row.errorCode)
-        return `${row.name}: ${said.join(', ')}`
-      })}
-    />
-  )
-}
-
-/**
- * Everything the delta states, in the order an operator reads it.
- *
- * **Identity renders whole, and both spellings of a target survive it.** Where the payload carries
- * the operator's typed target *and* the form the target system normalised it to, both are keys and
- * both are shown: the object that was approved is not literally the string that was typed, and a
- * reader that folded the pair into one would be choosing which of the two an operator gets to
- * check against the box.
- */
-function Delta({ delta }: { delta: ChangeDelta }): JSX.Element {
-  return (
-    <>
-      <FactList values={delta.identity} />
-
-      <p className={styles.verification} data-noa-verification={delta.verification}>
-        {verificationText(delta.verification)}
-      </p>
-      {/* The named code for why there is no measurement. It cannot ride on a verified delta — that
-          is refused where the delta is built — so this is only ever a reason for a non-answer. */}
-      {delta.verificationCause === null ? null : (
-        <dl className={styles.facts}>
-          <Fact label="Because" value={delta.verificationCause} />
-        </dl>
-      )}
-
-      <ChangedFields rows={delta.changedFields} />
-      {delta.listDelta === null ? null : <ListDelta delta={delta.listDelta} />}
-      {delta.backends === null ? null : <Backends rows={delta.backends} />}
-
-      {/*
-       * Named, never counted: "one backend was silent" does not say which server to go and look at.
-       *
-       * **Three states, two renderings, and that is deliberate here.** A non-empty list names the
-       * sources. `[]` is every source having answered and `null` is a family with no per-source
-       * accounting to make — one source, so there is no list to keep — and neither of those is a
-       * silent source, so neither has anything to name. What the partial-answer rule forbids is a
-       * source that could not answer going unnamed, and that is the non-empty case alone.
-       *
-       * This is where the card and the copied block deliberately differ, and the difference is the
-       * audience: `lib/approvals/summary.ts` prints all three, because a ticket read a year later
-       * wants to know whether the accounting was even taken, and an absent one is a hole worth
-       * stating there. On a card being read to make one decision now, a line saying nobody was
-       * silent is a line that costs a screenshot's worth of height to say nothing happened.
-       *
-       * The reading rests on something this side does not enforce: that no runner publishes `null`
-       * while a source *was* silent. Both firewall runners fill the facet on every branch and the
-       * single-source families omit it, so it holds today — but it is their property, not this
-       * component's, and nothing here would catch it changing.
-       */}
-      {delta.unanswered === null || delta.unanswered.length === 0 ? null : (
-        <p className={styles.verification}>
-          No answer from: {delta.unanswered.join(', ')}. Silence is not evidence of absence.
-        </p>
-      )}
-
-      {/* A reading that was capped ships its own bound, or "this address was blocked and is now
-          allowed" reads as a statement about every line the firewall holds for it. */}
-      {delta.bound === null ? null : (
-        <dl className={styles.facts}>
-          <Fact
-            label="Reading covered"
-            value={
-              delta.bound.truncated
-                ? `${delta.bound.total} lines, and the reading was cut short`
-                : `${delta.bound.total} lines, all of them`
-            }
-          />
-        </dl>
-      )}
-
-      {/* The slot nothing pairs with: NOA never held the old value and must not record the new
-          one, so the facet's presence is the whole claim — a credential may now be live. */}
-      {delta.deliveredCredential === null ? null : (
-        <dl className={styles.facts}>
-          <Fact label="Credential delivered" value={delta.deliveredCredential} />
-        </dl>
-      )}
-
-      {/* A new value with no before twin — a window resolved into an absolute expiry. Not a field
-          change, because there was nothing there to change. */}
-      {delta.newValues === null ? null : (
-        <div className={styles.deltaGroup}>
-          <h3 className={styles.sectionTitle}>Now set</h3>
-          <FactList values={delta.newValues} />
-        </div>
-      )}
-    </>
-  )
-}
-
-/**
- * The `after` keys the blocks above already stated, computed off the delta being rendered.
- *
- * **Never a hand-kept list.** These key names come out of whichever of the runners answered, so a
- * set typed in here would be five vocabularies copied into a file with nothing reading it against
- * them — it would print a duplicate row the day a runner renames a field, and drop a real one the
- * day it adds one. Every name below is read off the same delta this section renders, so there is
- * nothing to keep in step.
- *
- * **`message` follows the sentence and nothing else.** `after` is `Record<string, unknown>`, so a
- * runner answering `message: null` or a number is representable and the sentence declines to render
- * it; a filter that dropped the key unconditionally would take that value off the card entirely.
- * The `delete` is the load-bearing half of that: `message` is also a name a delta may carry in
- * `identity` or in `changedFields`, and either would otherwise filter out the row by the other arm
- * of the same condition.
- *
- * `ok`, `status` and `verified` stay in the block on purpose. They are stated above as sentences
- * rather than as keys, so no key-name filter reaches them, and three restatements of one fact are
- * cheaper than an operator who cannot find the byte the runner actually sent.
- */
-function reported(receipt: ApprovalReceipt, sentenceShown: boolean): Record<string, unknown> {
-  const delta = receipt.delta
-  const stated = new Set([
-    ...Object.keys(delta?.identity ?? {}),
-    ...(delta?.changedFields ?? []).map((row) => row.field),
-    ...Object.keys(delta?.newValues ?? {}),
-  ])
-
-  if (sentenceShown) stated.add(RUNNER_MESSAGE_KEY)
-  else stated.delete(RUNNER_MESSAGE_KEY)
-
-  return Object.fromEntries(Object.entries(receipt.after).filter(([key]) => !stated.has(key)))
-}
-
-export function Outcome({ receipt }: { receipt: ApprovalReceipt }): JSX.Element {
-  // One variable, read by the paragraph and by the key list under it: whatever the sentence did
-  // with `message` is exactly what the list must do with it. The rule for what counts as a
-  // sentence lives in `lib/approvals/verdict.ts` because the copied summary block asks the same
-  // question, and when the two spelled it out separately they disagreed on whitespace — a blank
-  // paragraph is invisible, and the key list then dropped the row because the paragraph had
-  // rendered, so the value was on neither surface.
-  const sentence = runnerSentence(receipt.after)
-
-  return (
-    <section className={styles.section}>
-      <h2 className={styles.sectionTitle}>What the change did</h2>
-      <dl className={styles.facts}>
-        <Fact label="Outcome" value={outcomeText(receipt.delta, receipt.ok)} />
-        {/*
-         * "Error code", not "Reason". In this repository a reason is one thing — the justification
-         * an operator types at decision time, which the model never authors, relays or sees — and
-         * the admin surface renders that field now. One word must not name two facts. The string
-         * itself is the API's and is unchanged.
-         */}
-        {receipt.errorCode === null ? null : <Fact label="Error code" value={receipt.errorCode} />}
-      </dl>
-
-      {/* The runner's own sentence, outside the fact list and in the body font: it is a sentence
-          and not a value, so it is not something an operator checks character by character against
-          a target system. It sits between the verdict word and the delta because it is what the
-          word above means, said in the runner's own terms at the moment the change ran. */}
-      {sentence === null ? null : <p className={styles.verification}>{sentence}</p>}
-
-      {receipt.delta === null ? (
-        // Not "nothing changed", and the difference is the whole rule: this is NOA having no
-        // statement about what moved, which is compatible with a change that landed. The named
-        // cause, when there is one, is the error code above.
-        <p className={styles.empty}>
-          No delta recorded. Nothing states what moved, which is not the same as nothing having
-          changed.
-        </p>
-      ) : (
-        <Delta delta={receipt.delta} />
-      )}
-
-      <div className={styles.deltaGroup}>
-        <h3 className={styles.sectionTitle}>Reported by the runner</h3>
-        <FactList values={reported(receipt, sentence !== null)} />
-      </div>
-    </section>
   )
 }

@@ -1,9 +1,8 @@
-'use client'
-
 import { useState } from 'react'
 
 import { type DecisionKind, submitDecision } from '@/lib/approvals/decide'
 import { type DecisionOutcome, describeDecision } from '@/lib/approvals/outcome'
+import { formatRemaining } from '@/lib/format/jakarta-time'
 
 // `.actions` and `.button` live with the notice states since the table surface hoisted them;
 // the two
@@ -15,9 +14,17 @@ import styles from './card.module.css'
 /**
  * The reason box and the two buttons.
  *
- * **The only client component on this card.** Everything else is rendered on the server, so what
- * ships to the browser is this: two `<button type="button">` elements, a `<textarea>`, and one
- * `fetch`.
+ * **No `'use client'` on this file, and its absence is deliberate rather than an omission.** The
+ * only importer is `card-view.tsx`, which carries the directive itself, so this module is already
+ * in the client bundle and a second directive does nothing at runtime. What it *did* do was declare
+ * this file a client entry — a server/client boundary — and a boundary's props must be
+ * serializable, which `onRecorded` is not and cannot be: it is the card handing down its own
+ * reader. The directive is therefore a claim about this file that is not true, and the Next
+ * TypeScript plugin was right to say so. The real boundary is `card-view.tsx`, whose props are four
+ * serializable values.
+ *
+ * The failure this trades for is loud and immediate: a Server Component importing this would fail
+ * at build on `useState`, naming the hook and the file.
  *
  * **There is no `<form>` in this tree, and that is load-bearing.** The sandbox LibreChat
  * renders the frame under omits `allow-forms` (measured live at the render gate), so a native
@@ -33,11 +40,23 @@ import styles from './card.module.css'
 export function DecisionControls({
   actionRequestId,
   csrf,
+  expiresAt,
   onRecorded,
 }: {
   actionRequestId: string
   /** A live token. The server renders this component only when there is one. */
   csrf: string
+  /**
+   * When the approval window closes, so the sentence under the buttons can say how long there is.
+   *
+   * **Here rather than in the provenance block, and that placement is the point.** Two clocks used
+   * to sit on one screen with nothing separating them — `Expires in 43 minutes` in the provenance
+   * rows and a `duration_minutes` of 60 in the arguments — and they are not the same clock. This
+   * one is how long there is to *answer*; the other is the window the firewall entry itself gets,
+   * and the gate states that one inside its `asked` sentence in the minutes the schema takes.
+   * Stating this one beside the buttons is what names it as the clock the buttons are on.
+   */
+  expiresAt: string
   /**
    * Re-reads the card. Called once, after a decision the API recorded.
    *
@@ -52,6 +71,10 @@ export function DecisionControls({
   const [reason, setReason] = useState('')
   const [pending, setPending] = useState<DecisionKind | null>(null)
   const [outcome, setOutcome] = useState<DecisionOutcome | null>(null)
+  // `null` for an expiry this app cannot read, and then no sentence at all: an approval window
+  // nobody can parse is not a window of any particular length, and inventing one is worse than
+  // saying nothing. Re-read on every render, which the card's own poll re-arms every 15 seconds.
+  const remaining = formatRemaining(expiresAt)
 
   // A recorded decision is terminal for this card: exactly one `pending → decided` transition
   // exists, so leaving the buttons live afterwards would only ever earn a 409. A *refusal*
@@ -119,6 +142,10 @@ export function DecisionControls({
           {pending === 'deny' ? 'Denying…' : 'Deny'}
         </button>
       </div>
+
+      {remaining === null ? null : (
+        <p className={styles.outcome}>{`You have ${remaining} to answer.`}</p>
+      )}
 
       {outcome ? (
         <p className={styles.outcome} role="status">

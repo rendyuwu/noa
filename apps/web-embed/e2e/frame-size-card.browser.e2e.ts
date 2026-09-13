@@ -95,7 +95,7 @@ test('a card whose values re-wrap settles instead of oscillating', async ({ page
   // The loop this could have shipped is scrollbar-mediated: a frame that grows until the content
   // fits REMOVES the scrollbar, which widens the content box by the scrollbar's width, which lets
   // wrapped lines fit, which shrinks the measurement, which shrinks the frame, which brings the
-  // scrollbar back. `.factValue` is monospace with `word-break: break-word` — content that gains or
+  // scrollbar back. `.evidenceLines` is monospace with `word-break: break-word` — content that gains or
   // loses a whole line on a 15px width change — and this fixture is a card full of it.
   //
   // Two instruments, and what is asserted here is that neither of them was needed as a *cap*: the

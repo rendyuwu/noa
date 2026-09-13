@@ -30,9 +30,19 @@ function stubFetch(response: Response): SeenRequest[] {
   return seen
 }
 
+/** Far enough ahead of any clock this suite runs under that the window is open in every case. */
+const EXPIRES = '2099-01-01T00:00:00+00:00'
+
 /** The component under test, with the card's re-read stubbed out — see the last case for why. */
-function mount(onRecorded: () => Promise<unknown> = () => Promise.resolve()) {
-  return render(<DecisionControls actionRequestId={ID} csrf={CSRF} onRecorded={onRecorded} />)
+function mount(onRecorded: () => Promise<unknown> = () => Promise.resolve(), expiresAt = EXPIRES) {
+  return render(
+    <DecisionControls
+      actionRequestId={ID}
+      csrf={CSRF}
+      expiresAt={expiresAt}
+      onRecorded={onRecorded}
+    />,
+  )
 }
 
 function type(reason: string): void {
@@ -209,5 +219,36 @@ describe('DecisionControls', () => {
     expect(onRecorded).toHaveBeenCalledTimes(1)
     // The re-read is the card's GET, never a second decision: one POST for one click.
     expect(seen).toHaveLength(1)
+  })
+
+  it('states how long there is to answer, beside the buttons and nowhere else', () => {
+    // **Which clock this is, is the whole point of the placement.** `Expires in 43 minutes` used to
+    // sit in the provenance rows while a `duration_minutes` of 60 sat in the arguments, on one
+    // screen, with nothing saying they were different clocks. This one is the approval window, and
+    // it is stated where the decision is made.
+    // The clock is pinned rather than read: a span against a live clock is a suite that fails at a
+    // month boundary on a slow machine.
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-08T09:17:00+00:00'))
+    const { container } = mount(undefined, '2026-08-08T10:00:00+00:00')
+
+    expect(screen.getByText('You have 43 minutes to answer.')).toBeTruthy()
+    // Inside the block the buttons are in, not floating above the card.
+    expect(container.querySelector('[class*="actions"]')?.parentElement?.textContent).toContain(
+      'You have 43 minutes to answer.',
+    )
+    vi.useRealTimers()
+  })
+
+  it('prints no window sentence for an expiry it cannot read', () => {
+    // The separating case. The card parser's fallback for a missing string field is `''`, so this
+    // is reachable from a body the API is free to send — and a window nobody can parse is not a
+    // window of any particular length. Saying nothing beats inventing one.
+    mount(undefined, '')
+
+    expect(screen.queryByText(/to answer\./)).toBeNull()
+    // And the buttons are still there, so the absence above is a sentence missing rather than the
+    // whole block failing to render.
+    expect(screen.getByRole('button', { name: /approve/i })).toBeTruthy()
   })
 })

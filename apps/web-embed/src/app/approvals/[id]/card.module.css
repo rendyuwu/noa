@@ -27,9 +27,10 @@
    * self-sizing oscillation rather than damping it (`components/frame-sizer.tsx`): the card asks
    * for a frame as tall as its content, the taller frame REMOVES the scrollbar, that widens the
    * content box by ~15px, wrapped lines fit, the measurement shrinks, the frame shrinks, and the
-   * scrollbar comes back. `.factValue` is monospace with `word-break: break-word`, which is exactly
-   * the content that gains or loses a whole line on a 15px width change. With the gutter reserved
-   * the width term is constant and the reflow step never happens.
+   * scrollbar comes back. `.evidenceLines` is monospace with `word-break: break-word` and holds an
+   * unbounded number of the target system's own lines, which is exactly the content that gains or
+   * loses a whole line on a 15px width change. With the gutter reserved the width term is constant
+   * and the reflow step never happens.
    *
    * It costs 15px of content width on every platform, and on one whose scrollbars are overlays —
    * this lane's headless browser, and macOS by default — it buys nothing for that, because a
@@ -50,19 +51,35 @@
 }
 
 /*
- * The heading is now the humanised tool label, with the raw name in its `title`.
+ * The heading is the change in the operator's words, with the raw tool name in its `title`.
  *
  * So the monospace and the `break-all` that used to be here have both been dropped, and neither is
  * a style preference: both existed to make a raw identifier legible — `whm_firewall_release_and_allow`
- * reads as one unbroken token and has to be allowed to break anywhere. "Suspend Account" is prose,
- * and `break-all` on prose breaks it mid-word at a narrow frame. `break-word` still allows a break
- * where a long label would otherwise overflow, and only there.
+ * reads as one unbroken token and has to be allowed to break anywhere. "Unblock an IP —
+ * 203.0.113.24" is prose, and `break-all` on prose breaks it mid-word at a narrow frame.
+ * `break-word` still allows a break where a long headline would otherwise overflow, and only there.
  */
 .tool {
   margin: 0;
   font-size: 1rem;
   font-weight: 600;
   word-break: break-word;
+}
+
+/*
+ * The corner: the decision and what the change then did on the left, the machine on the right.
+ *
+ * `space-between` rather than a grid, because the right-hand item is absent on a card whose gate
+ * named no machine — and a grid column reserved for it would leave a gap that reads as a value
+ * that failed to render. `baseline` so the two sit on one line when both are there, and `wrap` so
+ * a long machine name drops under the verdict instead of squeezing it at a narrow frame.
+ */
+.corner {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--noa-space-2);
 }
 
 .status {
@@ -182,35 +199,33 @@
 }
 
 /*
- * The delta blocks inside "what the change did" (`outcome-view.tsx`).
+ * The target system's own lines, inside the evidence block (`outcome-view.tsx`).
  *
- * A heading and its rows, spaced like the fact lists above so the section reads as one thing
- * rather than as a stack of boxes. No border of its own: these already sit inside `.section`, and
- * nesting a second frame inside it costs vertical space the frame LibreChat opens with does not
- * have.
+ * One row per line, and never a column that has to stay aligned. A chat column is narrower than the
+ * width these were measured at, and a long line here wraps inside its own row instead of pushing a
+ * neighbour off the card. A line that could not wrap would scroll the card sideways, and the
+ * browser lane holds that: forbidding the wrap makes `e2e/card-evidence.browser.e2e.ts` fail at a
+ * measured width of hidden line.
+ *
+ * Monospace, unlike every sentence on this card, and that is the distinction the two classes draw:
+ * these are the strings an operator checks character by character against the box.
+ *
+ * `word-break` matches `.factValue`. It is bound by the narrow-frame lane above, which stages a
+ * firewall line long enough to need it.
  */
-.deltaGroup {
-  display: flex;
-  flex-direction: column;
-  gap: var(--noa-space-1);
-}
-
-/*
- * One row per line, and never a column that has to stay aligned.
- *
- * `field: old to new` is one string per changed field for the frame's sake: a chat column is
- * narrower than the width these were measured at, and a long value here wraps inside its own line
- * instead of pushing a neighbouring column off the card. A line that could not wrap would scroll
- * the card sideways, and the browser lane holds that: forbidding the wrap makes
- * `e2e/card-delta.browser.e2e.ts` fail at 169px of hidden line.
- *
- * `word-break` matches `.factValue` and is **not** bound by a lane here, deliberately stated
- * rather than left to read as covered: every value this section renders today is a hostname, an
- * address, a field name or a short verdict, and a browser already breaks those at their dots and
- * hyphens. The declaration is for a long opaque value — a field whose new value is a token — which
- * no runner sends yet and which no fixture can stage without being invented.
- */
-.deltaLines {
+.evidenceLines {
+  /*
+   * `pre-line` for the same reason `.verification` carries it, and it is the half that was
+   * missing. The copied block splits every section's lines on `\n` at one seam, including these
+   * verbatim server lines — so without this declaration a newline inside one match line becomes
+   * a row in the paste and a space on the card, which is exactly the asymmetry between the two
+   * surfaces that seam was added to remove.
+   *
+   * Not reachable from today's writers: csf's output is line-split upstream and a PMG `cidr`
+   * cannot hold one. Declared anyway, because which of those holds is the producer's property
+   * and this side would render the disagreement silently.
+   */
+  white-space: pre-line;
   display: flex;
   flex-direction: column;
   gap: var(--noa-space-1);
@@ -226,15 +241,27 @@
  * Every paragraph on the card that is a sentence rather than a value.
  *
  * Body font rather than monospace, which is the whole rule: these are read, not checked character
- * by character against a target system the way an identity pair or a field diff is. Stated as the
- * rule and not only as a list, because the list has already gone stale once — it named two users
- * while there were three.
+ * by character against a target system the way an evidence line is. Stated as the rule and not only
+ * as a list, because the list has already gone stale once — it named two users while there were
+ * three.
  *
- * Three today, all in `outcome-view.tsx`: the verification sentence, the named sources that did not
- * answer, and the runner's own message. Hand-kept and bound to nothing — a fourth `styles.verification`
- * added over there reddens nothing here, so the rule above is what a fourth one has to satisfy.
+ * One today (`outcome-view.tsx`, `Statement`): the runner's own sentence, or the gate's restatement
+ * of the request until a run has written one. Hand-kept and bound to nothing — a second
+ * `styles.verification` added over there reddens nothing here, so the rule above is what it has to
+ * satisfy.
+ *
+ * **`pre-line` is load-bearing, not typography.** Several runner branches put a `\n` inside
+ * `message` and four of the five composing families spell it that way, so the newline is the
+ * contract. A plain `<p>` collapses it to a space and the break the runner wrote never appears at
+ * all; this renders it without any component splitting the string, which would be the renderer
+ * deciding where a runner's sentence ends. The copied block repairs the same byte at its own seam
+ * (`lib/approvals/summary.ts`), so the card and the paste agree about it.
+ *
+ * It collapses runs of spaces exactly as `normal` does, so a runner's own leading and trailing
+ * spaces are treated the way they always were.
  */
 .verification {
   margin: 0;
   font-size: 0.8125rem;
+  white-space: pre-line;
 }

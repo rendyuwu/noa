@@ -128,16 +128,19 @@ describe('CardView', () => {
     )
     renderCardView(load(approvedBody()))
 
-    expect(screen.getByText('STARTED')).toBeTruthy()
+    // The corner is what the loop moves, and the pair it moves between is the one the corner exists
+    // for: a run still in flight, and a run that finished having recorded nothing. Printing the
+    // second over the first tells a reader there is nothing more to wait for while there is.
+    expect(screen.getByText('Approved · running', CARD_ONLY)).toBeTruthy()
     expect(polls.calls).toBe(0)
 
     await tick(POLL_INTERVAL_RUN_MS)
 
     expect(polls.calls).toBe(1)
-    expect(screen.getByText('COMPLETED')).toBeTruthy()
-    // The envelope the poll carried is on the row and off the card: the run block stopped printing
-    // `result_summary`, which is a JSON dump of the payload the receipt renders as rows instead.
-    // The fixture still sends it, so this is the value arriving and not being printed.
+    expect(screen.getByText('Approved · nothing recorded', CARD_ONLY)).toBeTruthy()
+    // The envelope the poll carried is on the row and off the card: `result_summary` is a JSON dump
+    // of the payload, and what an operator reads instead is the sentence the runner composed. The
+    // fixture still sends it, so this is the value arriving and not being printed.
     expect(screen.queryByText(RESULT, CARD_ONLY)).toBeNull()
 
     // The half that matters: a terminal run ends the loop.
@@ -218,15 +221,15 @@ describe('CardView', () => {
     })
 
     expect(polls.calls).toBe(2)
-    // The heading is the humanised label now, with the raw name in its `title`; what this asserts
-    // is unchanged, that a card came back rather than a notice.
-    expect(screen.getByText('Suspend Account')).toBeTruthy()
-    expect(screen.getByText('STARTED')).toBeTruthy()
+    // The heading is the gate's own headline now, with the raw tool name in its `title`; what this
+    // asserts is unchanged, that a card came back rather than a notice.
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Suspend an account — acmeco')
+    expect(screen.getByText('Approved · running', CARD_ONLY)).toBeTruthy()
 
     // And the loop is live again — the retry is not a one-shot read that leaves a static card.
     await tick(POLL_INTERVAL_RUN_MS)
     expect(polls.calls).toBe(3)
-    expect(screen.getByText('COMPLETED')).toBeTruthy()
+    expect(screen.getByText('Approved · nothing recorded', CARD_ONLY)).toBeTruthy()
   })
 
   it('keeps the 401 state when a retry cannot reach NOA', async () => {
@@ -283,19 +286,19 @@ describe('CardView', () => {
 
     await tick(POLL_INTERVAL_RUN_MS)
     expect(polls.calls).toBe(1)
-    // Still a card and not a notice: the heading is the humanised label, raw name in `title`.
-    expect(screen.getByText('Suspend Account')).toBeTruthy()
-    expect(screen.getByText('STARTED')).toBeTruthy()
+    // Still a card and not a notice, and still watching: the heading is the gate's headline.
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Suspend an account — acmeco')
+    expect(screen.getByText('Approved · running', CARD_ONLY)).toBeTruthy()
 
     await tick(POLL_INTERVAL_RUN_MS)
     expect(polls.calls).toBe(2)
-    expect(screen.getByText('COMPLETED')).toBeTruthy()
+    expect(screen.getByText('Approved · nothing recorded', CARD_ONLY)).toBeTruthy()
   })
 
-  it('renders both halves of a finished change, never one "done"', async () => {
-    // DECISIONS section 6.5, at the render: the state the operator authorised against and what the change
-    // did to it are two blocks, and the fixture's halves share no value — so a card that showed one
-    // of them twice, or collapsed the pair into the verdict word, goes red here.
+  it('replaces the request with the answer once a receipt lands', async () => {
+    // What the poll is actually waiting for. Until a receipt exists the card states the request, in
+    // the gate's imperative; the receipt is what lets it state what happened, in the runner's own
+    // words. A card that showed one of them for both states would pass every "it polled" assertion.
     stubPolls(() =>
       Response.json(
         approvedBody({ status: 'COMPLETED', result_summary: RESULT }, receiptBody()),
@@ -303,33 +306,29 @@ describe('CardView', () => {
     )
     renderCardView(load(approvedBody()))
 
-    // Before the receipt lands there is no outcome section at all — an empty one over a change
-    // nobody has recorded would be a claim NOA cannot make.
-    expect(screen.queryByText(/what the change did/i, CARD_ONLY)).toBeNull()
+    expect(screen.getByText(/^Asked: /, CARD_ONLY)).toBeTruthy()
+    expect(screen.queryByText('acmeco is suspended on alpha.', CARD_ONLY)).toBeNull()
 
     await tick(POLL_INTERVAL_RUN_MS)
 
-    expect(screen.getByText(/what the change did/i)).toBeTruthy()
-    expect(screen.getByText('Completed')).toBeTruthy()
-    // The after-state, as data rather than as a word.
-    expect(screen.getByText('suspended_at')).toBeTruthy()
-    expect(screen.getByText('2026-08-08T09:31:00+00:00')).toBeTruthy()
-    // And the before-state still on the card beside it.
-    expect(screen.getByText(/before state/i)).toBeTruthy()
-    expect(screen.getByText('domain')).toBeTruthy()
-    expect(screen.getByText('acme.example')).toBeTruthy()
+    expect(screen.getByText('acmeco is suspended on alpha.', CARD_ONLY)).toBeTruthy()
+    expect(screen.queryByText(/^Asked: /, CARD_ONLY)).toBeNull()
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Account suspended — acmeco')
   })
 
-  it('keeps the before-state on a change that failed, and names the cause', async () => {
-    // The one case where an operator most needs the half a "done"-only card would drop.
+  it('states a change that did not run in the runner’s own words, and in the corner', async () => {
+    // The one case an operator most needs to read plainly. The error code is off this surface and
+    // on the `/admin` row; what reaches the operator is the sentence the runner composed and a
+    // corner that does not claim the change happened.
     stubPolls(() =>
       Response.json(
         approvedBody(
           { status: 'FAILED', result_summary: 'NOA cannot run this change.' },
           receiptBody({
             ok: false,
-            after: { ok: false, error_code: 'ssh_sudo_required', message: 'refused' },
+            after: { ok: false, error_code: 'ssh_sudo_required', message: 'NOA could not use sudo on alpha, so nothing was changed.' },
             error_code: 'ssh_sudo_required',
+            delta: null,
           }),
         ),
       ),
@@ -338,19 +337,11 @@ describe('CardView', () => {
 
     await tick(POLL_INTERVAL_RUN_MS)
 
-    expect(screen.getByText('Did not complete')).toBeTruthy()
-    expect(screen.getAllByText('ssh_sudo_required').length).toBeGreaterThan(0)
-    expect(screen.getByText(/before state/i)).toBeTruthy()
-    expect(screen.getByText('acme.example')).toBeTruthy()
-  })
-
-  it('shows the before-state once, not once per source', async () => {
-    // `evidence` and `receipt.before` are the same payload — the executor's writer copies it — so rendering
-    // both would put one fact on the card twice under two headings.
-    renderCardView(load(approvedBody({ status: 'COMPLETED' }, receiptBody())))
-
-    expect(screen.getAllByText('domain', CARD_ONLY)).toHaveLength(1)
-    expect(screen.getAllByText('acme.example', CARD_ONLY)).toHaveLength(1)
+    expect(screen.getByText('Approved · did not run', CARD_ONLY)).toBeTruthy()
+    expect(
+      screen.getByText('NOA could not use sudo on alpha, so nothing was changed.', CARD_ONLY),
+    ).toBeTruthy()
+    expect(screen.queryByText('ssh_sudo_required', CARD_ONLY)).toBeNull()
   })
 
   it('stops watching a run that never moves, and says so', async () => {

@@ -156,7 +156,7 @@ test('Try again picks the session up without leaving the card URL', async ({
   // reason the provenance spec states: the label is what an operator reads and the raw tool name
   // is what they quote to an administrator, so swapping the assertion to the label alone would
   // stop watching the string that has to survive.
-  await expect(card.locator('h1')).toHaveText('Suspend Account')
+  await expect(card.locator('h1')).toHaveText('Suspend an account — acmeco')
   await expect(card.locator('h1')).toHaveAttribute('title', 'whm_suspend_account')
   await expect(card.getByRole('button', { name: 'Approve' })).toBeVisible()
 
