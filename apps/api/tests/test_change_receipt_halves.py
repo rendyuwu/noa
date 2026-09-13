@@ -15,8 +15,8 @@ fixture asserting a property of itself is exactly what failed here. A tool that 
 key its runner also answers with does not need the fixture updated to keep passing, and that is
 the drift this has to catch.
 
-Two things the same seven-tool harness answers, and the second is here because building it twice
-is the only alternative:
+Three things the same seven-tool harness answers, and the second and third are here because
+building the lane twice is the only alternative:
 
 - **the halves cannot be diffed** — the keys they share carry equal values, so no comparison of
   them yields a change, and no field the delta reports as moved is among those keys.
@@ -32,102 +32,99 @@ is the only alternative:
   largest *once a delta is folded in*, because it fills four facets in one answer, and that is
   what the pin is actually guarding. Both orderings are asserted below, and they no longer name
   the same tool, which is the whole reason both are asserted.
+- **four rules about the words on the card, each of which was read by nothing.** Both halves name
+  the change in the operator's words; a runner's before-clause starts its own line instead of
+  running into the sentence ahead of it; the four spellings of that clause stay four; and the
+  optional heading over a target system's own text is carried by exactly the tools that ship a
+  block to head. A docstring is not a check — the before-clause's newline rule was written down in
+  `proxmox_nic_runner` *because* that family had just shipped a space on every site it had, with
+  nothing to catch the next family spelling it the same way. Three of the four are claims across
+  families rather than about one, so they land on the harness that already drives every family
+  rather than in seven per-tool files.
 
 `test_every_change_tool_is_covered_here` reads the case list against `build_change_runners`, so
 the eighth CHANGE tool fails here until somebody states its halves rather than quietly not being
-covered.
+covered — and the two rules parametrised over `CASES` arrive with it for the same reason.
+
+**The harness itself lives in `support/change_halves.py`.** It moved when the four card-text rules
+above took this file past the 900-line cap `test_config.py` enforces over `git ls-files`. What
+moved is the apparatus — `Halves`, the lane per tool, and `CASES` — and no claim moved with it: a
+cap is met by splitting, never by trimming an assertion to make a number go down. Adding an eighth
+lane is an edit there; stating what has to be true of it is an edit here.
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
-from typing import Any
-from uuid import uuid4
+from collections.abc import Callable
+from typing import Any, cast
 
 import pytest
 
-from core.approvals.context import arguments_from_context, evidence_from_context
-from core.approvals.delta import ChangeDelta
+from core.approvals.context import evidence_from_context
+from core.approvals.delta import FieldChange
 from core.approvals.execution import (
-    RECEIPT_AFTER_KEY,
-    RECEIPT_BEFORE_KEY,
     RECEIPT_DELTA_KEY,
-    ChangeExecutionRequest,
-    ChangeRunner,
-    build_receipt,
 )
 from core.audit.summaries import MAX_RESULT_SUMMARY_LENGTH, result_summary
-from noa_api.mcp_tools.change_gate import EVIDENCE_HEADLINE
+from core.integrations.whm.accounts import account_suspension_state
+from noa_api.mcp_tools.change_gate import (
+    EVIDENCE_HEADING,
+    EVIDENCE_HEADLINE,
+    REQUIRED_EVIDENCE_KEYS,
+)
 from noa_api.mcp_tools.change_runners import build_change_runners
-from noa_api.mcp_tools.pmg_whitelist import TOOL_PMG_WHITELIST
-from noa_api.mcp_tools.pmg_whitelist_runner import build_pmg_whitelist_runner
-from noa_api.mcp_tools.proxmox_nic import TOOL_PROXMOX_VM_NIC
-from noa_api.mcp_tools.proxmox_nic_runner import build_proxmox_vm_nic_runner
+from noa_api.mcp_tools.pmg_whitelist import (
+    ACTION_REMOVE,
+    EVIDENCE_MATCHES,
+)
+from noa_api.mcp_tools.proxmox_nic import (
+    ACTION_DISABLE,
+    ACTION_ENABLE,
+    EVIDENCE_NIC,
+    TOOL_PROXMOX_VM_NIC,
+    link_state_for,
+)
+from noa_api.mcp_tools.proxmox_nic_runner import _before_clause as nic_before_clause
 from noa_api.mcp_tools.proxmox_password import TOOL_PROXMOX_RESET_VM_PASSWORD
-from noa_api.mcp_tools.proxmox_password_runner import build_proxmox_reset_vm_password_runner
 from noa_api.mcp_tools.whm_account_change import (
+    EVIDENCE_ACCOUNT,
     TOOL_WHM_SUSPEND_ACCOUNT,
     TOOL_WHM_UNSUSPEND_ACCOUNT,
-    whm_suspend_account,
-    whm_unsuspend_account,
 )
 from noa_api.mcp_tools.whm_account_change_runner import (
-    build_whm_suspend_runner,
-    build_whm_unsuspend_runner,
+    _SUSPEND,
+    _UNSUSPEND,
+    DELTA_FIELD_SUSPENDED,
+    _AccountChangeDirection,
+    _ChangeTarget,
 )
+from noa_api.mcp_tools.whm_account_change_runner import _before_clause as account_before_clause
 from noa_api.mcp_tools.whm_firewall_allowlist import (
     TOOL_WHM_FIREWALL_ALLOWLIST_REMOVE,
-    build_whm_firewall_allowlist_remove_runner,
 )
 from noa_api.mcp_tools.whm_firewall_change import (
     TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW,
     build_whm_firewall_release_runner,
 )
-from support.action_decisions import REASON
 from support.change_delta import outcome_of
-from support.mcp_identity import authenticated_caller, http_request_context
-from support.pmg import call_whitelist, whitelist_change_context
-from support.proxmox_nic import call_nic, nic_context, no_polling_delay
-from support.proxmox_password import no_polling_delay as no_password_polling_delay
-from support.proxmox_password import reset, reset_context
-from support.servers import ToolFixture, build_tool_context, whm_server
-from support.whm_api import (
-    LISTACCTS_PATH,
-    SUSPENDACCT_PATH,
-    UNSUSPENDACCT_PATH,
-    FakeWHMApi,
-    listaccts_body,
-    whm_account,
-    whm_api_success_body,
+from support.change_halves import (
+    CASES,
+    Halves,
 )
-from support.whm_firewall import (
-    CSF_ALLOW_LINE,
-    CSF_CLEAN_OUTPUT,
-    CSF_DENY_LINE,
-    IMUNIFY_CLEAN,
-    IMUNIFY_DROP,
-    IMUNIFY_WHITE,
-    FakeFirewallBox,
-    csf_answer,
-    csf_backend,
-    imunify_answer,
-    imunify_backend,
+from support.pmg import (
+    BYSTANDER,
+    TARGET,
+    FakePMGWhitelist,
+    call_whitelist,
+    whitelist_change_context,
 )
+from support.servers import build_tool_context
 from support.whm_firewall_change import (
-    allowlist_remove,
     execution_request,
-    release,
     release_context,
     released_box,
 )
-
-# The WHM account the two account lanes run against, and the reseller WHM reports as its owner.
-# `whm_server`'s credential is `root`, and the runner refuses unless the two agree.
-ACCOUNT = "acmeco"
-OWNER = "root"
-
 
 # Every clock-stamped instant in a rendered summary, replaced by one of fixed width so a length
 # can be pinned at all. `isoformat()` omits `.ffffff` entirely when the microsecond is
@@ -168,6 +165,13 @@ SUMMARY_HEADROOM = MAX_RESULT_SUMMARY_LENGTH - PINNED_SUMMARY_LENGTH
 # is named here rather than left to a reader to infer from a green test.
 CARD_TEXT_KEYS = frozenset({EVIDENCE_HEADLINE})
 
+# The runner's own sentence — the paragraph under the heading on both card surfaces and in the
+# block copied off them. A literal rather than an imported constant because `tool_ok(**payload)`
+# is a free-form kwargs passthrough with no builder to hang one off; the embed names it once
+# (`RUNNER_MESSAGE_KEY` in `apps/web-embed/src/lib/approvals/verdict.ts`) and this is the other
+# end of that same string.
+RUNNER_MESSAGE_KEY = "message"
+
 
 def pinned(summary: str | None) -> str:
     """One rendered summary with its clock-stamped bytes normalised.
@@ -191,229 +195,6 @@ def test_the_normaliser_still_separates_what_it_is_not_hiding() -> None:
     assert pinned(early) == pinned(late)
     assert pinned(early) != pinned(early.replace("allow", "deny"))
     assert len(pinned(early)) == len(pinned(late))
-
-
-@dataclass(frozen=True)
-class Halves:
-    """One approved change end to end, as its receipt is built from it.
-
-    `evidence` is what the gate wrote and the operator was asked against; `payload` is what the
-    runner answered. Both are read back off a receipt `build_receipt` actually built, rather than
-    from the values handed to it: `after` is the payload AFTER `redact_mapping`, and a harness
-    holding the raw envelope instead would assert equality against bytes no receipt contains.
-    That gap is empty today only because no CHANGE payload currently carries a key on the
-    redactor's list, which is a coincidence rather than a property — `proxmox_reset_vm_password`
-    already carries a credential and already shares a key, so it is one field name away from
-    `password` and the harness would have gone on agreeing in the weaker direction.
-    """
-
-    tool: str
-    evidence: dict[str, Any]
-    payload: dict[str, Any]
-    delta: ChangeDelta | None
-
-    @property
-    def shared_keys(self) -> set[str]:
-        """The top-level keys both halves spell the same way."""
-        return set(self.evidence) & set(self.payload)
-
-    @property
-    def moved_fields(self) -> set[str]:
-        """Every field the delta reports as having changed."""
-        rendered = {} if self.delta is None else self.delta.as_payload()
-        return {change["field"] for change in rendered.get("changed_fields") or []}
-
-
-async def approved_run(fixture: ToolFixture, runner: ChangeRunner, *, tool: str) -> Halves:
-    """Run `runner` against the request the gate just wrote, and return both halves.
-
-    The request is built the way `core.approvals.execution` builds one — arguments and evidence
-    lifted off `approval_context` by the production readers — so the evidence the runner sees is
-    the row's, not a fixture's approximation of it. Both halves then come off `build_receipt`
-    itself rather than off the values passed to it, which is what makes this harness's claim about
-    receipts true by construction instead of true by coincidence.
-    """
-    recorded = fixture.action_requests.requests[0]
-    request = ChangeExecutionRequest(
-        action_request_id=recorded.action_request_id,
-        tool_run_id=uuid4(),
-        tool_name=tool,
-        arguments=arguments_from_context(recorded.approval_context),
-        evidence=evidence_from_context(recorded.approval_context),
-        reason=REASON,
-    )
-    outcome = await outcome_of(runner, request)
-    receipt = build_receipt(
-        evidence=request.evidence,
-        payload=outcome.payload,
-        delta=outcome.delta,
-    )
-    return Halves(
-        tool=tool,
-        evidence=dict(receipt[RECEIPT_BEFORE_KEY]),
-        payload=dict(receipt[RECEIPT_AFTER_KEY]),
-        delta=outcome.delta,
-    )
-
-
-# --------------------------------------------------------------------------------------
-# One lane per CHANGE tool: call the gate, then run what it authorised
-# --------------------------------------------------------------------------------------
-
-
-async def release_halves(monkeypatch: pytest.MonkeyPatch) -> Halves:
-    """The firewall-release tool, on a box that reads blocked before the change and allowlisted
-    after it.
-    """
-    fixture, _ = release_context(
-        monkeypatch,
-        box=FakeFirewallBox(
-            csf=csf_backend(csf_answer(CSF_DENY_LINE), csf_answer(CSF_ALLOW_LINE)),
-            imunify=imunify_backend(imunify_answer(IMUNIFY_DROP), imunify_answer(IMUNIFY_WHITE)),
-        ),
-    )
-    await release(fixture)
-    return await approved_run(
-        fixture,
-        build_whm_firewall_release_runner(context=fixture.context),
-        tool=TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW,
-    )
-
-
-async def allowlist_remove_halves(monkeypatch: pytest.MonkeyPatch) -> Halves:
-    """The allowlist-remove tool, on a box holding an allow entry that the removal then clears."""
-    fixture, _ = release_context(
-        monkeypatch,
-        box=FakeFirewallBox(
-            csf=csf_backend(csf_answer(CSF_ALLOW_LINE), csf_answer(CSF_CLEAN_OUTPUT)),
-            imunify=imunify_backend(imunify_answer(IMUNIFY_WHITE), imunify_answer(IMUNIFY_CLEAN)),
-        ),
-    )
-    await allowlist_remove(fixture)
-    return await approved_run(
-        fixture,
-        build_whm_firewall_allowlist_remove_runner(context=fixture.context),
-        tool=TOOL_WHM_FIREWALL_ALLOWLIST_REMOVE,
-    )
-
-
-async def nic_halves(monkeypatch: pytest.MonkeyPatch) -> Halves:
-    """The VM NIC tool. The fake VM holds its own config, so the runner reads what the gate saw."""
-    no_polling_delay(monkeypatch)
-    fixture, _ = nic_context()
-    await call_nic(fixture)
-    return await approved_run(
-        fixture,
-        build_proxmox_vm_nic_runner(context=fixture.context),
-        tool=TOOL_PROXMOX_VM_NIC,
-    )
-
-
-async def reset_password_halves(monkeypatch: pytest.MonkeyPatch) -> Halves:
-    """The password-reset tool, the one whose changed value may not be rendered at all."""
-    no_password_polling_delay(monkeypatch)
-    fixture, _ = reset_context()
-    await reset(fixture)
-    return await approved_run(
-        fixture,
-        build_proxmox_reset_vm_password_runner(context=fixture.context),
-        tool=TOOL_PROXMOX_RESET_VM_PASSWORD,
-    )
-
-
-async def whitelist_halves(monkeypatch: pytest.MonkeyPatch) -> Halves:
-    """The whitelist tool. The fake gateway holds `mynetworks`, so the add the gate proposed is the
-    one run.
-    """
-    fixture, _ = whitelist_change_context(monkeypatch)
-    await call_whitelist(fixture)
-    return await approved_run(
-        fixture,
-        build_pmg_whitelist_runner(context=fixture.context),
-        tool=TOOL_PMG_WHITELIST,
-    )
-
-
-def account_context(*, listings: list[list[dict[str, Any]]], path: str) -> ToolFixture:
-    """A WHM endpoint answering `listaccts` twice — once for the gate, once for the postflight.
-
-    Two bodies rather than one, because a CHANGE workflow reads that endpoint on both sides of the
-    change and a single answer would let the postflight pass against a read that never happened.
-    """
-    api = FakeWHMApi(
-        body=listaccts_body([]),
-        scripted={
-            LISTACCTS_PATH: [listaccts_body(rows) for rows in listings],
-            path: [whm_api_success_body()],
-        },
-    )
-    cipher = build_tool_context().cipher
-    row = whm_server("alpha")
-    row.api_token = cipher.encrypt_text("whm-api-token-plaintext")
-    return build_tool_context(servers=[row], cipher=cipher, whm_transport=api.transport)
-
-
-def account_row(*, suspended: int) -> dict[str, Any]:
-    """One `listaccts` row for the account both lanes act on."""
-    return whm_account(ACCOUNT, domain="acme.example.com", suspended=suspended, owner=OWNER)
-
-
-async def suspend_halves(monkeypatch: pytest.MonkeyPatch) -> Halves:
-    """The suspend tool: live when the operator was asked, suspended when the runner checked."""
-    fixture = account_context(
-        listings=[[account_row(suspended=0)], [account_row(suspended=1)]],
-        path=SUSPENDACCT_PATH,
-    )
-    user, _ = authenticated_caller()
-    with http_request_context({}, user=user):
-        await whm_suspend_account(server_ref="alpha", username=ACCOUNT, context=fixture.context)
-    return await approved_run(
-        fixture,
-        build_whm_suspend_runner(context=fixture.context),
-        tool=TOOL_WHM_SUSPEND_ACCOUNT,
-    )
-
-
-async def unsuspend_halves(monkeypatch: pytest.MonkeyPatch) -> Halves:
-    """The unsuspend tool, the mirror: suspended at gate time and live afterwards."""
-    fixture = account_context(
-        listings=[[account_row(suspended=1)], [account_row(suspended=0)]],
-        path=UNSUSPENDACCT_PATH,
-    )
-    user, _ = authenticated_caller()
-    with http_request_context({}, user=user):
-        await whm_unsuspend_account(server_ref="alpha", username=ACCOUNT, context=fixture.context)
-    return await approved_run(
-        fixture,
-        build_whm_unsuspend_runner(context=fixture.context),
-        tool=TOOL_WHM_UNSUSPEND_ACCOUNT,
-    )
-
-
-HalvesBuilder = Callable[[pytest.MonkeyPatch], Awaitable[Halves]]
-
-# Every CHANGE tool, its lane, and the keys its two halves were measured to share. The key sets
-# are pinned rather than merely checked for the property below, so a tool that grows an overlap
-# fails here and its author has to look at whether the halves are still undiffable — which is the
-# claim four modules and `docs/change-delta.md` make about this table.
-CASES: dict[str, tuple[HalvesBuilder, set[str]]] = {
-    TOOL_WHM_SUSPEND_ACCOUNT: (suspend_halves, {"server"}),
-    TOOL_WHM_UNSUSPEND_ACCOUNT: (unsuspend_halves, {"server"}),
-    TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW: (
-        release_halves,
-        {"server", "target", "duration_minutes"},
-    ),
-    TOOL_WHM_FIREWALL_ALLOWLIST_REMOVE: (allowlist_remove_halves, {"server", "target"}),
-    TOOL_PROXMOX_RESET_VM_PASSWORD: (
-        reset_password_halves,
-        {"server", "node", "vmid", "username"},
-    ),
-    TOOL_PROXMOX_VM_NIC: (nic_halves, {"server", "node", "vmid", "net", "action"}),
-    TOOL_PMG_WHITELIST: (
-        whitelist_halves,
-        {"server", "action", "target", "normalized_target"},
-    ),
-}
 
 
 def test_every_change_tool_is_covered_here() -> None:
@@ -548,3 +329,342 @@ async def test_the_payload_the_pin_guards_stays_where_it_was(
         result_summary({**outcome.payload, RECEIPT_DELTA_KEY: outcome.delta.as_payload()})
     )
     assert len(folded_in) == 857
+
+
+# --------------------------------------------------------------------------------------
+# The words on the card: what both halves must name, and how a second fact is joined on
+# --------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("tool", sorted(CASES))
+async def test_both_halves_name_the_change_in_the_operators_words(
+    tool: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A card has a heading at both moments, and the gate also restates what was asked.
+
+    Three strings, and this is `CARD_TEXT_KEYS` above turned into a check rather than a comment:
+    the gate writes `headline` and `asked` for the PENDING card, the runner writes `headline`
+    again for the completed one, and a surface that finds any of the three missing falls back to
+    a humanised tool name — a heading that reads like a heading and tells an operator nothing
+    about what they are approving or what just ran.
+
+    **Blank is missing**, the same rule `assert_evidence_usable` applies in `change_gate.py`: a
+    key present with a whitespace-only value renders as an empty heading, which is the same card
+    with a less findable cause.
+
+    The gate half is not a second copy of that guard. `assert_evidence_usable` runs in-process on
+    the mapping a tool hands it, while what is read here came back out of `approval_context`
+    JSONB through `evidence_from_context` — which is where a key that did not survive the round
+    trip reads as an absent one, silently, minutes after the guard passed.
+
+    **The runner half has no production guard at all, and it is the half this exists for.**
+    Nothing anywhere requires a runner to answer with a `headline`; a family added later can
+    simply not write one, and only the completed card would ever notice.
+
+    **Both runner strings, because the surfaces lean on both and only one was ever guarded.** The
+    heading names the change and the `message` is the paragraph under it, and a family that wrote
+    a heading and no sentence would render a completed card whose one paragraph is the *request*
+    restated — the card's fallback where the runner said nothing — under a corner reading
+    `Approved`, with nothing marking that the runner never spoke. The sentence also carries three
+    things no other key does: the name of any source that could not answer, the before-clause's
+    four spellings, and the owner-stated consequence. Guarding the heading alone left the string
+    that holds all three unheld.
+
+    **Stated gap, and it is the same one as the heading's: one branch per tool.** The gate half is
+    also shadowed — `assert_evidence_usable` refuses the call before a request row exists, so a
+    missing evidence key fails this parametrisation earlier and elsewhere than the loop below.
+    The round-trip case argued above is real and is not what reddens. The runner half is the half
+    these assertions actually measure.
+
+    **Stated gap: the harness drives one branch per tool, the confirmed one.** Every runner also
+    writes a heading on its no-op, mismatch and refusal branches, and none of those are reached
+    from here — the per-family files drive them, one assertion at a time. What is bound here is
+    that each family writes one at all, across the whole registered CHANGE surface.
+
+    The tool set is `CASES`, which `test_every_change_tool_is_covered_here` holds against
+    `build_change_runners`, so an eighth CHANGE tool arrives in this parametrisation rather than
+    being a name somebody has to remember to add to a list.
+    """
+    build, _ = CASES[tool]
+
+    halves = await build(monkeypatch)
+
+    for key in REQUIRED_EVIDENCE_KEYS:
+        asked_for = halves.evidence.get(key)
+        assert isinstance(asked_for, str) and asked_for.strip(), key
+    for key in (EVIDENCE_HEADLINE, RUNNER_MESSAGE_KEY):
+        answered = halves.payload.get(key)
+        assert isinstance(answered, str) and answered.strip(), key
+
+
+def account_clause(
+    changed_fields: tuple[FieldChange, ...] | None,
+    *,
+    suspended_before: bool | None,
+    direction: _AccountChangeDirection = _SUSPEND,
+) -> str:
+    """One before-clause, composed by the account runner's own function.
+
+    `suspended_before` is the only field `_before_clause` reads off the target it is handed, so
+    `client`, `username` and `server_name` are passed empty rather than rebuilt here: a value
+    nothing reads is a value the next reader goes looking for a use of. The direction defaults to
+    suspend because the pair are mirror images by construction (`_AccountChangeDirection`), and
+    `_UNSUSPEND` is driven below.
+    """
+    target = _ChangeTarget(
+        client=cast(Any, None),
+        username="",
+        server_name="",
+        suspended_before=suspended_before,
+    )
+    return account_before_clause(changed_fields, target=target, direction=direction)
+
+
+def account_clause_of(halves: Halves, direction: _AccountChangeDirection) -> str:
+    """The clause the account runner appended to *this* run, recomposed from the same material.
+
+    `changed_fields` off the delta and `suspended_before` off the evidence through
+    `account_suspension_state`, which are the two the runner itself computed the clause from —
+    so what this returns is the runner's own sentence rather than a fixture's idea of it, and a
+    reworded clause needs no edit here.
+    """
+    account = halves.evidence.get(EVIDENCE_ACCOUNT)
+    return account_clause(
+        None if halves.delta is None else halves.delta.changed_fields,
+        suspended_before=account_suspension_state(account) if isinstance(account, dict) else None,
+        direction=direction,
+    )
+
+
+# The families that compose a before-clause, and the production call that reproduces the one this
+# harness's run produced. Both composers arrive private and are imported rather than re-derived,
+# for the reason `approved_run` reads both halves off a real receipt: a second copy of a wording
+# rule is a copy that can agree with a test and disagree with a card.
+#
+# The four tools not listed answer in one measured fact and compose no before-clause at all.
+# **This list is hand-kept and nothing reads it against the code** — unlike `CASES`, which
+# `test_every_change_tool_is_covered_here` holds against `build_change_runners`. There is no
+# registry of before-clause composers to read: each family's is a private function in its own
+# runner. So a family added later that composes one and joins it with a space is not caught here,
+# and the rule it would break is stated in `_before_clause`'s docstring in both families that
+# have one.
+BEFORE_CLAUSE_TOOLS: dict[str, Callable[[Halves], str]] = {
+    TOOL_PROXMOX_VM_NIC: lambda halves: nic_before_clause(
+        None if halves.delta is None else halves.delta.changed_fields,
+        evidence=halves.evidence,
+    ),
+    TOOL_WHM_SUSPEND_ACCOUNT: lambda halves: account_clause_of(halves, _SUSPEND),
+    TOOL_WHM_UNSUSPEND_ACCOUNT: lambda halves: account_clause_of(halves, _UNSUSPEND),
+}
+
+
+@pytest.mark.parametrize("tool", sorted(BEFORE_CLAUSE_TOOLS))
+async def test_a_before_clause_is_joined_to_its_sentence_with_a_newline(
+    tool: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The before-clause starts its own line. A space there runs two facts into one paragraph.
+
+    What the clause says and what the sentence above it says are **two separately measured
+    facts** — what the target reads now, and what NOA held for it before — and both card surfaces
+    render a runner's bytes with no transformation at all. So the join is the whole difference
+    between two lines an operator reads apart and one run-on paragraph they read as a single
+    claim.
+
+    This was prose in `_before_clause`'s docstring in `proxmox_nic_runner.py` and read by
+    nothing, which is exactly how it came to be written: that family was the one spelling the
+    join with a space, on every site it had, while the account pair and the firewall release tool
+    spelled it `\\n`. A rule stated only in the family that got it wrong is a rule the next family
+    added can get wrong the same way.
+
+    The clause is **recomposed by the production function the runner called**, off the delta and
+    the evidence the runner used, so nothing is retyped and a reworded clause changes this test's
+    expectation with it. What is asserted is only where the clause sits.
+
+    **Stated gap: one branch per tool, the confirmed one.** Each family appends the clause from
+    several branches, and this reaches one of them per family. The join is spelled the same way on
+    the others, but that is a fact about the code a reader can check and not one this measures.
+    """
+    build, _ = CASES[tool]
+
+    halves = await build(monkeypatch)
+
+    clause = BEFORE_CLAUSE_TOOLS[tool](halves)
+    assert str(halves.payload["message"]).endswith(f"\n{clause}")
+
+
+def _shared_ending(one: str, other: str) -> str:
+    """The longest ending two clauses have in common.
+
+    Derived rather than typed, so the grammar assertions below hold the *code's* words: a
+    deliberate rewording of a spelling moves this with it, while a fold of two grammars into one
+    makes a reading-only clause end the way a comparison does and reddens.
+    """
+    shared = 0
+    while shared < min(len(one), len(other)) and one[-1 - shared] == other[-1 - shared]:
+        shared += 1
+    return one[len(one) - shared :]
+
+
+def test_the_four_before_clause_spellings_stay_four() -> None:
+    """Four answers to "what was it before", and folding any two of them loses a distinction.
+
+    Both families compose the same four, and the **grammar carries the distinction**: "before
+    this ran" claims a *comparison* — NOA holds both sides and is naming the one it started from
+    — while "when NOA last read it" claims only a *reading*. The two middle ones are the pair a
+    later simplification folds back together, and folding them restores a card that tells an
+    operator NOA holds no reading of the target while that reading sits on `approval_context`,
+    on the one branch where they have to go and check the machine by hand.
+
+    Distinctness rather than presence, because each sentence asserted alone passes against a
+    composer that prints that one sentence always. Composed by the production functions and never
+    retyped here: what has to hold is that the four *differ*, not what any one of them says.
+
+    **The two middle spellings are driven at one value on purpose, in both families.** A fold of
+    their grammars is what this is for, and two clauses naming different values stay distinct
+    through a fold — the set would still be four and the check would sit green through exactly
+    the regression it exists to catch. So the account pair is driven where its `()` case is
+    reachable, with the gate-time reading already equal to the state the change asked for, which
+    is also the one shape where the composer's two sources name the same word; and the NIC's
+    first three all quote one reading, so nothing but the grammar separates them.
+
+    **Limit, in the account family only: the moved spelling cannot join them at that value.** Its
+    `old` side is a boolean and `ChangeDelta` refuses an equal-sided row, so it necessarily names
+    the other state and is held apart by value as well as by grammar. The NIC set has no such
+    limit and separates all three by grammar alone.
+
+    **That limit is why counting the set is not enough on its own, and the second assertion below
+    is the one that holds the account family.** A fold of the two middle grammars leaves the
+    account set at four, because the moved spelling names the *other* boolean and stays distinct
+    by value through it — measured, not reasoned: folding `_before_clause`'s could-not-confirm
+    branch into the comparison wording leaves `len(set(...)) == 4` green. So the grammars are
+    asserted directly. The comparison suffix is **derived from the two comparison spellings
+    themselves** rather than typed here — the longest ending the two share — and the rule is that
+    neither clause claiming only a reading may end with it. Nothing in this file names the words
+    of any spelling, so a deliberate rewording still moves the expectation with the code, and a
+    fold of the grammars reddens in both families rather than in one.
+
+    **Stated gap: this drives the composers, not their call sites.** Which branch hands which
+    `changed_fields` is bound in the per-family files (`test_proxmox_nic_runner.py`,
+    `test_confirm_after_failed_write.py`, the suspend and unsuspend runner files), and the
+    unsuspend direction is driven by the join test above rather than here — the pair are mirror
+    images through `_state_words`, so a fourth set would measure that helper twice.
+    """
+    reading = link_state_for(ACTION_ENABLE)
+    on_the_card = {EVIDENCE_NIC: {"link_state": reading}}
+    nic = {
+        "compared, and it moved": nic_before_clause(
+            (FieldChange(field="link_state", old=reading, new=link_state_for(ACTION_DISABLE)),),
+            evidence=on_the_card,
+        ),
+        "compared, and it matched": nic_before_clause((), evidence=on_the_card),
+        "read, never compared": nic_before_clause(None, evidence=on_the_card),
+        "nothing was read": nic_before_clause(None, evidence={}),
+    }
+    account = {
+        "compared, and it moved": account_clause(
+            (FieldChange(field=DELTA_FIELD_SUSPENDED, old=False, new=True),),
+            suspended_before=False,
+        ),
+        "compared, and it matched": account_clause((), suspended_before=True),
+        "read, never compared": account_clause(None, suspended_before=True),
+        "nothing was read": account_clause(None, suspended_before=None),
+    }
+
+    assert len(set(nic.values())) == 4, nic
+    assert len(set(account.values())) == 4, account
+    # The grammars, which the count above cannot reach in the account family. A clause that claims
+    # only a reading must not end the way the two comparison clauses end.
+    for family in (nic, account):
+        claims_a_comparison = _shared_ending(
+            family["compared, and it moved"], family["compared, and it matched"]
+        )
+        # A degenerate suffix would make the two assertions under it pass against anything.
+        assert len(claims_a_comparison) > len(" ran."), claims_a_comparison
+        assert not family["read, never compared"].endswith(claims_a_comparison), family
+        assert not family["nothing was read"].endswith(claims_a_comparison), family
+    # The one spelling both families share, because it names no value from either vocabulary.
+    # Asserted rather than left to the reader: it is what the other three are held apart from.
+    assert nic["nothing was read"] == account["nothing was read"]
+
+
+# --------------------------------------------------------------------------------------
+# The optional third evidence key: its presence is the decision, so which tools carry it
+# is a property rather than a comment
+# --------------------------------------------------------------------------------------
+
+
+# The lanes whose gate evidence heads a raw block of the target system's own text. Both firewall
+# tools ship one on every call; the other five ship none, because they read structured fields and
+# have no vendor free-form text to head.
+#
+# **Keyed on the lane, not on the tool**, and `pmg_whitelist` is why: its heading turns on its own
+# argument, so the tool belongs on the carrying side for a `remove` and on the absent side for an
+# `add`. `CASES` drives the add, so PMG sits below rather than here, and the remove direction is
+# measured by the test after this one rather than left as a gap.
+EVIDENCE_HEADING_LANES = frozenset(
+    {
+        TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW,
+        TOOL_WHM_FIREWALL_ALLOWLIST_REMOVE,
+    }
+)
+
+
+@pytest.mark.parametrize("tool", sorted(CASES))
+async def test_only_the_tools_with_a_block_to_head_carry_a_heading_for_one(
+    tool: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`evidence_heading` is present where there is text to head and absent where there is none.
+
+    The card draws the block where the key is there and draws nothing where it is not, so **the
+    key's presence is the decision** rather than a label on a decision made elsewhere. That makes
+    which tools carry it a property, and one with no other reader: it deliberately cannot join
+    `REQUIRED_EVIDENCE_KEYS`, since making it unconditional would refuse four gates that are
+    correct, and an optional key with no check is one a later tool forgets while the card simply
+    draws nothing and nobody notices.
+
+    Absent means **absent**, not `None`: `assert_evidence_usable` never looks at this key, so a
+    tool that wrote it empty would reach the card and put a heading over nothing. The two sides
+    are therefore asserted with `not in` and with the same blank-is-missing rule the required keys
+    get.
+
+    Parametrised over `CASES`, which `test_every_change_tool_is_covered_here` holds against
+    `build_change_runners` — so an eighth CHANGE tool does not merely land in this file, it lands
+    on one side of this partition and fails until somebody decides which. That is the difference
+    between this list and `BEFORE_CLAUSE_TOOLS` above, which nothing reads against the code.
+    """
+    build, _ = CASES[tool]
+
+    halves = await build(monkeypatch)
+
+    heading = halves.evidence.get(EVIDENCE_HEADING)
+    if tool in EVIDENCE_HEADING_LANES:
+        assert isinstance(heading, str) and heading.strip()
+    else:
+        assert EVIDENCE_HEADING not in halves.evidence
+
+
+async def test_a_pmg_remove_heads_the_lines_it_is_going_to_delete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PMG is the one tool whose heading turns on its argument, and this is its other direction.
+
+    `CASES` drives the `add`, which lands on the absent side above: nothing matched, because the
+    address is not on the list, and that emptiness *is* the before-state — so a heading there
+    would sit over nothing. A `remove` is the same tool with the matching lines present, and those
+    lines are exactly what the change will delete.
+
+    Both halves of that are asserted here rather than only the heading, because the heading alone
+    would pass against a tool that wrote one unconditionally — which is the version this key was
+    deliberately not built as. The gate is driven, not the runner: this key is written at gate
+    time and read by the PENDING card, and it never reaches a runner at all.
+    """
+    fixture, _ = whitelist_change_context(
+        monkeypatch, box=FakePMGWhitelist(entries=[BYSTANDER, TARGET])
+    )
+
+    await call_whitelist(fixture, action=ACTION_REMOVE, target=TARGET)
+
+    evidence = evidence_from_context(fixture.action_requests.requests[0].approval_context)
+    heading = evidence.get(EVIDENCE_HEADING)
+    assert isinstance(heading, str) and heading.strip()
+    assert evidence[EVIDENCE_MATCHES]
