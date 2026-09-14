@@ -34,7 +34,9 @@ import core.integrations.whm.availability as availability_mod
 import core.integrations.whm.csf_cli as csf_cli_mod
 import core.integrations.whm.imunify_cli as imunify_cli_mod
 from core.db.models import WHMServer
-from core.integrations.whm.csf_cli import CSF_BINARY
+from core.integrations.whm.availability import FIREWALL_PROBE_TARGET
+from core.integrations.whm.csf_cli import CSF_BINARY, build_csf_command
+from core.integrations.whm.imunify_cli import IMUNIFY_BINARY, build_imunify_command
 from core.remote_exec.types import CommandResult
 from core.secrets.crypto import SecretCipher
 from support.remote_exec import (
@@ -42,6 +44,7 @@ from support.remote_exec import (
     FakeSSH,
     command_result,
     install_fake_ssh_exec_in,
+    ssh_config,
 )
 from support.secrets import build_cipher
 from support.servers import ToolFixture, build_tool_context, whm_server
@@ -89,9 +92,40 @@ def imunify_answer(
     return command_result(exit_code=exit_code, stdout=body, stderr=stderr)
 
 
+# Every string `availability` can send, composed by the production builders rather than spelled
+# here: `command -v <bin>` on the root branch, and the real binary under `sudo -n` on the
+# non-root one. The username only has to be *not* root — `sudo -n` carries no name.
+_SUDO_CONFIG = ssh_config(username="noa-ops")
+PROBE_COMMANDS = frozenset(
+    {
+        f"command -v {CSF_BINARY}",
+        f"command -v {IMUNIFY_BINARY}",
+        build_csf_command(["-g", FIREWALL_PROBE_TARGET], config=_SUDO_CONFIG),
+        build_imunify_command(
+            ["ip-list", "local", "list", "--by-ip", FIREWALL_PROBE_TARGET, "--json"],
+            config=_SUDO_CONFIG,
+        ),
+    }
+)
+
+
 def is_probe(command: str) -> bool:
-    """Availability probes: `command -v <bin>` as root, `<bin> -v` / `<bin> version` under sudo."""
-    return "command -v" in command or command.endswith((" -v", " version"))
+    """Is this one of the availability probes, as opposed to a command about a target?
+
+    Equality against `PROBE_COMMANDS`, never a shape test. The non-root probe argv is drawn
+    from NOA's own working set, so `csf -g <loopback>` is character-for-character a lookup with
+    a different target and no shape separates them. Substring matching would be worse than
+    useless: `csf -ta <ip> <ttl> <comment>` carries operator-typed text, so a comment
+    mentioning the probe target would be read as a probe.
+
+    Residual, stated rather than guarded: a lookup whose target is *exactly*
+    `FIREWALL_PROBE_TARGET` composes the probe's own string and is classified as a probe. The
+    shared test target is `TARGET`, so reaching that needs a test to choose `127.0.0.1` by
+    hand — and it surfaces red rather than silently: the probe branch answers `ok`, which is
+    not a `csf -g` body and is not Imunify JSON, so the csf verdict comes back unreadable and
+    the Imunify parse fails.
+    """
+    return command in PROBE_COMMANDS
 
 
 def is_query(command: str) -> bool:
@@ -350,6 +384,7 @@ __all__ = [
     "IMUNIFY_READ",
     "IMUNIFY_WHITE",
     "IMUNIFY_WHITE_AND_DROP",
+    "PROBE_COMMANDS",
     "SERVER_NAME",
     "SSH_PASSWORD_PLAINTEXT",
     "SSH_PRIVATE_KEY_PLAINTEXT",

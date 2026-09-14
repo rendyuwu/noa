@@ -358,8 +358,9 @@ async def test_a_step_that_finds_nothing_is_not_a_failure(
 async def test_a_step_sudo_refuses_is_not_tolerated(monkeypatch: pytest.MonkeyPatch) -> None:
     """The sudo-prefix rule, and the hole tolerating everything would otherwise leave.
 
-    sudoers can permit `csf -v` — which is what the availability probe runs, so the box looks
-    usable — and refuse `csf -ar`. Every command would then report "not in that list", and a
+    The grant is per-argument, so sudoers can permit `csf -g` — which is what the availability
+    probe runs, so the box looks usable — and refuse `csf -ar`. Every command would then report
+    "not in that list", and a
     change that could not run would read as a change that found nothing to do. `ssh_sudo_required`
     names a remedy; a tolerated exit code names none.
     """

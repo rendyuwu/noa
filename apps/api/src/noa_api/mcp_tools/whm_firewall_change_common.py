@@ -145,7 +145,8 @@ async def tolerated_csf_step(
     `run_csf_command` — that one is not an answer about the list, it is the absence of one.
 
     **A sudo-rights refusal is not tolerated either** (two causes, two remedies, `noa-old` GH #82).
-    sudoers can permit `csf -v` — which is what the availability probe runs — and refuse `csf -ar`,
+    The grant is per-argument, so sudoers can permit `csf -g` — which is what the availability
+    probe runs, against a loopback address — and refuse `csf -ar`,
     and in that arrangement every step here would report "not in that list" and the change would
     read as having found nothing to do. `ssh_sudo_required` names a remedy; silence names none.
 

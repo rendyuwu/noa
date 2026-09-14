@@ -568,6 +568,29 @@ async def test_a_non_root_user_escalates_every_firewall_command(
     assert all("sudo -n" in command for command in fake.commands)
 
 
+async def test_a_non_root_runner_probes_with_argv_the_sudoers_grant_covers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The probe-argv rule, on the path where getting it wrong costs an approved change.
+
+    A sudoers grant scoped per-argument denies an argv nobody granted, and NOA reads that back
+    as "no firewall tools" — so the probe sends the two lookups the READ path already sends,
+    against a loopback address (`web16-cpn`, 2026-09-14). The neighbour above asserts only that
+    every command carries `sudo -n`, which the old `csf -v` probe satisfied while still being
+    denied; this asserts *which* command.
+
+    Spelled out rather than read from `support.whm_firewall.PROBE_COMMANDS`: an assertion
+    composed from the value under test cannot move.
+    """
+    fixture, fake = release_context(monkeypatch, box=released_box(), ssh_username="noa-ops")
+    runner = payload_runner(build_whm_firewall_release_runner(context=fixture.context))
+
+    await runner(execution_request(server_id=fixture.servers.servers[0].id))
+
+    assert "TERM=dumb sudo -n /usr/sbin/csf -g 127.0.0.1" in fake.commands
+    assert "sudo -n imunify360-agent ip-list local list --by-ip 127.0.0.1 --json" in fake.commands
+
+
 async def test_a_root_user_escalates_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
     """The other half of the biconditional: root running under `sudo` is the same bug."""
     fixture, fake = release_context(monkeypatch, box=released_box())

@@ -9,7 +9,7 @@ The firewall-preflight READ refused that, with a check written inside the tool. 
 to the fan-out, because a per-tool check is a check the next tool can forget, and the
 zero-backend harm lives on the CHANGE side where forgetting it is silent.
 
-Four properties, and one that is about the *shape* of the code rather than its behaviour:
+Five properties, and two that are about the *shape* of the code rather than its behaviour:
 
 - zero usable backends raises, and neither backend is asked;
 - zero backends with `sudo -n` denied says `ssh_sudo_required` instead — the binaries are there
@@ -17,7 +17,11 @@ Four properties, and one that is about the *shape* of the code rather than its b
 - only usable backends run, and they run at once, not in sequence;
 - the fan-out has exactly one home, so the release-and-allow and allowlist-remove tools inherit
   the guard rather than re-authoring it (a machine-readable property is bound by a test, not by
-  a docstring).
+  a docstring);
+- every argv NOA can send sits inside the sudoers grant `docs/integrations/whm.md` publishes.
+  The grant is per-argument, so an argv outside it is denied on a working server and read back
+  as "no firewall tools" — which is what sent the availability probe's own `csf -v` into that
+  answer on `web16-cpn` (2026-09-14) and is why the probes now reuse the READ path's lookups.
 
 No SSH here. The gate's whole input is a `FirewallAvailability` struct and two callables, so
 these tests exercise it directly; `test_whm_firewall_availability.py` covers how the struct is
@@ -70,6 +74,39 @@ FIREWALL_MODULES = (
     "core/integrations/whm",
     "apps/api/src/noa_api/mcp_tools/whm_firewall*.py",
 )
+
+# Where the sudoers grant is published, and the marker that finds the block inside it. Parsed
+# rather than copied: a second literal in this module would be a claim, not a check — no
+# production or documentation edit could redden it.
+WHM_DOC = "docs/integrations/whm.md"
+SUDOERS_GRANT_MARKER = "<!-- whm-sudoers-grant -->"
+
+# The call names that compose one firewall argv, split by backend because the grant is.
+CSF_ARGV_CALLS = frozenset(
+    {"run_csf_command", "build_csf_command", "tolerated_csf_step", "_tolerated_csf"}
+)
+IMUNIFY_ARGV_CALLS = frozenset(
+    {"run_imunify_command", "build_imunify_command", "tolerated_imunify_step"}
+)
+
+# Every sub-command reachable in production, per backend. **Equality**, not subset: a new argv
+# has to be declared here, and that is the moment its author finds out it also has to be inside
+# the grant or behind an infra request.
+CSF_PRODUCTION_ARGV = {"-g", "-tr", "-dr", "-ta", "-tra", "-ar"}
+IMUNIFY_PRODUCTION_ARGV = {"ip-list"}
+
+# The sites that pass on an argv they *received*, as `path::function`. Without them a rule of
+# "not a literal → fail" would be red on a clean tree. Frozen rather than tolerated by shape,
+# so a **new** forwarder is a declaration instead of a silent escape from the scan — the shape
+# `FIREWALL_FAN_OUT_SITES` above already uses.
+FIREWALL_ARGV_FORWARDERS = {
+    "core/integrations/whm/csf_cli.py::run_csf_command",
+    "core/integrations/whm/imunify_cli.py::run_imunify_command",
+    "apps/api/src/noa_api/mcp_tools/whm_firewall_allowlist.py::_tolerated_csf",
+    "apps/api/src/noa_api/mcp_tools/whm_firewall_change.py::_tolerated_csf",
+    "apps/api/src/noa_api/mcp_tools/whm_firewall_change_common.py::tolerated_csf_step",
+    "apps/api/src/noa_api/mcp_tools/whm_firewall_change_common.py::tolerated_imunify_step",
+}
 
 
 def availability(
@@ -267,3 +304,108 @@ def _is_gather(node: ast.AST) -> bool:
         and isinstance(node.func, ast.Attribute)
         and node.func.attr == "gather"
     )
+
+
+# --- every argv NOA sends is inside the grant the fleet actually issues ---
+
+
+def test_every_firewall_argv_sits_inside_the_sudoers_grant() -> None:
+    """A sudoers grant scoped correctly is per-*argument*, so an argv nobody granted is denied
+    on a server that works, and `is_sudo_rights_failure` turns that into "no firewall tools".
+
+    That is not hypothetical: the availability probe sent `csf -v` and `imunify360-agent
+    version` — the only two commands NOA never used for work — and on `web16-cpn`
+    (2026-09-14) they were the only two denied. Nothing in the repository bound the argv NOA
+    emits to the contract it was given. This is that binding, in two halves: the discovered set
+    must equal what is declared above (a production edit reddens it), and the declared set must
+    sit inside the grant parsed out of `docs/integrations/whm.md` (a documentation edit reddens
+    it).
+
+    **Stated ceiling: the scan is keyed on call names.** A wrapper introduced under a name in
+    neither `CSF_ARGV_CALLS` nor `IMUNIFY_ARGV_CALLS` is invisible to it. Equality catches every
+    change reached through the registered names; it does not catch a new indirection. Not
+    bound — said.
+    """
+    csf, imunify, forwarders = _argv_scan()
+
+    assert forwarders == FIREWALL_ARGV_FORWARDERS, (
+        "an argv that is not a literal escapes this scan — declare the forwarder here, or pass "
+        "a literal so its first token is checked against the grant"
+    )
+    assert csf == CSF_PRODUCTION_ARGV
+    assert imunify == IMUNIFY_PRODUCTION_ARGV
+
+    granted = _granted_subcommands()
+    assert csf <= granted["csf"], f"{WHM_DOC} does not grant every csf sub-command NOA sends"
+    assert imunify <= granted["imunify360-agent"], (
+        f"{WHM_DOC} does not grant every imunify360-agent sub-command NOA sends"
+    )
+
+
+def _argv_scan() -> tuple[set[str], set[str], set[str]]:
+    """First argv token per backend, and `path::function` for every site forwarding an argv."""
+    csf: set[str] = set()
+    imunify: set[str] = set()
+    forwarders: set[str] = set()
+    for path in _firewall_sources():
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for parent in ast.walk(tree):
+            if not isinstance(parent, ast.AsyncFunctionDef | ast.FunctionDef):
+                continue
+            for node in ast.walk(parent):
+                name = _argv_call_name(node)
+                if name is None:
+                    continue
+                first = _first_argv_token(node)  # type: ignore[arg-type]
+                if first is None:
+                    forwarders.add(f"{path.relative_to(REPO_ROOT)}::{parent.name}")
+                elif name in CSF_ARGV_CALLS:
+                    csf.add(first)
+                else:
+                    imunify.add(first)
+    return csf, imunify, forwarders
+
+
+def _argv_call_name(node: ast.AST) -> str | None:
+    """The registered call name this node invokes, or `None` when it is not one of them."""
+    if not isinstance(node, ast.Call):
+        return None
+    func = node.func
+    name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+    return name if name in CSF_ARGV_CALLS | IMUNIFY_ARGV_CALLS else None
+
+
+def _first_argv_token(node: ast.Call) -> str | None:
+    """The literal first element of the call's argv, or `None` when the argv is a name.
+
+    `run_*`/`tolerated_*` take the argv as the keyword-only `args`; `build_*_command` takes it
+    as the first positional, which is why the fallback is only read when no keyword is there.
+    """
+    argv = next((keyword.value for keyword in node.keywords if keyword.arg == "args"), None)
+    if argv is None and node.args:
+        argv = node.args[0]
+    if isinstance(argv, ast.List) and argv.elts and isinstance(argv.elts[0], ast.Constant):
+        return str(argv.elts[0].value)
+    return None
+
+
+def _granted_subcommands() -> dict[str, set[str]]:
+    """The published sudoers grant, as `{binary name: {sub-command}}`.
+
+    Read out of the document rather than restated here, so the code and the line an operator
+    pastes cannot drift apart in silence.
+    """
+    text = (REPO_ROOT / WHM_DOC).read_text(encoding="utf-8")
+    _, marker, after = text.partition(SUDOERS_GRANT_MARKER)
+    assert marker, f"`{SUDOERS_GRANT_MARKER}` is not in {WHM_DOC}"
+    _, _, entries = after.split("```")[1].partition("NOPASSWD:")
+    assert entries.strip(), f"the grant block in {WHM_DOC} carries no `NOPASSWD:` line"
+
+    granted: dict[str, set[str]] = {}
+    for entry in entries.split("Defaults")[0].replace("\\", " ").split(","):
+        tokens = entry.split()
+        if not tokens:
+            continue
+        assert len(tokens) >= 2, f"grant entry names no sub-command: {entry.strip()!r}"
+        granted.setdefault(tokens[0].rsplit("/", 1)[-1], set()).add(tokens[1])
+    return granted

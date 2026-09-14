@@ -952,3 +952,75 @@ between "nothing was measured" and "the runner compared and nothing moved" moved
 before-clause the runner composes; and the four verification states moved into the corner word, all
 four still distinguishable. Deleting the assertion that guarded one of those because it went red is
 how an honesty property leaves without anyone deciding it should.
+
+## 19. DECIDED — a capability probe asks its question with an argv NOA already uses for work (2026-09-14)
+
+**The rule: the argv the firewall availability probe sends is drawn from the set of commands NOA
+sends for work. Never a command chosen only because it looks harmless.**
+
+A sudoers grant scoped correctly is *per-argument*. `NOPASSWD: /usr/sbin/csf -g *` permits `csf -g`
+and nothing else, so a probe outside the granted set is denied on a server where every working
+command is permitted — and `is_sudo_rights_failure` correctly reads that denial as a rights
+failure, which `firewall_gate.require_usable_backends` correctly turns into `ssh_sudo_required`.
+Every layer behaves as designed and the operator is told to fix a sudoers line that is already
+right.
+
+### 19.1 The measurement
+
+Read on `web16-cpn`, 2026-09-14, with the account NOA connects as. The probe was sending
+`TERM=dumb sudo -n /usr/sbin/csf -v` and `sudo -n imunify360-agent version`; both answered
+`sudo: a password is required`, and `whm_preflight_firewall_entries` returned
+`ssh_sudo_required`. The grant on the box — published in `docs/integrations/whm.md` under
+"Required sudoers entries", not copied here — covers `csf` with `-g`, `-tr`, `-dr`, `-ta`, `-tra`,
+`-ar` and `imunify360-agent` with `ip-list`. Those seven are exactly the argv NOA sends for work;
+the two it was probing with were the only two it never otherwise sends. Re-derived during review
+by walking the AST of every production argv, which is now the standing guard
+(`test_whm_firewall_gate.py::test_every_firewall_argv_sits_inside_the_sudoers_grant`, keyed on
+call names — a wrapper under a new name is outside it, stated in that test rather than implied
+away).
+
+Measured on the same box, same day, same account: `TERM=dumb sudo -n /usr/sbin/csf -g 127.0.0.1`
+and `sudo -n imunify360-agent ip-list local list --by-ip 127.0.0.1 --json` both exit 0. The probe
+now sends those. A loopback address is the target because only the exit status is read, never the
+body, and no firewall holds an entry for it.
+
+That the same grant is issued fleet-wide by the infra team is **owner-stated**, not measured here.
+
+### 19.2 Rejected — ask the infra team to add the two sudoers entries
+
+Owner decision: the request would not be approved, and it would have to be repeated on every host
+in the fleet. It is also the weaker fix — it widens a grant to make a probe work rather than
+making the probe ask a question the grant already answers, and the next argv NOA adds would have
+the same problem again.
+
+The operator-facing message says so: `firewall_gate.MESSAGE_SUDO_REQUIRED` names the subcommands
+rather than the binaries, because "grant NOPASSWD for csf" is the request that gets refused.
+
+### 19.3 Rejected — delete the probe and derive availability from the real call
+
+It removes the same failure class, and it is the structurally cleaner answer: the only fully
+honest capability question is the work itself. It was refused on cost, not on merit. It rewrites
+`firewall_gate` and the five `check_firewall_binaries` call sites in `whm_firewall.py`,
+`whm_firewall_allowlist.py` and `whm_firewall_change.py`, plus the invariant tests behind them —
+and once the argv fix is in, it buys two saved SSH handshakes per call. Recorded here rather than
+left in a plan so it is not re-litigated from scratch; new evidence about the handshake cost would
+reopen it.
+
+### 19.4 Accepted costs
+
+On the READ path the probe and the lookup are now the same command shape against different
+targets, so a preflight makes four SSH connections where two would do — unchanged from the count
+before this change.
+
+The Imunify probe is **stricter** than `version` was: an agent that is installed but not running
+fails `ip-list local list`. Before, the probe passed and the lookup surfaced Imunify's own
+`imunify_command_failed` text; now the backend reports unusable and is skipped, with
+`available_backends.imunify: false` naming it. Named here rather than discovered later. Revisit
+only if it is seen.
+
+### 19.5 PMG is unaffected
+
+`core/servers/validation.py` probes PMG with `run_pmg_version_probe`, whose argv is
+`["get", "/version"]` — the same exposure in principle. The owner states PMG's grant is not scoped
+per-argument, so nothing under `core/integrations/pmg/` or `core/servers/validation.py` changes.
+If a PMG grant is ever narrowed, this rule is the one to apply there.

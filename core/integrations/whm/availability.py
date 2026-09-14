@@ -18,13 +18,32 @@ downstream can catch it.
 incident to get right (`noa-old` GH #82):
 
 - **root** — `command -v <binary>`. Presence is usability; there is nothing to escalate.
-- **non-root** — run the *real* binary under `sudo -n` with a benign read-only flag
-  (`csf -v`, `imunify360-agent version`). Not `command -v`, and not `sudo -l`:
+- **non-root** — run the *real* binary under `sudo -n`, with **an argv NOA already uses for
+  work**: `csf -g <loopback>` and `imunify360-agent ip-list local list --by-ip <loopback>
+  --json`. Not `command -v`, and not `sudo -l`:
   - `command -v` lies for a root-owned `0700` binary. The user cannot see `/usr/sbin/csf`, but
     `sudo -n /usr/sbin/csf` runs it perfectly well, so presence-checking as the unprivileged
     user reports "not installed" for a working server.
   - `sudo -l` needs the `listpw` sudoers setting to be permissive, which is a second
     configuration dependency for a question the direct probe already answers.
+
+**Why the probe argv has to come from the working set.** A correctly scoped sudoers grant is
+*per-argument*, so a probe outside the granted set reports "no firewall tools" on a server that
+works. This probe used to send `csf -v` / `imunify360-agent version`, the two commands NOA
+never uses for anything else — and on `web16-cpn` (read 2026-09-14) both were denied
+(`sudo: a password is required`) while every argv NOA sends for work was granted:
+
+    (root) NOPASSWD: /usr/sbin/csf -g *, /usr/sbin/csf -tr *, /usr/sbin/csf -dr *,
+                     /usr/sbin/csf -ta *, /usr/sbin/csf -tra *, /usr/sbin/csf -ar *,
+                     /usr/bin/imunify360-agent ip-list *
+
+Measured on the same box, same day, same account: `TERM=dumb sudo -n /usr/sbin/csf -g
+127.0.0.1` and `sudo -n imunify360-agent ip-list local list --by-ip 127.0.0.1 --json` both exit
+0. So NOA asks its capability question with commands drawn from its own working set: any
+sudoers policy that lets NOA work then lets NOA probe, by construction. That the same grant is
+issued fleet-wide is owner-stated, not measured here. The published grant lives in
+`docs/integrations/whm.md`, and `test_whm_firewall_gate.py` fails if a production argv escapes
+it.
 
 `sudo_required` is why the return type is a struct rather than two booleans. A binary that is
 present but whose escalation was denied comes back `usable=False`, which on its own is
@@ -48,6 +67,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Final
 
 from core.integrations.whm.csf_cli import CSF_BINARY, build_csf_command
 from core.integrations.whm.imunify_cli import IMUNIFY_BINARY, build_imunify_command
@@ -61,6 +81,12 @@ from core.remote_exec.types import SSHConnectionConfig
 # point; `firewall_gate` imports them, so the graph stays one-directional.
 BACKEND_CSF = "csf"
 BACKEND_IMUNIFY = "imunify"
+
+# The address the non-root probes ask about. Its content is never read — only the exit status
+# is — so a loopback address no firewall holds is the cheapest honest question, and it cannot
+# be confused with an operator's target. The test support layer imports this rather than
+# repeating the literal, because a probe is recognised there by exact command string.
+FIREWALL_PROBE_TARGET: Final[str] = "127.0.0.1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,7 +152,9 @@ async def check_csf_binary(config: SSHConnectionConfig) -> BinaryCheck:
     return await _check_binary(
         config,
         which_command=f"command -v {CSF_BINARY}",
-        build_probe=lambda probe_config: build_csf_command(["-v"], config=probe_config),
+        build_probe=lambda probe_config: build_csf_command(
+            ["-g", FIREWALL_PROBE_TARGET], config=probe_config
+        ),
     )
 
 
@@ -135,7 +163,10 @@ async def check_imunify_binary(config: SSHConnectionConfig) -> BinaryCheck:
     return await _check_binary(
         config,
         which_command=f"command -v {IMUNIFY_BINARY}",
-        build_probe=lambda probe_config: build_imunify_command(["version"], config=probe_config),
+        build_probe=lambda probe_config: build_imunify_command(
+            ["ip-list", "local", "list", "--by-ip", FIREWALL_PROBE_TARGET, "--json"],
+            config=probe_config,
+        ),
     )
 
 
@@ -160,6 +191,7 @@ async def check_firewall_binaries(config: SSHConnectionConfig) -> FirewallAvaila
 __all__ = [
     "BACKEND_CSF",
     "BACKEND_IMUNIFY",
+    "FIREWALL_PROBE_TARGET",
     "BinaryCheck",
     "FirewallAvailability",
     "check_csf_binary",

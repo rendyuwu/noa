@@ -27,6 +27,14 @@ The root/non-root split is asserted through the probe *commands*, since that is 
 sudo-escalation rule lands here: root gets `command -v`, non-root gets the real binary under
 `sudo -n` — never
 `command -v` as the unprivileged user, which lies about a root-owned `0700` binary.
+
+The **argv** those non-root probes carry is asserted for a second reason. A correctly scoped
+sudoers grant is per-argument, so a probe argv outside the set NOA uses for work reports "no
+firewall tools" on a server that works — measured on `web16-cpn`, 2026-09-14, where the old
+`csf -v` / `imunify360-agent version` probes were the only two commands denied. The probes now
+send the READ path's own lookups against a loopback address, so any policy that lets NOA work
+lets NOA probe. `test_whm_firewall_gate.py` is what binds the working set to the published
+grant; this file pins the two strings.
 """
 
 from __future__ import annotations
@@ -190,15 +198,20 @@ async def test_non_root_probes_the_real_binary_under_sudo(monkeypatch) -> None: 
     """Never `command -v` as the unprivileged user: it reports "not installed" for a root-owned
     `0700` binary that `sudo -n` runs perfectly well. Never `sudo -l` either — that needs a
     permissive `listpw`, a second configuration dependency for a question the direct probe
-    already answers."""
+    already answers.
+
+    And never an argv NOA does not otherwise use. The target is spelled out rather than read
+    from `FIREWALL_PROBE_TARGET`: this is the assertion that pins the constant, and one that
+    composed itself from the value under test could not move.
+    """
     fake = install_fake_ssh_exec(monkeypatch, availability_mod, _present)
 
     await check_csf_binary(ssh_config(username="noa-ops"))
     await check_imunify_binary(ssh_config(username="noa-ops"))
 
     assert fake.commands == [
-        f"TERM=dumb sudo -n {CSF_BINARY} -v",
-        f"sudo -n {IMUNIFY_BINARY} version",
+        f"TERM=dumb sudo -n {CSF_BINARY} -g 127.0.0.1",
+        f"sudo -n {IMUNIFY_BINARY} ip-list local list --by-ip 127.0.0.1 --json",
     ]
     assert not any("command -v" in command for command in fake.commands)
 

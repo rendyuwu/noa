@@ -53,9 +53,13 @@ ERROR_NO_FIREWALL_BACKEND = "no_firewall_backend"
 MESSAGE_NO_FIREWALL_BACKEND = (
     "Neither CSF nor Imunify360 could be run on this server, so its firewall state is unknown."
 )
+# Names the subcommands rather than the binaries: the grant this remedy asks for is
+# per-argument, and "grant NOPASSWD for csf" is a request the infra team will not approve.
+# `docs/integrations/whm.md` publishes the whole line to paste.
 MESSAGE_SUDO_REQUIRED = (
     "The SSH user lacks passwordless sudo rights for csf and imunify360-agent. Grant NOPASSWD "
-    "sudo for those binaries, or configure a root SSH user."
+    "sudo for the subcommands NOA runs — csf -g, -tr, -dr, -ta, -tra, -ar and "
+    "imunify360-agent ip-list — or configure a root SSH user."
 )
 
 T = TypeVar("T")

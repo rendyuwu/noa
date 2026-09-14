@@ -40,7 +40,8 @@ entry it does not hold. The release-and-allow tool could keep one required comma
 entry the operator asked to *exist* — and this one has no equivalent: nothing here is required to
 succeed, so the fresh
 read afterwards is what decides whether the change took. A **sudo-rights** failure is the one
-exception and it is not tolerated anywhere: sudoers can permit `csf -v` and refuse
+exception and it is not tolerated anywhere: the grant is per-argument, so sudoers can permit
+`csf -g` and refuse
 `csf -ar`, and "the entry was not there" is never the right reading of "you may not run this".
 
 **Every backend operation goes through `run_on_usable_backends`** — the change and

@@ -181,12 +181,25 @@ Both backends are probed in parallel (`asyncio.gather`) before any firewall tool
 | Resolved user | Probe |
 |---|---|
 | `root` | `command -v /usr/sbin/csf`, `command -v imunify360-agent` |
-| non-root | `sudo -n /usr/sbin/csf -v`, `sudo -n imunify360-agent version` |
+| non-root | `TERM=dumb sudo -n /usr/sbin/csf -g 127.0.0.1`, `sudo -n imunify360-agent ip-list local list --by-ip 127.0.0.1 --json` |
 
 Non-root does **not** use `command -v`: a root-owned `0700` binary is invisible to the
 unprivileged user but runs fine under `sudo -n`, so presence-checking would report "not
 installed" for a working server. It does not use `sudo -l` either — that depends on a
 permissive `listpw` sudoers setting for a question the direct probe already answers.
+
+**The non-root probe argv comes from the set NOA uses for work, and that is the rule, not a
+detail.** A correctly scoped sudoers grant is *per-argument*, so a probe outside the granted
+set reports "no firewall tools" on a server that works. The probe used to send `csf -v` and
+`imunify360-agent version` — the only two commands NOA never uses for anything else — and on
+`web16-cpn` (read 2026-09-14) those were the only two denied, while every working argv was
+granted. It now sends the READ path's own lookups against `127.0.0.1`, a loopback address no
+firewall holds: only the exit status is read, never the body, and any policy that lets NOA
+work then lets NOA probe by construction.
+
+Adding a csf or imunify argv therefore means one of two things: it is already inside the grant
+below, or it needs an infra request. `test_whm_firewall_gate.py::test_every_firewall_argv_sits_inside_the_sudoers_grant`
+fails until one of those has happened — it parses the grant out of this file.
 
 `FirewallAvailability` carries a third field, `sudo_required`. A binary that is present but
 whose escalation was denied comes back `usable=False`, which on its own is indistinguishable
@@ -203,11 +216,32 @@ honestly; a false positive here is a silent no-op no gate downstream can catch.
 
 ### Required sudoers entries
 
-For a non-root SSH user (replace `noa-ops`):
+For a non-root SSH user (replace `noa-ops`). Per-argument, not whole-binary — this is the grant
+NOA's probes and commands are written against, and the block is parsed by
+`test_whm_firewall_gate.py`, so the marker comment above it is load-bearing:
+
+<!-- whm-sudoers-grant -->
 
 ```
-noa-ops ALL=(root) NOPASSWD: /usr/sbin/csf, /usr/bin/imunify360-agent
-Defaults:noa-ops !requiretty
+noa-ops ALL=(root) NOPASSWD: /usr/sbin/csf -g *, /usr/sbin/csf -tr *, /usr/sbin/csf -dr *, \
+                             /usr/sbin/csf -ta *, /usr/sbin/csf -tra *, /usr/sbin/csf -ar *, \
+                             /usr/bin/imunify360-agent ip-list *
+Defaults:noa-ops secure_path=/sbin:/bin:/usr/sbin:/usr/bin, !requiretty
+```
+
+Two provenances, and they are not the same claim. The grant above and the exit codes below were
+**read on `web16-cpn`, 2026-09-14**. That the same grant is issued fleet-wide by the infra team,
+and that widening it to `csf -v` / `imunify360-agent version` would not be approved, is
+**owner-stated**.
+
+`imunify360-agent` is unqualified in the commands NOA sends but absolute in the grant: sudo
+matches after resolving the name against `secure_path`, which is why that `Defaults` line sits
+beside `!requiretty`. Both probes were measured against this grant, same box, same day, same
+account:
+
+```bash
+TERM=dumb sudo -n /usr/sbin/csf -g 127.0.0.1                            # exit 0
+sudo -n imunify360-agent ip-list local list --by-ip 127.0.0.1 --json    # exit 0
 ```
 
 Without `NOPASSWD`, `sudo -n` fails immediately and NOA reports `ssh_sudo_required` — which is
@@ -528,8 +562,8 @@ The runner sends, per usable backend and through `run_on_usable_backends`:
 **Release before allow**, because CSF resolves a conflict block-first: an allow written before
 the deny entry is removed buys nothing and reads as success. The removals are tolerated because
 "not in that list" is the ordinary case — most addresses are held by one backend, or by a
-temporary ban. A **sudo-rights** refusal is never tolerated: sudoers can permit `csf -v`
-and refuse the write, and that is not an entry being absent.
+temporary ban. A **sudo-rights** refusal is never tolerated: the grant is per-argument, so
+sudoers can permit `csf -g` and refuse the write, and that is not an entry being absent.
 
 One instant feeds both backends — csf takes a TTL in seconds, Imunify an absolute epoch — and
 the after-state reports the resolved `expires_at`.
