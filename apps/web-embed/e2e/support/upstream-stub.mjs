@@ -47,8 +47,25 @@ const RECEIPT_AFTER = process.env.STUB_RECEIPT_AFTER ?? ''
  * frame grows past the content. That is the loop: taller frame, no overflow, scrollbar removed, box
  * wider, wrapped lines fit, measurement drops, frame shrinks, scrollbar back.
  *
- * The lengths are staggered on purpose, so at least one line sits near a line boundary at the
- * frame's width instead of all of them wrapping comfortably in the middle of a row.
+ * **One line long enough that the drop is arithmetic, and a unit with no break opportunity in it.**
+ * Both halves were bought by a CI failure, and neither is decoration.
+ *
+ * The lengths used to be four staggered ones (74/116/158/200) chosen so that one of them would sit
+ * near a line boundary. That is a claim about the font's advance width, and the font here is a
+ * system stack — so the fixture wrapped one line differently on the developer box that measured it
+ * and not at all on the runner, where the release dropped 0px and the spec failed on a height it
+ * could not explain. A length instead makes it a sum: a line of L characters in a box W wide at
+ * advance `a` loses more than a whole row to a widening of `d` whenever `L·d·a > W·(W+d)`, which at
+ * L=3000, W=407, d=15 holds for any `a` above 3.8px — every monospace face at this size is 6px or
+ * wider. Measured across four faces and five sizes: the smallest drop was 19.5px, one row, against
+ * `CARD_FRAME_POLICY.epsilon` of 8.
+ *
+ * The hyphens had to go for the same reason. A hyphen is a break opportunity, so the line's capacity
+ * moves in whole 23-character units rather than in characters, and a 15px widening crosses a unit
+ * boundary only at some advances: the hyphenated 3000-character line dropped 136.5px at 13px type
+ * and **0px** at 14px and 16px, with everything else identical. `noa0reflow0probe0value0` is one
+ * unbreakable word, so `word-break: break-word` fills every row to the character and the sum above
+ * is the whole of it.
  *
  * It rides in the evidence block because that is where an unbounded number of long monospace
  * strings reaches this card now: the arguments block it used to use is not drawn any more, and a
@@ -57,15 +74,19 @@ const RECEIPT_AFTER = process.env.STUB_RECEIPT_AFTER ?? ''
 const REFLOW_ID = process.env.STUB_REFLOW_ID ?? ''
 
 function reflowEvidence() {
-  const unit = 'noa-reflow-probe-value-'
+  const unit = 'noa0reflow0probe0value0'
   return {
     headline: 'Unblock an IP — 203.0.113.24',
     asked: 'remove 203.0.113.24 from the deny lists on alpha',
     evidence_heading: 'Why it was blocked',
     server: 'alpha',
     firewall: {
-      matches: [74, 116, 158, 200].map((length) => unit.repeat(12).slice(0, length)),
-      total_matches: 4,
+      // The short line keeps this a list of several rows, the way a real reading arrives; the long
+      // one carries the reflow.
+      matches: [74, 3000].map((length) =>
+        unit.repeat(Math.ceil(length / unit.length)).slice(0, length),
+      ),
+      total_matches: 2,
       truncated: false,
     },
   }

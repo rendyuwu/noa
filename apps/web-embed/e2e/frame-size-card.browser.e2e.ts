@@ -36,12 +36,12 @@ test.beforeEach(async ({ context }) => {
  * The card's content box, and the one declaration that moves it.
  *
  * **A scrollbar takes no layout width in this lane's browser.** Measured on the reflow fixture: with
- * the gutter released, an `overflow-y: auto` box whose content is 911px tall inside a 150px frame
+ * the gutter released, an `overflow-y: auto` box whose content is 1735px tall inside a 150px frame
  * reports `clientWidth` 480 — its full width — and `window.innerWidth - documentElement.clientWidth`
  * is 0. Neither sizing `::-webkit-scrollbar` nor `scrollbar-width: thin` changes that. So the
  * scrollbar-mediated width change `nextFrameHeight` is written against cannot arise here on its own,
  * and `scrollbar-gutter: stable` is the only thing that moves this document's content box at all:
- * 465px reserved against 480px released, which on this fixture is 950px of card against 911px.
+ * 465px reserved against 480px released, which on this fixture is 1755px of card against 1735px.
  *
  * Two consequences, and both shape the specs below. Removing the declaration changes no number a
  * post count can see, so it is asserted as computed style or it is not asserted. And releasing it
@@ -147,9 +147,15 @@ test('a width change that shortens the card does not shorten the frame', async (
   // The spec above cannot separate the two: with the gutter reserved the width never moves, so one
   // measurement is taken and one height is posted, and the monotonic rule is never asked anything.
   // This spec asks it. Releasing the gutter widens the content box by 15px, which on this fixture is
-  // a card 39px shorter than the frame it is sitting in — the same event a desktop browser produces
+  // a card 20px shorter than the frame it is sitting in — the same event a desktop browser produces
   // for free when a frame grows past its content and the scrollbar goes away, and the first step of
   // the loop `nextFrameHeight`'s comment describes.
+  //
+  // That 20px is one row, and it is a row the fixture's own arithmetic forces rather than a row this
+  // browser's font happened to lose: `e2e/support/upstream-stub.mjs` states the length and the
+  // unbreakable unit that make the drop hold at any advance. It is stated there rather than asserted
+  // here because a fixture that stops reflowing fails this spec at the line below, on a height, and
+  // that reads as a sizing bug in the app.
   //
   // What is asserted is that nothing is posted for it. The two jobs — "too small to bother with" and
   // "never shorter" — are one comparison in that function, so the refactor that would look most
