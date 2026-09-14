@@ -49,9 +49,14 @@ helper, **not** an MCP tool:
    [PGPy](https://github.com/SecurityInnovation/PGPy) (pure-Python, AES-256). The yopass
    server only ever sees ciphertext.
 3. `POST <YOPASS_BASE_URL>/secret` with
-   `{secret: <ciphertext>, expiration: <seconds>, one_time: <bool>}`.
+   `{message: <ciphertext>, expiration: <seconds>, one_time: <bool>}`. The ciphertext field is
+   `message` — yopass decodes the request into the same struct it serves back, and drops an
+   unknown key without complaint, so naming it `secret` still answers HTTP 200 with a fresh
+   uuid while storing the empty string. That is a *successful* delivery of nothing, and the
+   caller goes on to change the VM password behind it.
 4. The response `{message: <uuid>}` becomes the share URL:
-   `<YOPASS_BASE_URL>/#/s/<uuid>/<passphrase>`.
+   `<YOPASS_BASE_URL>/#/s/<uuid>/<passphrase>`. The frontend route is
+   `/:format/:key/:password`, format `s` for a secret.
 
 The decryption passphrase rides in the **URL fragment** (after `#`). Browsers never send the
 fragment to the server, so the yopass instance can decrypt nothing — only whoever holds the

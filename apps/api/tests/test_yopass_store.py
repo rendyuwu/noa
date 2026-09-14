@@ -44,9 +44,21 @@ def _settings(**overrides: object) -> Settings:
 
 
 def _capturing_transport(captured: dict[str, object]) -> httpx.MockTransport:
+    """A fake that *stores* like yopass does, rather than echoing an id at any body.
+
+    `captured["stored"]` is what a real instance would keep: the `message` field, and the
+    empty string when the client names that field anything else. A live instance answers 200
+    with a fresh uuid either way, so a handler that ignored the body would report a healthy
+    delivery for a blob the operator opens to find blank — and the caller would go on to
+    change the VM password behind it. Reading the field here is what makes the payload's
+    field name load-bearing in `test_round_trip_decrypts_blob` below.
+    """
+
     def handler(request: httpx.Request) -> httpx.Response:
         captured["url"] = str(request.url)
-        captured["body"] = json.loads(request.content)
+        body = json.loads(request.content)
+        captured["body"] = body
+        captured["stored"] = body.get("message", "") if isinstance(body, dict) else ""
         return httpx.Response(200, json={"message": SECRET_ID})
 
     return httpx.MockTransport(handler)
@@ -79,7 +91,8 @@ async def test_posts_expected_payload() -> None:
     assert isinstance(body, dict)
     assert body["expiration"] == 604800
     assert body["one_time"] is False
-    assert isinstance(body["secret"], str) and body["secret"].strip()
+    # `message`, the name yopass reads. See the payload comment in `core/secrets/yopass.py`.
+    assert isinstance(body["message"], str) and body["message"].strip()
 
 
 async def test_expiration_and_one_time_come_from_settings() -> None:
@@ -136,7 +149,12 @@ async def test_builds_fragment_url() -> None:
 
 
 async def test_round_trip_decrypts_blob() -> None:
-    """The operator's side of the contract: the link's key opens the stored ciphertext."""
+    """The operator's side of the contract: the link's key opens the stored ciphertext.
+
+    Decrypts `stored` — what the server kept — not `body`, what the client sent. The two are
+    the same string only while the payload names the field yopass reads, so this fails on a
+    field-name drift the HTTP status can never report.
+    """
     captured: dict[str, object] = {}
 
     url = await _yopass_store(
@@ -147,9 +165,9 @@ async def test_round_trip_decrypts_blob() -> None:
     )
 
     passphrase = url.rsplit("/", 1)[-1]
-    body = captured["body"]
-    assert isinstance(body, dict)
-    cleartext = pgpy.PGPMessage.from_blob(body["secret"]).decrypt(passphrase).message
+    stored = captured["stored"]
+    assert isinstance(stored, str) and stored.strip(), "server stored nothing"
+    cleartext = pgpy.PGPMessage.from_blob(stored).decrypt(passphrase).message
     if isinstance(cleartext, (bytes, bytearray)):
         cleartext = cleartext.decode("utf-8")
 

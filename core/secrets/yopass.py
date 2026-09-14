@@ -90,8 +90,16 @@ async def _yopass_store(
     passphrase = _generate_passphrase()
     ciphertext = _encrypt_blob(_build_blob(username, password), passphrase)
 
+    # The ciphertext field is `message`, not `secret`. yopass decodes the POST body into the
+    # same struct it serves back, and an unknown key is dropped silently: posting `secret`
+    # still answers HTTP 200 with a fresh uuid, and the stored message is the empty string.
+    # So the wrong name here is not a failed delivery, it is a *successful* one carrying
+    # nothing — and the caller then goes on to change the VM password, locking the operator
+    # out with a link that opens to blank. Measured against a live instance; a mock that
+    # echoes an id regardless of the body cannot see this, which is why the round-trip test
+    # now decrypts what the fake server stored rather than what the client sent.
     payload = {
-        "secret": ciphertext,
+        "message": ciphertext,
         "expiration": settings.yopass_secret_expiration_seconds,
         "one_time": settings.yopass_one_time,
     }
