@@ -266,6 +266,12 @@ operationally still blocked, and release-and-allow makes that intermediate state
 and **`not_found` requires positive evidence** — silence is `unknown`, so a parse regression
 cannot read as a clean IP.
 
+csf's own `No matches found for …` line is read for the verdict and then **left out of the
+evidence**: it carries the target, so a naive filter keeps it, but it is not an entry.
+Counting it reported two entries for an address csf had just said it held nothing for — one
+line per table, v4 and v6 — and one entry plus the other table's negative as two (measured
+2026-09-14). A clean address answers `not_found` with `total_matches: 0` and no lines.
+
 Matches are bounded at 20 lines, because the result heads for an LLM context — and
 `CSFGrepParsed.total_matches` reports how many there were before the cut.
 Twenty lines with nothing beside them read as "there are twenty entries". The kept lines are

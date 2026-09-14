@@ -125,10 +125,31 @@ No matches found for 203.0.113.10 in ip6tables
     parsed = parse_csf_grep_output(output, target="203.0.113.10")
 
     assert parsed.verdict == "not_found"
-    assert parsed.matches == [
-        "No matches found for 203.0.113.10 in iptables",
-        "No matches found for 203.0.113.10 in ip6tables",
-    ]
+    # csf's negative line is what the verdict is read FROM, and it is not an entry, so it is not
+    # evidence either. This assertion used to hold those two lines and the count that came with
+    # them, which said "2 entries" for an address csf had just reported nothing for.
+    assert parsed.matches == []
+    assert parsed.total_matches == 0
+
+
+def test_a_negative_line_beside_a_real_hit_does_not_inflate_the_count() -> None:
+    """The shape this was measured in, live on 2026-09-14.
+
+    `csf -g` prints the matching rules for one table and its own "no matches" line for the
+    other, so an address with one real rule reported `total_matches: 2` — the count a reader
+    takes for "how many entries csf holds".
+
+    The verdict does not move: a rule csf cannot classify as deny or allow is still `unknown`,
+    never rounded up to clean, which is the half of this that must not change.
+    """
+    rule = "filter imunify360_websh 7 2211 133K ACCEPT all -- * * 127.0.0.1 0.0.0.0/0"
+    output = f"{rule}\nNo matches found for 127.0.0.1 in ip6tables"
+
+    parsed = parse_csf_grep_output(output, target="127.0.0.1")
+
+    assert parsed.matches == [rule]
+    assert parsed.total_matches == 1
+    assert parsed.verdict == "unknown"
 
 
 def test_blocked_beats_allowlisted_when_the_ip_is_in_both_lists() -> None:

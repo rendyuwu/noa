@@ -209,7 +209,16 @@ def _parse_csf_grep_lines(lines: list[str], *, target: str, max_matches: int = 2
     if not target_value:
         raise ValueError("CSF grep target is required")
 
-    matches = [line for line in lines if target_value in line]
+    hits = [line for line in lines if target_value in line]
+
+    # csf's own `No matches found for <target> in iptables` carries the target, so it lands in
+    # `hits` — and it is the one line there that is not an entry. It stays in the verdict read
+    # below, where it is the positive evidence `not_found` requires, and it leaves the evidence
+    # list, because `total_matches` is read as "how many entries csf holds". Counting it said
+    # **2** for an address csf had just reported nothing for (one line per table, v4 and v6);
+    # measured against a live `csf -g` on 2026-09-14, where a real hit plus the ip6tables
+    # negative reported 2 entries for 1.
+    matches = [line for line in hits if not _is_not_found_match(line)]
     bounded = matches[: max_matches if max_matches > 0 else 0]
 
     # Read off every match, not off the verdict below, which is about to discard it when a block
@@ -222,9 +231,9 @@ def _parse_csf_grep_lines(lines: list[str], *, target: str, max_matches: int = 2
         verdict: CSFGrepVerdict = "blocked"
     elif allow_entry:
         verdict = "allowlisted"
-    # `not_found` needs csf to have said so. Silence is `unknown`, not clean.
-    elif matches and all(_is_not_found_match(line) for line in matches):
-        verdict = "not_found"
+    # `not_found` needs csf to have said so, and now reads as "no entry, and csf said so" —
+    # one branch rather than the two this needed while the negative line was still an entry.
+    # Silence is `unknown`, not clean.
     elif not matches and any(_is_not_found_match(line) for line in lines):
         verdict = "not_found"
     else:
