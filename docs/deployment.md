@@ -31,7 +31,7 @@ root: `apps/api`-scope context cannot find own dependency. Two web context be ow
 because those package be separate artifact with own lockfile and no shared source (AGENTS.md) —
 repo-root context put each one file inside other image, which be boundary, not optimisation.
 
-Two build fact worth know before first build:
+Three build fact worth know before first build:
 
 - **`python-ldap==3.4.7` have no wheel.** `uv.lock` record sdist only, so API image compile it
   against OpenLDAP header in builder stage and ship only runtime library.
@@ -42,6 +42,26 @@ Two build fact worth know before first build:
   Measured while build this image on `node:20-bookworm-slim`. `docs/admin-web.md` say "Node
   20 LTS" for CI runner; that clause and `packageManager` clause fight each other, so doc fixed
   in same change.
+- **API image ship `core/` from OLDER commit if workspace install read shared uv cache.**
+  `--no-editable` build `noa-core` and `noa-api` into wheel. uv decide whether local package
+  need rebuild from its `cache-keys`, which default to `pyproject.toml`. Code-only commit touch
+  no `pyproject.toml`, so on runner whose BuildKit cache survive between build, that sync
+  reinstall wheel built from PREVIOUS source — while `COPY core/ core/` bust its Docker layer,
+  so every layer look freshly built. Measured 2026-09-14: staging image `staging-15707d34` was
+  built from commit `15707d3`, and container from it print previous commit
+  `firewall_gate.MESSAGE_SUDO_REQUIRED` and have no `availability.FIREWALL_PROBE_TARGET` at
+  all. Reproduced local by build two commit in order against one cache mount. Fix = **no cache
+  mount on that one `RUN`**; dependency sync above keep its cache, because its input be
+  `uv.lock`, and unchanged lock DO mean same third-party wheel.
+  `apps/api/tests/test_deployment.py::test_the_workspace_install_does_not_read_a_shared_uv_cache`
+  fail if mount come back.
+
+  **Consequence for every live check: image tag not proof of code inside image.** Verify by read
+  a symbol from running container, never by read tag:
+
+  ```bash
+  kubectl -n staging exec deploy/noa-api -- python -c "import core.<module> as m; print(m.<NAME>)"
+  ```
 
 **Admin panel image only build inside Biznet Gio network.** `.npmrc` map `@gio/*` to
 `https://bigsu.biznetgio.pt/registry/`, which resolve to internal-only address; from outside,

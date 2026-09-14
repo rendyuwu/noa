@@ -50,8 +50,23 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 COPY core/ core/
 COPY apps/api/ apps/api/
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable --package noa-api
+# **No uv cache mount on this one**, and that is a measured fix rather than an oversight.
+#
+# `--no-editable` builds `noa-core` and `noa-api` into wheels, and uv decides whether a local
+# package needs rebuilding from its `cache-keys` — which default to `pyproject.toml`. A commit
+# that changes only `.py` files touches no `pyproject.toml`, so with a cache mount shared across
+# builds on a persistent runner this line reinstalls the wheel uv built from *older* source. The
+# `COPY core/ core/` above busts the Docker layer and the venv is rebuilt from cache anyway, so
+# the image ships code that is not in the commit it is tagged with — silently, because every
+# layer looks freshly built.
+#
+# Measured 2026-09-14: staging image `staging-15707d34` carried the previous commit's `core/`,
+# and it reproduces locally by building two commits in order against one cache mount.
+# `apps/api/tests/test_deployment.py` fails if the mount comes back.
+#
+# Nothing is lost. The first sync already installed every third-party dependency into this venv,
+# so what this line does without a cache is build two pure-Python workspace wheels.
+RUN uv sync --frozen --no-dev --no-editable --package noa-api
 
 
 FROM python:3.12-slim-bookworm AS runtime

@@ -683,6 +683,43 @@ def test_api_image_runs_exactly_one_uvicorn_process() -> None:
     assert "--proxy-headers" not in command
 
 
+def test_the_workspace_install_does_not_read_a_shared_uv_cache() -> None:
+    """A cache mount on the sync that installs `noa-core` ships `core/` from an older commit.
+
+    `--no-editable` builds the two workspace members into wheels, and uv keys a local package's
+    rebuild on its `cache-keys`, which default to `pyproject.toml`. A commit that changes only
+    `.py` files touches no `pyproject.toml`, so on a runner whose BuildKit cache survives
+    between builds that sync reinstalls the wheel built from the *previous* source — while
+    `COPY core/ core/` above busts its Docker layer and every layer looks freshly built.
+
+    MEASURED 2026-09-14, not reasoned about: staging image `staging-15707d34` was built from a
+    commit whose `core/integrations/whm/availability.py` defines `FIREWALL_PROBE_TARGET`, and
+    the running container had no such name and answered with the previous commit's
+    `firewall_gate.MESSAGE_SUDO_REQUIRED`. Reproduced locally by building the two commits in
+    order against one cache mount, and closed by removing the mount: the same pair of builds
+    then put the new code in the second image.
+
+    The dependency sync above keeps its cache. Its input is `uv.lock`, which a code-only commit
+    also does not change — and that is correct there, because a locked third-party wheel built
+    from an unchanged lock IS the same wheel. The hazard is specific to the local packages,
+    whose source is not in the cache key.
+    """
+    syncs = [run for run in _run_instructions(dockerfile("api")) if "uv sync" in run]
+    installs_workspace = [run for run in syncs if "--no-install-workspace" not in run]
+
+    assert len(installs_workspace) == 1, f"expected one workspace-installing sync, got {syncs}"
+    assert "--mount=type=cache" not in installs_workspace[0], (
+        "the workspace install must not read a shared uv cache — it reinstalls `noa-core` from a "
+        "wheel built before this commit's `core/`, and the image ships code it is not tagged with"
+    )
+
+
+def _run_instructions(body: str) -> list[str]:
+    """Every `RUN` in one Dockerfile, each with its continuation lines folded into one string."""
+    folded = body.replace("\\\n", " ")
+    return [" ".join(line.split()) for line in folded.splitlines() if line.startswith("RUN ")]
+
+
 def test_no_service_declares_more_than_one_replica() -> None:
     """The compose half of the rule above."""
     for service, spec in compose_services().items():
