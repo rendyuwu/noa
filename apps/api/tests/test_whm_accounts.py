@@ -226,11 +226,16 @@ def test_a_row_with_no_domain_still_matches_on_its_username() -> None:
 
 # --- The contact email fields ---
 #
-# One row for all of them, and no query below matches more than one field by accident: that is
-# what lets deleting a single field from the matcher's tuple redden exactly the cases that field
-# carries. A live `listaccts` row (measured 2026-09-16) sends `email` and no `contactemail`; the
-# second spelling is tested because the matcher reads what the *normaliser* emits, and the
-# normaliser emits `contactemail` whenever WHM sends it.
+# One row for all of them. The single-field queries are each answerable by exactly one field, so
+# deleting `email` from the matcher's tuple reddens the `email` cases and leaves the `contactemail`
+# case green, and the reverse holds too — the two fields are bound independently rather than tested
+# once between them. The domain-wide query below is the exception and is not bound to either field:
+# `@acme.example.com` sits in both addresses, so no single deletion reddens it. It pins the
+# substring rule itself, and a mutation to exact matching is what takes it red.
+#
+# A live `listaccts` row (measured 2026-09-16) sends `email` and no `contactemail`; the second
+# spelling is tested because the matcher reads what the *normaliser* emits, and the normaliser
+# emits `contactemail` whenever WHM sends it.
 _ACCOUNT_WITH_CONTACT_FIELDS = {
     "user": "acme",
     "domain": "acme.example.com",
