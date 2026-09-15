@@ -10,8 +10,8 @@ Six modules, one job each:
   handler shapes them.
 - `crypto` — `SecretCipher`: Fernet with an `enc:v1:fernet:` version prefix, idempotent
   encrypt, refuse-unprefixed decrypt.
-- `password` — `_generate_password()`: server-side, shell/cloud-init-safe alphabet, never an
-  LLM argument.
+- `password` — `_generate_password()`: server-side, letters-and-digits alphabet the customer
+  can read back and type, never an LLM argument.
 - `yopass` — `_yopass_store()`: PGPy client-side encrypt, `POST /secret`, passphrase in the
   URL fragment so the yopass server can decrypt nothing.
 - `delivery` — `SecretDelivery`: the seam the tool path holds, with the three yopass settings

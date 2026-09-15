@@ -9,11 +9,19 @@ context, the stored transcript, and potentially the logs. Server-side generation
 plaintext lives only in the calling `execute()` frame, long enough to be delivered via yopass and
 applied to the VM, and the tool returns a `yopass_url` and nothing else.
 
-**The alphabet is a compatibility fix, not taste.** Space, single quote, double quote,
-backtick and backslash are excluded because the generated password is later embedded in a
-cloud-init payload and passed through a shell-quoted remote command. Each of those characters
-has bitten one of those layers. The rest of `string.punctuation` stays, so entropy per
-character is barely reduced (~89 symbols instead of ~94).
+**The alphabet is letters and digits because a customer types it.** Owner-stated, and recorded in
+`docs/integrations/yopass.md` under `SECRET_PASSWORD_LENGTH` so it stays citable rather than
+remembered. NOA hands the operator a yopass link and never reaches the customer itself; the
+operator passes it on, and the customer reads the value back and enters it by hand. Punctuation
+makes that harder to dictate and to type, so the symbol class is gone rather than filtered. Space,
+single quote, double quote, backtick and backslash still must never appear — the password is later
+embedded in a cloud-init payload and passed through a shell-quoted remote command, and each of
+those characters has bitten one of those layers — but that exclusion is now structurally
+satisfied rather than enforced: with no punctuation in the alphabet there is nothing for a
+filter to remove. That history is also why punctuation may not creep back in without re-reading
+those two layers first. The shorter charset costs about 13 bits at the default length (the
+alphabet was 90 characters, so 90^24 ≈ 156 bits against 62^24 ≈ 143 bits); the length setting
+below buys that back.
 
 Length comes from the caller: `settings.secret_password_length` (`SECRET_PASSWORD_LENGTH`,
 default 24, floored at 8 by config). `_DEFAULT_PASSWORD_LENGTH` matches that default so a
@@ -26,12 +34,7 @@ import secrets
 import string
 from typing import Final
 
-# Break shell/JSON/cloud-init quoting: space, both quote styles, backtick, backslash.
-_FORBIDDEN_SYMBOLS: Final[frozenset[str]] = frozenset(" \"'`\\")
-_SAFE_SYMBOLS: Final[str] = "".join(
-    char for char in string.punctuation if char not in _FORBIDDEN_SYMBOLS
-)
-PASSWORD_ALPHABET: Final[str] = string.ascii_letters + string.digits + _SAFE_SYMBOLS
+PASSWORD_ALPHABET: Final[str] = string.ascii_letters + string.digits
 
 _DEFAULT_PASSWORD_LENGTH: Final[int] = 24
 

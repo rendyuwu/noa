@@ -2,10 +2,15 @@
 
 The password-generation rule's first half — the password is generated here, never supplied as a tool
 argument — is structural: `_generate_password` takes a length and nothing else, so there is no
-argument a model could fill. What is testable is the alphabet, and it is the part that broke in
-production: the generated value is embedded in a cloud-init payload and passed through a
-shell-quoted remote command, so a space, quote, backtick or backslash silently corrupts the
-credential that was just set on a customer VM.
+argument a model could fill. What is testable is the alphabet. It is letters and digits and nothing
+else, because the customer reads the value back and types it by hand once the operator has passed
+the yopass link on — an owner-stated reason, recorded in `docs/integrations/yopass.md`. The layer
+that broke
+in production is still underneath it — the value is embedded in a cloud-init payload and passed
+through a shell-quoted remote command, where a space, quote, backtick or backslash silently corrupts
+the credential just set on a customer VM — but that hazard is now satisfied by construction rather
+than by a filter. So the assertion below is the whole-class one, and it is what catches punctuation
+creeping back into the constant.
 
 The delivery half of that rule (plaintext never logged) is asserted against the real helper in
 `test_yopass_store.py::test_logs_carry_no_plaintext_or_passphrase`.
@@ -20,19 +25,18 @@ import pytest
 from core.secrets.password import PASSWORD_ALPHABET, _generate_password
 from support.auth import build_settings
 
-FORBIDDEN = " \"'`\\"
 
+def test_password_alphabet_is_letters_and_digits_only() -> None:
+    """A customer types this value back, so the symbol class is gone entirely.
 
-def test_password_alphabet_excludes_shell_breaking_symbols() -> None:
-    """Space, both quote styles, backtick, backslash — each has broken a layer."""
-    for char in FORBIDDEN:
-        assert char not in PASSWORD_ALPHABET
-
-    # Everything else stays, so the exclusion costs ~5 symbols of entropy, not the class.
-    for char in string.ascii_letters + string.digits:
-        assert char in PASSWORD_ALPHABET
-    assert "!" in PASSWORD_ALPHABET
-    assert "@" in PASSWORD_ALPHABET
+    One whole-class assertion rather than a list of the five shell-breaking characters (space,
+    both quote styles, backtick, backslash): those are a subset of it now, and with no
+    punctuation in the alphabet there is nothing left for a filter to remove.
+    """
+    assert set(PASSWORD_ALPHABET) == set(string.ascii_letters + string.digits)
+    # Set equality would hide a repeated character, which would skew the draw.
+    assert len(PASSWORD_ALPHABET) == 62
+    assert not set(string.punctuation + " ") & set(PASSWORD_ALPHABET)
 
 
 def test_generated_passwords_stay_inside_the_alphabet() -> None:
