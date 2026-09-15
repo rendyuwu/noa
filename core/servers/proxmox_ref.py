@@ -21,7 +21,7 @@ that could disagree with the list a tie was judged against.
 
 from __future__ import annotations
 
-from typing import TypeVar
+from typing import Final, TypeVar
 
 from core.servers.proxmox_repository import ProxmoxServerReadRepository, ProxmoxServerRowLike
 from core.servers.reference import (
@@ -43,6 +43,51 @@ RowT = TypeVar("RowT", bound=ProxmoxServerRowLike)
 SUBJECT = "Proxmox"
 
 MESSAGE_REQUIRED = required_message(SUBJECT)
+
+# The two identity parameters both Proxmox tools publish, and the only copies of them.
+#
+# Here rather than in `mcp_tools/` because they are `MESSAGE_REQUIRED`'s question asked in the
+# other direction — one is what NOA says when a reference is missing, the other is what it asks
+# for before one is sent — and because the password tool and the NIC tool held byte-identical
+# copies of both that a longer rule would have let drift apart.
+#
+# The four sibling `SERVER_REF_DESCRIPTION` constants stay where they are
+# (`whm_firewall_allowlist.py`, `whm_firewall_change.py`, `whm_account_change.py`,
+# `pmg_whitelist.py`): each is one tool's own string, so there is nothing to share and moving them
+# would buy an import. Proxmox is the only system whose two tools published the same two strings
+# twice, which is what makes this a deduplication rather than a relocation.
+#
+# It names the cluster/node distinction because Proxmox is the one system here with **no discovery
+# tool**: `TOOL_CATALOG` exposes `whm_list_servers` but nothing that lists Proxmox servers, so a
+# model handed a node name has no read to recover with. A node sent as a `server_ref` matches no
+# id, no name and no `base_url` host, and `resolve_server_ref` answers `host_not_found` carrying no
+# `choices` — `choices` is populated on a tie, and a miss is not a tie. Hence the last sentence:
+# the way out of that is the operator, not another spelling.
+#
+# Generic on purpose. That a NOA row is a cluster and `node` is one member of it is a fact about
+# Proxmox; that a given fleet names its nodes `<cluster>pve<NN>`, so the cluster is the text before
+# the suffix, is that deployment's convention and belongs in the operator's own agent prompt
+# (`docs/integrations/librechat.md`, "Agent system prompt (example)"), which is where it is stated.
+#
+# So "the server is the cluster that node is part of" states the *relationship* and withholds the
+# *method* deliberately. It is not an invitation to widen this into "do not derive it": the
+# operator's prompt supplies the derivation, and a shipped string forbidding what that prompt
+# instructs would leave a model holding two contradictory rules about one field.
+SERVER_REF_DESCRIPTION: Final = (
+    "Which Proxmox server: its id, its name in NOA, or its hostname. A cluster node name is not "
+    "this value: a node such as `examplepve09` is one member of a cluster, and it belongs in "
+    "`node`. When an operator names only a node, the server is the cluster that node is part of. "
+    "Ask the operator if they have not named one, and ask again if NOA answers that no server "
+    "matches — do not try another spelling."
+)
+
+# The other half of the pair, and the example is `examplepve09` rather than a bare `pve1` for one
+# reason: it sits one parameter away from the string above, and two node shapes in one schema make
+# the cluster/node distinction unreadable at exactly the site that has to teach it.
+NODE_DESCRIPTION: Final = (
+    "The Proxmox node the VM runs on, exactly as Proxmox names it (for example `examplepve09`). "
+    "It is the cluster member: not the VM, and not the `server_ref`."
+)
 
 # One name for the shared resolution type, as in `whm_ref` and `pmg_ref`.
 ProxmoxServerRefResolution = ServerRefResolution
@@ -83,6 +128,8 @@ __all__ = [
     "ERROR_REQUIRED",
     "MAX_CHOICES",
     "MESSAGE_REQUIRED",
+    "NODE_DESCRIPTION",
+    "SERVER_REF_DESCRIPTION",
     "SUBJECT",
     "ProxmoxServerRefResolution",
     "describe",

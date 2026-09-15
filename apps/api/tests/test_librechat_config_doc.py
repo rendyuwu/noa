@@ -267,7 +267,7 @@ def test_a_missing_entry_is_not_a_pass() -> None:
     assert config_problems(None) != []
 
 
-# --- the example prompt names no justification field ---
+# --- the example prompt is there at all ---
 
 
 def test_example_prompt_is_present_and_substantial() -> None:
@@ -281,6 +281,64 @@ def test_example_prompt_is_present_and_substantial() -> None:
     # The clauses the example prompt owes, each identifiable without pinning wording.
     assert "noa_get_action_result" in prompt
     assert "UI Resource Marker" in prompt
+
+
+# --- the example prompt tells the model how to read a pasted lookup block ---
+
+# Three things the Proxmox paste clause has to mention, each a *mapping* the model cannot infer
+# and none of them a pinned sentence:
+#
+#   * `Host Node` — the block's field name, and the one value that is NOT the server;
+#   * `pve` — the node-name suffix this fleet's cluster names sit in front of, which is the
+#     derivation itself. The shipped tool description deliberately stops short of it, since node
+#     naming is a deployment convention rather than a fact about Proxmox, so this prompt is the
+#     only place it is written;
+#   * `cloud-init` — the `username` the block does not carry, and which therefore comes from the
+#     operator rather than from the contact address sitting in the block.
+#
+# It is asserted at all because Proxmox has no discovery tool: `whm_list_servers` has no Proxmox
+# sibling, so a model that reads a pasted block wrongly has no read to recover with.
+#
+# **What this set binds, and what it does not.** It binds vocabulary: the clause is present and
+# still talks about all three things. It does **not** bind *direction* — a clause rewritten to
+# "the Host Node value is the `server_ref`" carries every marker and inverts the rule. Nothing
+# here can separate those two, because the difference is prose, and pinning the sentence would
+# turn every reword into a false failure. The direction is bound on the code side instead, where
+# the string is NOA's own: `test_proxmox_tools_reset_password.py` asserts the shipped `server_ref`
+# description states that a node name is *not* that value. A reviewer reads this clause; the
+# suite reads the constant.
+PASTE_CLAUSE_MARKERS: tuple[str, ...] = ("Host Node", "pve", "cloud-init")
+
+
+def paste_clause_problems(prompt: str) -> list[str]:
+    """Which markers of the paste clause `prompt` is missing.
+
+    A list for the same argument `config_problems` is one: the separating test below asserts that a
+    *specific* absence is what turns it red.
+    """
+    return [marker for marker in PASTE_CLAUSE_MARKERS if marker not in prompt]
+
+
+def test_example_prompt_carries_the_proxmox_paste_clause() -> None:
+    assert paste_clause_problems(_example_prompt()) == []
+
+
+@pytest.mark.parametrize("marker", PASTE_CLAUSE_MARKERS)
+def test_the_paste_clause_check_separates(marker: str) -> None:
+    """Without this, a clause quietly dropped from the doc reads the same as one still there.
+
+    The mutation is to a copy of the doc's *own* text — the lines carrying one marker are removed —
+    rather than to the assertion, which is `_mutate`'s shape above: break the production artifact
+    and require red, never weaken the check.
+    """
+    without_marker = "\n".join(
+        line for line in _example_prompt().splitlines() if marker not in line
+    )
+
+    assert paste_clause_problems(without_marker) != []
+
+
+# --- the example prompt names no justification field ---
 
 
 def test_example_prompt_never_names_a_reason_field() -> None:

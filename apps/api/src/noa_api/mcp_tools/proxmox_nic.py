@@ -60,7 +60,11 @@ from core.integrations.proxmox.nic import (
     find_nic,
     list_nics,
 )
-from core.servers.proxmox_ref import resolve_proxmox_server_ref
+from core.servers.proxmox_ref import (
+    NODE_DESCRIPTION,
+    SERVER_REF_DESCRIPTION,
+    resolve_proxmox_server_ref,
+)
 from noa_api.mcp_tools.change_gate import (
     EVIDENCE_ASKED,
     EVIDENCE_HEADLINE,
@@ -140,12 +144,6 @@ DESCRIPTION_PROXMOX_VM_NIC: Final = (
     "rather than pick. Read the outcome with `noa_get_action_result`, and never report a link as "
     "changed without it."
 )
-
-SERVER_REF_DESCRIPTION: Final = (
-    "Which Proxmox server: its id, its name in NOA, or its hostname. Ask the operator if they "
-    "have not named one."
-)
-
 
 # --- The tool: it opens a question and changes nothing ---
 
@@ -434,12 +432,7 @@ def register_proxmox_nic_tools(server: FastMCP, *, context: McpToolContext) -> d
         server_ref: Annotated[str, Field(description=SERVER_REF_DESCRIPTION)],
         node: Annotated[
             str,
-            Field(
-                description=(
-                    "The Proxmox node the VM runs on, exactly as Proxmox names it (for example "
-                    "`pve1`). It is the cluster member, not the VM."
-                )
-            ),
+            Field(description=NODE_DESCRIPTION),
         ],
         vmid: Annotated[
             int,

@@ -39,7 +39,11 @@ from pydantic import Field
 from core.db.lifecycle import ToolRisk
 from core.integrations.proxmox.client import ProxmoxClient
 from core.integrations.proxmox.cloudinit import cloudinit_carries_password
-from core.servers.proxmox_ref import resolve_proxmox_server_ref
+from core.servers.proxmox_ref import (
+    NODE_DESCRIPTION,
+    SERVER_REF_DESCRIPTION,
+    resolve_proxmox_server_ref,
+)
 from noa_api.mcp_tools.change_gate import (
     EVIDENCE_ASKED,
     EVIDENCE_HEADLINE,
@@ -118,11 +122,6 @@ DESCRIPTION_PROXMOX_RESET_VM_PASSWORD: Final = (
     "cloud-init drive is next read, which for a running VM means its next boot. Read the outcome "
     "with `noa_get_action_result`, pass on the link it returns, and never report a password as "
     "changed without it."
-)
-
-SERVER_REF_DESCRIPTION: Final = (
-    "Which Proxmox server: its id, its name in NOA, or its hostname. Ask the operator if they "
-    "have not named one."
 )
 
 # --- The tool: it opens a question and changes nothing ---
@@ -347,15 +346,7 @@ def register_proxmox_password_tools(
     )
     async def proxmox_reset_vm_password_tool(
         server_ref: Annotated[str, Field(description=SERVER_REF_DESCRIPTION)],
-        node: Annotated[
-            str,
-            Field(
-                description=(
-                    "The Proxmox node the VM runs on, exactly as Proxmox names it (for example "
-                    "`pve1`). It is the cluster member, not the VM."
-                )
-            ),
-        ],
+        node: Annotated[str, Field(description=NODE_DESCRIPTION)],
         vmid: Annotated[
             int,
             Field(

@@ -38,6 +38,7 @@ from mcp.types import EmbeddedResource, TextContent
 from core.approvals.errors import ChangeReasonForbiddenError
 from core.auth.tool_catalog import TOOL_CATALOG
 from core.db.lifecycle import ActionRequestStatus, ToolRisk
+from core.servers.proxmox_ref import NODE_DESCRIPTION, SERVER_REF_DESCRIPTION
 from noa_api.mcp_server import build_mcp_server
 from noa_api.mcp_tools.change_gate import (
     APPROVAL_CARD_PATH,
@@ -46,6 +47,7 @@ from noa_api.mcp_tools.change_gate import (
     UI_RESOURCE_URI_PREFIX,
     assert_no_reason_argument,
 )
+from noa_api.mcp_tools.proxmox_nic import TOOL_PROXMOX_VM_NIC
 from noa_api.mcp_tools.proxmox_password import (
     ERROR_CLOUDINIT_USER_MISMATCH,
     ERROR_INVALID_VMID,
@@ -347,6 +349,50 @@ async def test_the_tool_schema_carries_no_password_parameter() -> None:
     ]
 
     assert not {"password", "new_password", "cipassword"} & set(tool.parameters["properties"])
+
+
+@pytest.mark.parametrize("tool_name", [TOOL_PROXMOX_RESET_VM_PASSWORD, TOOL_PROXMOX_VM_NIC])
+async def test_the_identity_parameters_separate_the_cluster_from_the_node(tool_name: str) -> None:
+    """Both Proxmox tools publish one `server_ref` and one `node` description, and `server_ref`
+    says a node is not one.
+
+    **Why the NIC tool is asserted from this file.** Registration is whole — `register_mcp_tools`
+    mounts every tool — so the schema of both Proxmox tools is reachable from either lane's
+    fixtures, and the property under test is that the two agree. Splitting it across two files
+    would give each half its own copy of the expectation, which is the drift this test exists to
+    catch.
+
+    **Why identity rather than a substring.** The two modules held byte-identical copies of both
+    strings until they moved to `core.servers.proxmox_ref`; a future edit to one file is exactly
+    how they would stop agreeing, and a model asking the NIC tool and the password tool for
+    different things about the same field is a bug no behaviour test would show.
+
+    **Why the content half asserts the negation and not only the word.** Proxmox is the one system
+    here with no discovery tool, so a model that sends a cluster member's name as `server_ref` gets
+    `host_not_found` with no `choices` and has nothing left to read. Asserting that `node` appears
+    would stay green on a description that told the model to send one — the exact inversion this
+    change exists to prevent — so the refusal itself is what is pinned.
+
+    What this does **not** bind is the doc side: the operator's prompt states the derivation from a
+    node name to its cluster, and no assertion here can tell a correct clause from an inverted one.
+    That gap is stated in `test_librechat_config_doc.py` beside the markers it does bind.
+    """
+    context = reset_context()[0].context
+    server = build_mcp_server(tool_context=context)
+    register_mcp_tools(server, context=context)
+
+    # `run_middleware=False`: the RBAC gate reads a caller off the request context, and
+    # this test is about the *schema* a tool declares, not about who may see it.
+    [tool] = [
+        tool for tool in await server.list_tools(run_middleware=False) if tool.name == tool_name
+    ]
+    properties = tool.parameters["properties"]
+    server_ref_description = properties["server_ref"]["description"]
+
+    assert server_ref_description == SERVER_REF_DESCRIPTION
+    assert properties["node"]["description"] == NODE_DESCRIPTION
+    assert "`node`" in server_ref_description
+    assert "is not this value" in server_ref_description
 
 
 async def test_a_reason_shaped_argument_is_refused_at_the_gate() -> None:
