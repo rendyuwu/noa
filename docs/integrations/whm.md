@@ -330,7 +330,7 @@ despite the unique index, because Postgres uniqueness is case-sensitive and the 
 |---|---|---|
 | `whm_list_servers` | READ | Every configured server, via `WHMServer.to_safe_dict()`. Exposed per DECISIONS section 6.6 — the model needs to know which servers exist. The only `*_list_servers` that is exposed. |
 | `whm_list_accounts` | READ | `server_ref`. Every account on one server, parked at `/tables/{token}` — the rows never enter the transcript (summary plus table URL). |
-| `whm_search_accounts` | READ | `server_ref` + `query` + `limit` (1–100, default 20). Case-insensitive substring of the account username **or** its domain. |
+| `whm_search_accounts` | READ | `server_ref` + `query` + `limit` (1–100, default 20). Case-insensitive substring of the account username, its primary domain, or its contact email address. A mailbox address at an addon or parked domain is not searchable — only the account's own contact address. |
 | `whm_suspend_account` | **CHANGE** | `server_ref` + `username`. Opens an approval request and suspends nothing; the change runs after an operator decides (READ now, CHANGE through the gate). No reason parameter, ever. |
 | `whm_unsuspend_account` | **CHANGE** | `server_ref` + `username`. The mirror, and a separate grant: suspend and unsuspend carry opposite risk, so DECISIONS section 9 leaves them two names rather than one `action` enum. Opens an approval request and lifts nothing. No reason parameter, ever. |
 | `whm_preflight_firewall_entries` | READ | `server_ref` + `target`. Asks CSF and Imunify360 what they hold for the target. Exposed per DECISIONS section 6.5 — the one operator-facing preflight. |
@@ -368,7 +368,11 @@ Three deliberate departures from `noa-old`'s version of this tool:
 
 - **Per-field matching.** There the username and domain were joined into one haystack, so a
   query containing a space matched *across* the junction (`"acme sho"` matched user `acme` plus
-  domain `shop.example.com`) and returned a row matching nothing the operator typed.
+  domain `shop.example.com`) and returned a row matching nothing the operator typed. Here the
+  query is tested against `user`, `domain`, `email` and `contactemail` independently — four
+  fields, still never one haystack. `suspendreason` is not among them, deliberately: it is the
+  field withheld above, and a matcher reading it would let a model confirm the reason text by
+  asking whether anything matched.
 - **Truncation is stated.** The result carries `total_matches` and `truncated`; returning the
   first N silently lets the model report "there are twenty accounts" when there are two hundred.
 - **Sorted by username before the cut**, because `listaccts` order is WHM's own and not

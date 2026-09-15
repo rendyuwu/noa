@@ -119,10 +119,12 @@ WHM_ACCOUNT_TABLE_COLUMNS: list[TableColumn] = [
 ACCOUNT_FIELDS_WITHHELD_FROM_MODEL = frozenset({"suspendreason"})
 
 DESCRIPTION_WHM_SEARCH_ACCOUNTS = (
-    "Search the cPanel accounts on one WHM server by username or domain, case-insensitively. "
-    "Use it to find the exact `user` an account tool needs before calling one; never guess a "
-    "username. Returns the matching accounts, how many matched in total, and whether the list "
-    "was cut short by `limit`. Read-only: it changes nothing."
+    "Search the cPanel accounts on one WHM server by username, primary domain, or the account's "
+    "contact email address, case-insensitively. A mailbox address at an addon or parked domain "
+    "is not searchable here — only the account's own contact address. Use it to find the exact "
+    "`user` an account tool needs before calling one; never guess a username. Returns the "
+    "matching accounts, how many matched in total, and whether the list was cut short by "
+    "`limit`. Read-only: it changes nothing."
 )
 
 
@@ -338,7 +340,14 @@ async def whm_search_accounts(
     operator's approval reason into WHM's suspension note when it suspends an account, and WHM
     returns it on every later `listaccts` — so a search that reported the field would hand the
     model, by round trip, the one string the LLM must never see. See
-    `ACCOUNT_FIELDS_WITHHELD_FROM_MODEL`.
+    `ACCOUNT_FIELDS_WITHHELD_FROM_MODEL`. The matcher does not read it either
+    (`account_matches`), or a model could confirm the reason text by asking whether anything
+    matched.
+
+    **The email match has a stated limit.** `listaccts` reports the account's primary domain only
+    and its contact address is the account's own, so a mailbox address at an addon or parked
+    domain never matches — an operator searching for one reads the empty result as "no such
+    customer". Said in the tool description too, because that is where the model reads it.
     """
     normalized_query = query.strip().lower()
     if not normalized_query:
