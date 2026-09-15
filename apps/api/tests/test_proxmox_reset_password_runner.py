@@ -84,9 +84,9 @@ WHERE = f"{SUBJECT} ({SERVER_NAME})"
 # "do this next" line that survives on a card — it states NOA's permission boundary rather than
 # giving advice — and an assertion that imported the constant would go on passing through any
 # rewording of the words the owner actually supplied.
-RESTART = (
-    "The old password keeps working until the VM is restarted. NOA cannot restart a VM — restart "
-    "it from the customer portal or from Proxmox."
+STOP_START = (
+    "The old password keeps working until the VM is stopped and started again. NOA cannot stop or "
+    "start a VM — stop and start it from the customer portal or from Proxmox."
 )
 
 # What this fixture's delivery configuration renders to (`SECRET_DELIVERY_*` in `support.servers`:
@@ -144,7 +144,7 @@ async def test_an_approved_reset_changes_the_password_and_confirms_it() -> None:
     assert payload["username"] == USERNAME
     assert payload["headline"] == f"Password reset — {SUBJECT}"
     assert payload["message"] == (
-        f"The cloud-init password for {WHERE} was changed. {RESTART} {LINK}"
+        f"The cloud-init password for {WHERE} was changed. {STOP_START} {LINK}"
     )
     assert vm.password_hash != before
 
@@ -372,7 +372,7 @@ async def test_a_task_that_never_finishes_ships_the_link(
     assert payload["headline"] == f"Password change failed — {SUBJECT}"
     assert payload["message"] == (
         f"Proxmox did not answer a step of the password change for {WHERE}, and the VM does not "
-        f"carry the new password yet. {RESTART} {LINK}"
+        f"carry the new password yet. {STOP_START} {LINK}"
     )
     assert len([path for _m, path in vm.requests if "/tasks/" in path]) == TASK_POLL_ATTEMPTS
 
@@ -403,7 +403,7 @@ async def test_a_task_that_never_finishes_on_a_vm_that_took_it_reports_the_reset
     # match is one Proxmox never answered for.
     assert payload["message"] == (
         f"Proxmox did not answer a step of the password change for {WHERE}, so NOA compared the "
-        f"password it generated against the VM: the VM carries it. {RESTART} {LINK}"
+        f"password it generated against the VM: the VM carries it. {STOP_START} {LINK}"
     )
     assert ERROR_TASK_TIMEOUT not in str(payload["message"])
 
@@ -481,7 +481,7 @@ async def test_a_host_without_libcrypt_reports_changed_but_unverified() -> None:
     assert payload["headline"] == f"Password reset — {SUBJECT}"
     assert payload["message"] == (
         f"Proxmox accepted the new password for {WHERE}. NOA could not check whether the VM "
-        f"carries it. {RESTART} {LINK}"
+        f"carries it. {STOP_START} {LINK}"
     )
 
 
@@ -548,12 +548,13 @@ async def test_a_vm_still_carrying_another_password_is_a_failure(
     assert "verification" not in payload
     assert payload["yopass_url"] == YOPASS_URL
     assert payload["headline"] == f"Password not changed — {SUBJECT}"
-    # **The restart clause is absent here and that is the assertion.** Everywhere the VM may
-    # carry the new password it rides, because a restart is what makes the password take. Here
-    # NOA measured that the VM does not carry it, so a restart would change nothing and telling
-    # an operator to perform one is advice this very reading disproves. Stated before the whole
-    # message below, which would catch the same fold as an unreadable diff of two long strings.
-    assert RESTART not in str(payload["message"])
+    # **The stop-and-start clause is absent here and that is the assertion.** Everywhere the VM
+    # may carry the new password it rides, because a stop and start is what makes the password
+    # take. Here NOA measured that the VM does not carry it, so a stop and start would change
+    # nothing and telling an operator to perform one is advice this very reading disproves. Stated
+    # before the whole message below, which would catch the same fold as an unreadable diff of two
+    # long strings.
+    assert STOP_START not in str(payload["message"])
     assert payload["message"] == (
         f"NOA checked afterwards: {WHERE} does not carry the new password. {LINK}"
     )
@@ -612,7 +613,7 @@ async def test_the_link_clause_is_read_off_the_delivery_configuration(
     payload = await build_runner(fixture)(execution_request(server_id=server_id(fixture)))
 
     assert payload["message"] == (
-        f"The cloud-init password for {WHERE} was changed. {RESTART} Give the operator the "
+        f"The cloud-init password for {WHERE} was changed. {STOP_START} Give the operator the "
         f"link; {clause}."
     )
 

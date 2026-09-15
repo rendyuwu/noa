@@ -123,15 +123,16 @@ ERROR_TASK_FAILED: Final = "task_failed"
 
 # The one "do this next" sentence that survives on an operator's card, and it survives because it
 # states NOA's own permission boundary rather than giving advice: no tool here starts, stops or
-# reboots a VM, so a restart is something the operator has to go and do elsewhere. The owner
+# reboots a VM, so a stop and start is something the operator has to go and do elsewhere. The owner
 # supplied both halves; `docs/integrations/proxmox.md` records the fact under the caveats for the
 # tools that use Proxmox, which is what keeps this sentence citable.
 #
-# It rides only where the VM may carry the new password. On a measured mismatch a restart would
-# change nothing, so telling an operator to perform one would be advice NOA has already disproved.
-MESSAGE_RESTART_REQUIRED: Final = (
-    "The old password keeps working until the VM is restarted. NOA cannot restart a VM — restart "
-    "it from the customer portal or from Proxmox."
+# It rides only where the VM may carry the new password. On a measured mismatch a stop and start
+# would change nothing, so telling an operator to perform one would be advice NOA has already
+# disproved.
+MESSAGE_STOP_START_REQUIRED: Final = (
+    "The old password keeps working until the VM is stopped and started again. NOA cannot stop or "
+    "start a VM — stop and start it from the customer portal or from Proxmox."
 )
 
 # How long the delivered link keeps working, largest unit first. The duration is stated in the
@@ -694,7 +695,7 @@ def _reset_outcome(
                         f"{where}, so NOA compared the password it generated against the VM: "
                         "the VM carries it. "
                     )
-                    + f"{MESSAGE_RESTART_REQUIRED} {link_note}"
+                    + f"{MESSAGE_STOP_START_REQUIRED} {link_note}"
                 ),
             ),
             delta=_reset_delta(
@@ -732,7 +733,7 @@ def _reset_outcome(
                         # the VM fine and had nothing to compare with, while an unreadable dump
                         # never got that far. What they share is that no comparison happened.
                         f"Proxmox accepted the new password for {where}. NOA could not check "
-                        f"whether the VM carries it. {MESSAGE_RESTART_REQUIRED} {link_note}"
+                        f"whether the VM carries it. {MESSAGE_STOP_START_REQUIRED} {link_note}"
                     ),
                 )
                 if write_failure is None
@@ -741,7 +742,7 @@ def _reset_outcome(
                         write_failure.code,
                         f"Proxmox {write_failure.verb} a step of the password change for {where}, "
                         "and NOA could not compare the password against the VM either, so it "
-                        f"cannot say what the VM carries now. {MESSAGE_RESTART_REQUIRED} "
+                        f"cannot say what the VM carries now. {MESSAGE_STOP_START_REQUIRED} "
                         f"{link_note}",
                     ),
                     **common,
@@ -770,7 +771,7 @@ def _reset_outcome(
                 **tool_failure(
                     write_failure.code,
                     f"Proxmox did not answer a step of the password change for {where}, and the "
-                    f"VM does not carry the new password yet. {MESSAGE_RESTART_REQUIRED} "
+                    f"VM does not carry the new password yet. {MESSAGE_STOP_START_REQUIRED} "
                     f"{link_note}",
                 ),
                 **common,
@@ -793,9 +794,9 @@ def _reset_outcome(
         payload={
             **tool_failure(
                 ERROR_POSTFLIGHT_FAILED,
-                # A reading, said as one. No restart clause rides here: the VM does not carry
-                # this password, so a restart would not put it there and naming one would be
-                # advice NOA has already disproved.
+                # A reading, said as one. No stop-and-start clause rides here: the VM does not
+                # carry this password, so a stop and start would not put it there and naming one
+                # would be advice NOA has already disproved.
                 f"NOA checked afterwards: {where} does not carry the new password. {link_note}",
             ),
             **common,
@@ -879,8 +880,8 @@ __all__ = [
     "LOG_RESET_DELIVERY_FAILED",
     "LOG_RESET_UNVERIFIED",
     "MESSAGE_EVIDENCE_UNUSABLE",
-    "MESSAGE_RESTART_REQUIRED",
     "MESSAGE_SERVER_UNAVAILABLE",
+    "MESSAGE_STOP_START_REQUIRED",
     "TASK_POLL_ATTEMPTS",
     "TASK_POLL_DELAY_SECONDS",
     "VERIFICATION_POLL_ATTEMPTS",
