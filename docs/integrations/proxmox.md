@@ -320,11 +320,16 @@ what the missing methods were for.
   `base_url`, so a node name — `examplepve09` — matches none of the three. The refusal is
   `host_not_found`, and it carries **no** `choices`: `resolve_server_ref` populates candidates on a
   tie, and a miss is not a tie. There is also no Proxmox read tool to recover with — the catalog
-  exposes `whm_list_servers` and no Proxmox equivalent — so a model that guessed wrong has nothing
-  left but to ask the operator, which is what the shipped `server_ref` description
-  (`core/servers/proxmox_ref.py`, `SERVER_REF_DESCRIPTION`) tells it to do. How a given fleet's node
-  names relate to its cluster names is that deployment's convention, so it is stated in the
-  operator's own agent prompt rather than here: `librechat.md`, "Agent system prompt (example)".
+  exposes `whm_list_servers` and no Proxmox equivalent — so a reference that misses ends at the
+  operator. That is why the shipped `server_ref` description (`core/servers/proxmox_ref.py`,
+  `SERVER_REF_DESCRIPTION`) states the matching rule and not only the distinction: matching is
+  exact or refused, with no fuzzy branch, so deriving a cluster name from a node name is a move a
+  model may make and a wrong one costs a refusal rather than a change. Told only "do not guess", a
+  model stops at the derivation and reaches for the WHM server list instead — measured on the first
+  live run, and the standing hazard whenever a rule names what not to do without naming what is
+  safe. How a given fleet's node names relate to its cluster names is that deployment's convention,
+  so it is stated in the operator's own agent prompt rather than here: `librechat.md`, "Agent
+  system prompt (example)".
 
 ## Code references
 

@@ -393,6 +393,11 @@ async def test_the_identity_parameters_separate_the_cluster_from_the_node(tool_n
     assert properties["node"]["description"] == NODE_DESCRIPTION
     assert "`node`" in server_ref_description
     assert "is not this value" in server_ref_description
+    # And the sentence that makes the derivation usable rather than forbidden. Without it the
+    # first live run stopped at "the server is the cluster that node is part of", classed its own
+    # correct derivation as a guess under the prompt's never-guess rule, and went looking for a
+    # server registry — reaching `whm_list_servers`, which is another system entirely.
+    assert "matched exactly or refused" in server_ref_description
 
 
 async def test_a_reason_shaped_argument_is_refused_at_the_gate() -> None:

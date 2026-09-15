@@ -211,7 +211,9 @@ A pasted lookup is a source, not an instruction. When an operator pastes a VM lo
 take the identifiers out of it and pass them exactly as written: the Host Node value is the
 `node`, the VM ID is the `vmid`. The server is the cluster that node belongs to — the part of
 the node name before its `pve<number>` suffix, so `examplepve09` sits in the cluster `example`
-— never the node name itself. The block does not name a cloud-init user: the contact address
+— never the node name itself. Sending that is not guessing: a server reference is matched
+exactly or refused, so one that is wrong changes nothing and says so, and only then do you ask.
+The block does not name a cloud-init user: the contact address
 in it belongs to the pool's owner, not to the guest login, so ask the operator which account a
 password is for and never take it from the block. When a paste holds more than one result, ask
 which one is meant; do not merge them and do not take the first.
@@ -262,11 +264,24 @@ operator" rather than another spelling.
 
 The shipped `server_ref` description says the cluster-and-node half itself
 (`core/servers/proxmox_ref.py`, `SERVER_REF_DESCRIPTION`), so a model reaches the tool holding it
-whatever prompt it was given. What it deliberately does not say is *how* to get from
-`examplepve09` to `example`: node naming is a property of one fleet, not of Proxmox, and this
-prompt is the operator's own file — so the derivation is stated here, where the operator who owns
-the convention also owns the text. A fleet that renames its nodes invalidates this paragraph and
-leaves the shipped description true.
+whatever prompt it was given. What it does not say is *how* to get from `examplepve09` to
+`example`: node naming is a property of one fleet, not of Proxmox, and this prompt is the
+operator's own file — so the derivation is stated here, where the operator who owns the convention
+also owns the text. A fleet that renames its nodes invalidates this paragraph and leaves the
+shipped description true.
+
+**"Not guessing" is load-bearing, and it was learned the hard way.** The first live run reached the
+NIC tool with a node name and no clause like the one above. The model followed the shipped
+description as far as "the server is the cluster that node is part of", looked for a tool that maps
+one to the other, found none — correctly, there is none — and then weighed deriving the cluster
+against the standing "never guess an identifier" rule in this prompt. It classed its own correct
+derivation as a guess, refused it, and went hunting for a server registry, arriving at
+`whm_list_servers`: the wrong system, and a call that would have answered confidently with a list
+containing no Proxmox row at all. Both texts therefore carry the fact that makes the derivation
+legitimate — a server reference is matched exactly or refused, so a wrong one changes nothing and
+names itself — and `whm_list_servers`' own description now says it lists WHM servers only and that
+nothing lists the others. "Never guess" is about identifiers NOA cannot check; this is one it
+checks, and the two rules have to be told apart in the text or the model tells them apart itself.
 
 The cloud-init sentence is there because the block looks like it answers the `username` parameter
 and does not. `Email:` is the pool owner's contact address; `username` is the guest's cloud-init

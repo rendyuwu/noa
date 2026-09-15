@@ -69,16 +69,29 @@ MESSAGE_REQUIRED = required_message(SUBJECT)
 # the suffix, is that deployment's convention and belongs in the operator's own agent prompt
 # (`docs/integrations/librechat.md`, "Agent system prompt (example)"), which is where it is stated.
 #
-# So "the server is the cluster that node is part of" states the *relationship* and withholds the
-# *method* deliberately. It is not an invitation to widen this into "do not derive it": the
-# operator's prompt supplies the derivation, and a shipped string forbidding what that prompt
-# instructs would leave a model holding two contradictory rules about one field.
+# So this states the *relationship* and leaves the fleet's spelling of it to the operator's prompt.
+# What it must not do is leave the relationship unusable, and the first live run showed it doing
+# exactly that: the model read "the server is the cluster that node is part of", found no tool that
+# maps one to the other, weighed the cluster name it had already derived against the standing
+# "never guess an identifier" rule, classed its own correct derivation as a guess, and went looking
+# for a registry — landing on `whm_list_servers`, which is the wrong system. Stating a relationship
+# while every other rule in earshot says *do not act on one* is not neutrality; it is a dead end
+# with extra steps.
+#
+# Hence the safety sentence. It is the fact that makes the derivation legitimate rather than a
+# guess, and it is true of the resolver rather than reassurance: `resolve_server_ref` matches an
+# id, a `name` or a `base_url` host **exactly** (case-insensitively) and has no fuzzy branch, so a
+# derived reference either is a server or answers `host_not_found` having touched nothing. The
+# residue it does not cover is a derivation that lands on a *different real* row; that one is
+# caught by the operator, who sees server, node and vmid together on the card before approving.
 SERVER_REF_DESCRIPTION: Final = (
     "Which Proxmox server: its id, its name in NOA, or its hostname. A cluster node name is not "
     "this value: a node such as `examplepve09` is one member of a cluster, and it belongs in "
-    "`node`. When an operator names only a node, the server is the cluster that node is part of. "
-    "Ask the operator if they have not named one, and ask again if NOA answers that no server "
-    "matches — do not try another spelling."
+    "`node`. When an operator names only a node, the server is the cluster that node is part of, "
+    "and a node name usually carries its cluster's name — send that rather than asking first. It "
+    "is matched exactly or refused, never approximately, so a reference that is wrong answers "
+    "`host_not_found` and changes nothing. If that happens, ask the operator which server they "
+    "mean and send what they answer."
 )
 
 # The other half of the pair, and the example is `examplepve09` rather than a bare `pve1` for one
