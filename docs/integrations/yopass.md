@@ -88,7 +88,7 @@ Set via environment (pydantic-settings, no prefix). See `.env.example`; fields l
 | `YOPASS_BASE_URL` | `yopass_base_url` | _(unset)_ | Base URL of the yopass instance. Absent → tool error `yopass_not_configured`; the app still boots. |
 | `YOPASS_SECRET_EXPIRATION_SECONDS` | `yopass_secret_expiration_seconds` | `604800` (7 days) | How long the stored secret lives. |
 | `YOPASS_ONE_TIME` | `yopass_one_time` | `false` | `false` means the link is multi-fetch within the expiry window — chosen so real-customer email-open latency does not burn the secret on a preview fetch. |
-| `SECRET_PASSWORD_LENGTH` | `secret_password_length` | `24` | Generated password length. Charset = letters + digits + safe symbols; never space, quote, backtick, or backslash (they break shell / cloud-init quoting). |
+| `SECRET_PASSWORD_LENGTH` | `secret_password_length` | `24` | Generated password length. Charset = ASCII letters and digits, no punctuation at all. **Owner-stated reason:** the operator passes the yopass link on, and the customer then reads this value back and types it by hand. This row is that statement's record — the module docstring and the alphabet test both cite it rather than restating it as their own. That also keeps space, quote, backtick and backslash — which break shell / cloud-init quoting — out by construction rather than by a filter. Dropping the symbols costs about 13 bits at the default length: the alphabet was 90 characters, so 90^24 ≈ 156 bits against 62^24 ≈ 143 bits. Raise this setting to buy that back; its floor is 8 (`core/config.py`). |
 
 `NOA_SECRET_ENCRYPTION_KEY` is a different mechanism: Fernet encryption of stored server
 credentials at rest. It has nothing to do with yopass delivery.
