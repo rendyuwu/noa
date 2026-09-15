@@ -27,8 +27,8 @@ building the lane twice is the only alternative:
   wording**, and it has now moved twice: `proxmox_reset_vm_password` led while the runners
   answered in their old strings, `whm_firewall_release_and_allow` took it when each branch gained
   a heading and its sentence named the expiry in words, and the password tool leads again now
-  that its branches carry the owner's restart sentence and say how long the delivered link keeps
-  working. What does not move is which payload the pin belongs on — the release tool is the
+  that its branches carry the owner's stop-and-start sentence and say how long the delivered link
+  keeps working. What does not move is which payload the pin belongs on — the release tool is the
   largest *once a delta is folded in*, because it fills four facets in one answer, and that is
   what the pin is actually guarding. Both orderings are asserted below, and they no longer name
   the same tool, which is the whole reason both are asserted.
@@ -146,10 +146,11 @@ FIXED_FRIENDLY_STAMP = "12 Sep 2026, 8:26 PM (WIB)"
 # words, so the whole wording pass cost 35 characters of a column with 1600 to spare.
 #
 # **This is no longer the longest payload bare, and it is still the one to pin.** The password
-# tool's branches now carry the owner's restart sentence and the life of the delivered link, which
-# takes them past this one unfolded — and leaves them short of it folded, which is the measure the
-# cut is about. `test_which_payload_the_summary_pin_belongs_on` below asserts both orderings, so
-# neither is assumed and a wording pass that reverses either fails there rather than here.
+# tool's branches now carry the owner's stop-and-start sentence and the life of the delivered link,
+# which takes them past this one unfolded — and leaves them short of it folded, which is the
+# measure the cut is about. `test_which_payload_the_summary_pin_belongs_on` below asserts both
+# orderings, so neither is assumed and a wording pass that reverses either fails there rather than
+# here.
 #
 # Pinned rather than bounded, because what it is guarding is *growth*: the delta doubles this
 # figure the moment it enters the payload (857 characters, asserted below), and a `<= 2000`
@@ -246,7 +247,7 @@ async def test_which_payload_the_summary_pin_belongs_on(
     Which tool renders longest is a measurement, and it moves with the wording — it was
     `proxmox_reset_vm_password` while the runners answered in their old strings, then
     `whm_firewall_release_and_allow` once each branch carried a heading and named its expiry in
-    words, and it is the password tool again now that its branches carry the owner's restart
+    words, and it is the password tool again now that its branches carry the owner's stop-and-start
     sentence and how long the delivered link keeps working. So it is asserted rather than
     assumed, and re-measured whenever a runner is reworded.
 
