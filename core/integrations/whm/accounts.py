@@ -123,18 +123,37 @@ def account_suspension_state(account: WHMAccount) -> bool | None:
 
 
 def account_matches(account: WHMAccount, *, query: str) -> bool:
-    """True when `query` is a case-insensitive substring of the username or the domain.
+    """True when `query` is a case-insensitive substring of the username, the domain, or a
+    contact email field.
 
-    **Per field, deliberately.** `noa-old` joined the two into one haystack
+    **Per field, deliberately.** `noa-old` joined username and domain into one haystack
     (`f"{user} {domain}"`), which makes a query containing a space match *across* the
     junction: `"alpha exa"` matched user `alpha` plus domain `example.net`, and the operator
-    got a row that matches nothing they typed. Two independent substring tests cost the same
-    and cannot invent a match.
+    got a row that matches nothing they typed. Independent substring tests cost the same and
+    cannot invent a match, and that stays true at four fields as it was at two.
+
+    **Every field read here is one the normaliser already keeps and the search tool already
+    returns**, so this widens what is searchable, not what is exposed. `suspendreason` is left
+    out deliberately: the search tool withholds it from model-facing rows, and a matcher that
+    read it would let a model confirm an operator's approval reason by asking whether anything
+    matched.
+
+    **`email` is the field that carries this in production.** A `listaccts` row measured on a
+    live server (2026-09-16) has `email` and no `contactemail`. `contactemail` is read anyway
+    because this function reads rows `normalize_whm_account_summary` produced, and that
+    normaliser emits the field whenever WHM sends it — field spellings vary by cPanel version
+    in this exact payload, which is why the lock field above already falls back from `is_locked`
+    to `suspendlock`.
+
+    **The limit, stated rather than left to be discovered:** `listaccts` reports the account's
+    primary domain only, and the contact address is the account's own rather than a mailbox. A
+    mailbox address at an addon or parked domain never matches here, and the empty result reads
+    as "no such customer".
 
     `query` is expected already normalised (stripped, lowercased) — the caller does that once
     per search rather than once per account.
     """
-    for key in ("user", "domain"):
+    for key in ("user", "domain", "email", "contactemail"):
         value = account.get(key)
         if isinstance(value, str) and query in value.lower():
             return True

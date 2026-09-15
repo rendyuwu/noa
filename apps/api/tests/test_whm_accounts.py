@@ -222,3 +222,88 @@ def test_a_query_spanning_the_two_fields_does_not_match() -> None:
 def test_a_row_with_no_domain_still_matches_on_its_username() -> None:
     """The domain key is absent for a blank one, and absence is not a failure."""
     assert account_matches({"user": "acme"}, query="acm") is True
+
+
+# --- The contact email fields ---
+#
+# One row for all of them, and no query below matches more than one field by accident: that is
+# what lets deleting a single field from the matcher's tuple redden exactly the cases that field
+# carries. A live `listaccts` row (measured 2026-09-16) sends `email` and no `contactemail`; the
+# second spelling is tested because the matcher reads what the *normaliser* emits, and the
+# normaliser emits `contactemail` whenever WHM sends it.
+_ACCOUNT_WITH_CONTACT_FIELDS = {
+    "user": "acme",
+    "domain": "acme.example.com",
+    "email": "ops@acme.example.com",
+    "contactemail": "billing@acme.example.com",
+}
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        pytest.param("ops@acme", id="address-fragment"),
+        pytest.param("ops", id="local-part-alone"),
+    ],
+)
+def test_it_matches_the_accounts_own_contact_address(query: str) -> None:
+    """The operator has the customer's email and not their username — the case issue #5 names.
+
+    Neither query appears in `user`, `domain` or `contactemail`, so `email` is the only field
+    that can answer them.
+    """
+    assert account_matches(_ACCOUNT_WITH_CONTACT_FIELDS, query=query) is True
+
+
+def test_it_matches_the_second_spelling_of_the_contact_field() -> None:
+    """`contactemail` is absent from the measured row but present in the normaliser's contract.
+
+    Field names vary by cPanel version in this payload — `is_locked`/`suspendlock` is the same
+    story — so the matcher reads the contract rather than one server's spelling. A fixture test
+    of that contract, not evidence the field arrives in production.
+    """
+    assert account_matches(_ACCOUNT_WITH_CONTACT_FIELDS, query="billing@") is True
+
+
+def test_a_domain_wide_address_query_matches() -> None:
+    """Pinned as a decision, not an accident.
+
+    `@acme.example.com` returns every account whose contact address is at that domain. It falls
+    out of the same substring rule `user` and `domain` already use; an exact-match rule for the
+    email fields alone would put two rules in one four-line function.
+    """
+    assert account_matches(_ACCOUNT_WITH_CONTACT_FIELDS, query="@acme.example.com") is True
+
+
+def test_an_address_no_field_carries_does_not_match() -> None:
+    """The negative control: the row above answers a query only when it really holds it."""
+    assert account_matches(_ACCOUNT_WITH_CONTACT_FIELDS, query="zeta@") is False
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        pytest.param("acme ops@", id="user-and-email"),
+        pytest.param("acme.example.com ops@acme", id="domain-and-email-junction"),
+    ],
+)
+def test_a_query_spanning_a_field_pair_that_includes_an_email_does_not_match(query: str) -> None:
+    """The `noa-old` haystack bug, re-checked now that the haystack would be four fields wide.
+
+    The second query is the one with teeth: joined in field order it sits exactly across the
+    `domain`/`email` junction, so a concatenating matcher would return this row for a string no
+    field of it contains.
+    """
+    assert account_matches(_ACCOUNT_WITH_CONTACT_FIELDS, query=query) is False
+
+
+def test_the_suspend_reason_is_not_searchable() -> None:
+    """The one field a model may never read, and searching it is a read.
+
+    `whm_search_accounts` withholds `suspendreason` from model-facing rows because NOA writes the
+    operator's approval reason into it. A matcher that read the field would give that reason back
+    by round trip: the model guesses text, asks whether anything matched, and a hit confirms it.
+    """
+    account = {"user": "acme", "domain": "acme.example.com", "suspendreason": "ticket-42"}
+
+    assert account_matches(account, query="ticket-42") is False
