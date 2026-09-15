@@ -40,11 +40,7 @@ from noa_api.mcp_tools.results import (
     MESSAGE_TIMEOUT,
     MESSAGE_TOOL_EXECUTION_FAILED,
 )
-from noa_api.mcp_tools.whm_read import (
-    DESCRIPTION_WHM_LIST_SERVERS,
-    TOOL_WHM_LIST_SERVERS,
-    whm_list_servers,
-)
+from noa_api.mcp_tools.whm_read import TOOL_WHM_LIST_SERVERS, whm_list_servers
 from support.servers import SECRETS, build_tool_context, whm_server
 
 
@@ -272,26 +268,3 @@ async def test_cancellation_is_not_swallowed() -> None:
 def test_the_tool_name_matches_the_catalog() -> None:
     """The registered name is the one RBAC grants are written against."""
     assert TOOL_WHM_LIST_SERVERS in TOOL_CATALOG
-
-
-def test_it_says_it_is_whm_only_for_as_long_as_it_is_the_only_listing() -> None:
-    """The description's claim, bound to the catalog that makes it true.
-
-    Being the *only* server listing is what turns this tool into a trap: a model needing a Proxmox
-    server finds one registry-shaped tool, and on the first live run took it — reasoning that NOA's
-    inventory might be shared, which it is not. So the description now says WHM only and that
-    nothing lists the others, and the second half of that sentence is a claim about
-    `TOOL_CATALOG` rather than about this module.
-
-    A `proxmox_list_servers` or `pmg_list_servers` added later makes the shipped text a lie the
-    same day it is registered, and nothing else would notice: the catalog test above only asks
-    whether this name is present. Hence the set difference — a new listing has to come back here
-    and rewrite the sentence it invalidates.
-    """
-    other_listings = {name for name in TOOL_CATALOG if name.endswith("_list_servers")} - {
-        TOOL_WHM_LIST_SERVERS
-    }
-
-    assert other_listings == set()
-    assert "WHM servers only" in DESCRIPTION_WHM_LIST_SERVERS
-    assert "no tool lists those" in DESCRIPTION_WHM_LIST_SERVERS

@@ -285,14 +285,10 @@ def test_example_prompt_is_present_and_substantial() -> None:
 
 # --- the example prompt tells the model how to read a pasted lookup block ---
 
-# Three things the Proxmox paste clause has to mention, each a *mapping* the model cannot infer
-# and none of them a pinned sentence:
+# Two things the Proxmox paste clause has to mention, each a *mapping* the model cannot infer and
+# neither a pinned sentence:
 #
-#   * `Host Node` — the block's field name, and the one value that is NOT the server;
-#   * `pve` — the node-name suffix this fleet's cluster names sit in front of, which is the
-#     derivation itself. The shipped tool description deliberately stops short of it, since node
-#     naming is a deployment convention rather than a fact about Proxmox, so this prompt is the
-#     only place it is written;
+#   * `Host Node` — the block's field name, sent as both `node` and `server_ref`;
 #   * `cloud-init` — the `username` the block does not carry, and which therefore comes from the
 #     operator rather than from the contact address sitting in the block.
 #
@@ -300,14 +296,13 @@ def test_example_prompt_is_present_and_substantial() -> None:
 # sibling, so a model that reads a pasted block wrongly has no read to recover with.
 #
 # **What this set binds, and what it does not.** It binds vocabulary: the clause is present and
-# still talks about all three things. It does **not** bind *direction* — a clause rewritten to
-# "the Host Node value is the `server_ref`" carries every marker and inverts the rule. Nothing
-# here can separate those two, because the difference is prose, and pinning the sentence would
-# turn every reword into a false failure. The direction is bound on the code side instead, where
-# the string is NOA's own: `test_proxmox_tools_reset_password.py` asserts the shipped `server_ref`
-# description states that a node name is *not* that value. A reviewer reads this clause; the
-# suite reads the constant.
-PASTE_CLAUSE_MARKERS: tuple[str, ...] = ("Host Node", "pve", "cloud-init")
+# still talks about both things. It does **not** bind *direction* — a clause rewritten to invert
+# the rule still carries every marker, because the difference is prose, and pinning the sentence
+# would turn every reword into a false failure. The direction is bound on the code side instead,
+# where it is no longer the tool description's job: `test_proxmox_server_ref.py` asserts the
+# resolver itself derives a server from a node name. A reviewer reads this clause; the suite reads
+# the mechanism.
+PASTE_CLAUSE_MARKERS: tuple[str, ...] = ("Host Node", "cloud-init")
 
 
 def paste_clause_problems(prompt: str) -> list[str]:

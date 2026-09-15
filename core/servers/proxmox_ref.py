@@ -21,6 +21,7 @@ that could disagree with the list a tie was judged against.
 
 from __future__ import annotations
 
+import re
 from typing import Final, TypeVar
 
 from core.servers.proxmox_repository import ProxmoxServerReadRepository, ProxmoxServerRowLike
@@ -50,56 +51,15 @@ MESSAGE_REQUIRED = required_message(SUBJECT)
 # other direction — one is what NOA says when a reference is missing, the other is what it asks
 # for before one is sent — and because the password tool and the NIC tool held byte-identical
 # copies of both that a longer rule would have let drift apart.
-#
-# The four sibling `SERVER_REF_DESCRIPTION` constants stay where they are
-# (`whm_firewall_allowlist.py`, `whm_firewall_change.py`, `whm_account_change.py`,
-# `pmg_whitelist.py`): each is one tool's own string, so there is nothing to share and moving them
-# would buy an import. Proxmox is the only system whose two tools published the same two strings
-# twice, which is what makes this a deduplication rather than a relocation.
-#
-# It names the cluster/node distinction because Proxmox is the one system here with **no discovery
-# tool**: `TOOL_CATALOG` exposes `whm_list_servers` but nothing that lists Proxmox servers, so a
-# model handed a node name has no read to recover with. A node sent as a `server_ref` matches no
-# id, no name and no `base_url` host, and `resolve_server_ref` answers `host_not_found` carrying no
-# `choices` — `choices` is populated on a tie, and a miss is not a tie. Hence the last sentence:
-# the way out of that is the operator, not another spelling.
-#
-# Generic on purpose. That a NOA row is a cluster and `node` is one member of it is a fact about
-# Proxmox; that a given fleet names its nodes `<cluster>pve<NN>`, so the cluster is the text before
-# the suffix, is that deployment's convention and belongs in the operator's own agent prompt
-# (`docs/integrations/librechat.md`, "Agent system prompt (example)"), which is where it is stated.
-#
-# So this states the *relationship* and leaves the fleet's spelling of it to the operator's prompt.
-# What it must not do is leave the relationship unusable, and the first live run showed it doing
-# exactly that: the model read "the server is the cluster that node is part of", found no tool that
-# maps one to the other, weighed the cluster name it had already derived against the standing
-# "never guess an identifier" rule, classed its own correct derivation as a guess, and went looking
-# for a registry — landing on `whm_list_servers`, which is the wrong system. Stating a relationship
-# while every other rule in earshot says *do not act on one* is not neutrality; it is a dead end
-# with extra steps.
-#
-# Hence the safety sentence. It is the fact that makes the derivation legitimate rather than a
-# guess, and it is true of the resolver rather than reassurance: `resolve_server_ref` matches an
-# id, a `name` or a `base_url` host **exactly** (case-insensitively) and has no fuzzy branch, so a
-# derived reference either is a server or answers `host_not_found` having touched nothing. The
-# residue it does not cover is a derivation that lands on a *different real* row; that one is
-# caught by the operator, who sees server, node and vmid together on the card before approving.
 SERVER_REF_DESCRIPTION: Final = (
-    "Which Proxmox server: its id, its name in NOA, or its hostname. A cluster node name is not "
-    "this value: a node such as `examplepve09` is one member of a cluster, and it belongs in "
-    "`node`. When an operator names only a node, the server is the cluster that node is part of, "
-    "and a node name usually carries its cluster's name — send that rather than asking first. It "
-    "is matched exactly or refused, never approximately, so a reference that is wrong answers "
-    "`host_not_found` and changes nothing. If that happens, ask the operator which server they "
-    "mean and send what they answer."
+    "Which Proxmox server: its id, its name in NOA, its hostname, or the node the VM runs on "
+    "(a VM lookup's `Host Node`) — NOA resolves a node name to the server that runs it. Ask the "
+    "operator if they have not named one."
 )
 
-# The other half of the pair, and the example is `examplepve09` rather than a bare `pve1` for one
-# reason: it sits one parameter away from the string above, and two node shapes in one schema make
-# the cluster/node distinction unreadable at exactly the site that has to teach it.
 NODE_DESCRIPTION: Final = (
     "The Proxmox node the VM runs on, exactly as Proxmox names it (for example `examplepve09`). "
-    "It is the cluster member: not the VM, and not the `server_ref`."
+    "It is the cluster member, not the VM."
 )
 
 # One name for the shared resolution type, as in `whm_ref` and `pmg_ref`.
@@ -115,6 +75,41 @@ def describe(server: ProxmoxServerRowLike) -> dict[str, str]:
     return {"id": str(server.id), "name": server.name, "base_url": server.base_url}
 
 
+# This fleet names its nodes `<cluster>pve<NN>` and names each NOA row after the cluster, so a
+# node name resolves once the suffix is off: `examplepve09` is a member of `example`. Proxmox
+# does not require that naming, which is why the pattern is here and not in
+# `core.servers.reference`, where WHM and PMG would inherit a convention that is not theirs.
+#
+# ponytail: one hardcoded convention, no config. A second fleet with different node naming turns
+# this into an env-read pattern; nothing else about the retry changes.
+_NODE_SUFFIX: Final = re.compile(r"[-_.]?pve\d+$", re.IGNORECASE)
+
+
+def _cluster_of_node(reference: str) -> str | None:
+    """`examplepve09` → `example`, or `None` when there is nothing new to try.
+
+    `None` covers two cases that must not reach a second lookup: a reference carrying no node
+    suffix at all, and one that is *only* a suffix — `pve1` is a legitimate server name (this
+    repo's own fixtures use it), and stripping it would search for the empty string.
+    """
+    reference = reference.strip()
+    derived = _NODE_SUFFIX.sub("", reference).strip()
+    return derived if derived and derived != reference else None
+
+
+async def _resolve(
+    reference: str, *, repository: ProxmoxServerReadRepository[RowT]
+) -> ServerRefResolution[RowT]:
+    """The shared policy, with Proxmox's two parameters. Written once so the retry cannot drift."""
+    return await resolve_server_ref(
+        reference,
+        repository=repository,
+        subject=SUBJECT,
+        host_of=lambda server: hostname_of(server.base_url),
+        describe=describe,
+    )
+
+
 async def resolve_proxmox_server_ref(
     server_ref: str, *, repository: ProxmoxServerReadRepository[RowT]
 ) -> ServerRefResolution[RowT]:
@@ -125,14 +120,25 @@ async def resolve_proxmox_server_ref(
     on, while an exception is not. It matters more here than on a READ path — the caller is
     a CHANGE tool, and a resolver that guessed would open an approval card for a machine the
     operator never named.
+
+    A reference that matches nothing and ends in a node suffix is tried once more as its cluster,
+    so the node name an operator pastes out of a VM lookup finds the server that runs it. The
+    exact lookup runs first and wins, and the derived reference goes through the same exact,
+    case-insensitive match as a typed one — so this is a second lookup, not a similarity search.
     """
-    return await resolve_server_ref(
-        server_ref,
-        repository=repository,
-        subject=SUBJECT,
-        host_of=lambda server: hostname_of(server.base_url),
-        describe=describe,
-    )
+    resolution = await _resolve(server_ref, repository=repository)
+    if resolution.error_code != ERROR_NOT_FOUND:
+        return resolution
+
+    cluster = _cluster_of_node(server_ref)
+    if cluster is None:
+        return resolution
+
+    retry = await _resolve(cluster, repository=repository)
+    # A miss on the derived name is not news — the operator never typed it, so the refusal that
+    # goes back names what they did send. A *tie* on it is news: it carries `choices`, and with no
+    # Proxmox read tool in the catalog that list is the only thing that unblocks the model.
+    return retry if retry.error_code != ERROR_NOT_FOUND else resolution
 
 
 __all__ = [

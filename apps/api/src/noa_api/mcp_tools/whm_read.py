@@ -82,9 +82,7 @@ MESSAGE_LIST_ACCOUNTS_FAILED = "WHM did not return the account list."
 DESCRIPTION_WHM_LIST_SERVERS = (
     "List the WHM/cPanel servers NOA is configured to manage. Returns each server's id, "
     "name and base URL. Use it to find the `server_ref` other WHM tools need, and prefer "
-    "the id when two servers look alike. It lists WHM servers only — Proxmox and PMG "
-    "servers are not in it, and no tool lists those, so their `server_ref` comes from what "
-    "the operator tells you. Read-only: it changes nothing."
+    "the id when two servers look alike. Read-only: it changes nothing."
 )
 
 DESCRIPTION_WHM_LIST_ACCOUNTS = (

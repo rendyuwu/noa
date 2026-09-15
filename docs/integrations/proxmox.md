@@ -315,21 +315,21 @@ what the missing methods were for.
   `cloudinit_password_hash_absent`, `crypt_refused_stored_hash`). `noa-old` answered a `bool` and
   collapsed all three into "does not match", which reported a change that had in fact succeeded
   as one to repeat.
-- **A server row is a cluster; `node` is one member of it.** Both tools take both, and they are not
-  interchangeable: `server_ref` resolves against a row's id, its `name`, or the host of its
-  `base_url`, so a node name — `examplepve09` — matches none of the three. The refusal is
-  `host_not_found`, and it carries **no** `choices`: `resolve_server_ref` populates candidates on a
-  tie, and a miss is not a tie. There is also no Proxmox read tool to recover with — the catalog
-  exposes `whm_list_servers` and no Proxmox equivalent — so a reference that misses ends at the
-  operator. That is why the shipped `server_ref` description (`core/servers/proxmox_ref.py`,
-  `SERVER_REF_DESCRIPTION`) states the matching rule and not only the distinction: matching is
-  exact or refused, with no fuzzy branch, so deriving a cluster name from a node name is a move a
-  model may make and a wrong one costs a refusal rather than a change. Told only "do not guess", a
-  model stops at the derivation and reaches for the WHM server list instead — measured on the first
-  live run, and the standing hazard whenever a rule names what not to do without naming what is
-  safe. How a given fleet's node names relate to its cluster names is that deployment's convention,
-  so it is stated in the operator's own agent prompt rather than here: `librechat.md`, "Agent
-  system prompt (example)".
+- **A server row is a cluster; `node` is one member of it, and both tools take both.** `server_ref`
+  matches a row's id, its `name`, or the host of its `base_url`, exactly and case-insensitively — no
+  fuzzy branch. When none of the three match and the reference ends in a `pve<NN>` suffix,
+  `resolve_proxmox_server_ref` (`core/servers/proxmox_ref.py`) strips the suffix and tries the
+  lookup **once** more, so a node reference like `examplepve09` resolves to the server named
+  `example`. The exact match still wins whenever a row really is named after its own node — the
+  retry only runs after the first lookup misses outright. A reference that is *only* a suffix, with
+  nothing in front of `pve<NN>`, is never stripped down to an empty search. A refusal after a miss
+  names what the caller sent, not the derived string they never typed — but a **tie** on the derived
+  name is the deliberate exception: the retry's answer is kept for every code except
+  `host_not_found`, so `host_ambiguous` comes back naming `example` and carrying its `choices`, and
+  those candidates are the only way out of a tie when no tool lists Proxmox servers. Node-to-cluster naming
+  is this deployment's convention — one fleet, one hardcoded pattern with a stated upgrade path, not
+  a fact about Proxmox — and the reasoning for resolving it in code rather than in the operator's
+  prompt is recorded in `DECISIONS.md` section 20.
 
 ## Code references
 

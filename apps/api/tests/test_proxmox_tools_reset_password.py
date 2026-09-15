@@ -352,9 +352,8 @@ async def test_the_tool_schema_carries_no_password_parameter() -> None:
 
 
 @pytest.mark.parametrize("tool_name", [TOOL_PROXMOX_RESET_VM_PASSWORD, TOOL_PROXMOX_VM_NIC])
-async def test_the_identity_parameters_separate_the_cluster_from_the_node(tool_name: str) -> None:
-    """Both Proxmox tools publish one `server_ref` and one `node` description, and `server_ref`
-    says a node is not one.
+async def test_both_proxmox_tools_publish_the_same_identity_descriptions(tool_name: str) -> None:
+    """Both Proxmox tools publish one `server_ref` description and one `node` description.
 
     **Why the NIC tool is asserted from this file.** Registration is whole — `register_mcp_tools`
     mounts every tool — so the schema of both Proxmox tools is reachable from either lane's
@@ -367,15 +366,17 @@ async def test_the_identity_parameters_separate_the_cluster_from_the_node(tool_n
     how they would stop agreeing, and a model asking the NIC tool and the password tool for
     different things about the same field is a bug no behaviour test would show.
 
-    **Why the content half asserts the negation and not only the word.** Proxmox is the one system
-    here with no discovery tool, so a model that sends a cluster member's name as `server_ref` gets
-    `host_not_found` with no `choices` and has nothing left to read. Asserting that `node` appears
-    would stay green on a description that told the model to send one — the exact inversion this
-    change exists to prevent — so the refusal itself is what is pinned.
+    **The word `node` is asserted because a description that lost it leaves the mechanism
+    unused** — the model would go back to asking the operator which server, for a reference the
+    resolver can already work out.
 
-    What this does **not** bind is the doc side: the operator's prompt states the derivation from a
-    node name to its cluster, and no assertion here can tell a correct clause from an inverted one.
-    That gap is stated in `test_librechat_config_doc.py` beside the markers it does bind.
+    **What this does not bind: the promise to the mechanism.** A `server_ref` description reworded
+    to *forbid* node names would still carry the word `node` and this test would stay green.
+    Nothing here can tell a correct clause from an inverted one. What the resolver actually does
+    with a node name is bound in `test_proxmox_server_ref.py`, by the section covering a node name
+    resolving to the server that runs it; this file binds only that the two schemas agree and that
+    the word survives. The gap is stated rather than closed on purpose — closing it means pinning
+    a sentence, which turns every reword into a false failure.
     """
     context = reset_context()[0].context
     server = build_mcp_server(tool_context=context)
@@ -391,13 +392,12 @@ async def test_the_identity_parameters_separate_the_cluster_from_the_node(tool_n
 
     assert server_ref_description == SERVER_REF_DESCRIPTION
     assert properties["node"]["description"] == NODE_DESCRIPTION
-    assert "`node`" in server_ref_description
-    assert "is not this value" in server_ref_description
-    # And the sentence that makes the derivation usable rather than forbidden. Without it the
-    # first live run stopped at "the server is the cluster that node is part of", classed its own
-    # correct derivation as a guess under the prompt's never-guess rule, and went looking for a
-    # server registry — reaching `whm_list_servers`, which is another system entirely.
-    assert "matched exactly or refused" in server_ref_description
+    assert "node" in server_ref_description
+    # The `node` description once ended "and not the `server_ref`", one parameter away from a
+    # `server_ref` description that now accepts exactly that. Restoring it would keep both equality
+    # assertions green — one string per parameter, still deduplicated — and ship two strings that
+    # contradict each other. Pins a parameter name rather than prose, so a reword cannot false-fail.
+    assert "server_ref" not in properties["node"]["description"]
 
 
 async def test_a_reason_shaped_argument_is_refused_at_the_gate() -> None:

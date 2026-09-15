@@ -1024,3 +1024,78 @@ only if it is seen.
 `["get", "/version"]` — the same exposure in principle. The owner states PMG's grant is not scoped
 per-argument, so nothing under `core/integrations/pmg/` or `core/servers/validation.py` changes.
 If a PMG grant is ever narrowed, this rule is the one to apply there.
+
+## 20. DECIDED — a Proxmox node name resolves to the server that runs it (2026-09-15)
+
+**The rule: `resolve_proxmox_server_ref` (`core/servers/proxmox_ref.py`) strips a `pve<NN>` suffix
+off a `server_ref` and retries the lookup once — only after the first, exact lookup misses
+outright, never before it.**
+
+### 20.1 Why this reverses the earlier position
+
+The paste-clause work shipped as two commits on this branch — `feat(proxmox): say that a cluster
+node name is not a server reference` and `fix(proxmox): say that a derived server reference is
+checked, not guessed`. It put the derivation in
+prose — the tool description and the operator's system prompt — and declined to put it in
+`core/`, on the grounds that a resolver-side convention is a deployment fact, not a mechanism. The
+first live run against that shipped version is the new evidence: told the node-to-cluster
+relationship in the prompt and told, in the same breath, "never guess an identifier," the model
+classed its own correct derivation as a guess, backed off it, and went looking for a registry
+instead — reaching `whm_list_servers`, a different system's tool, which would have answered
+confidently with a list holding no Proxmox row at all. Stating a relationship while every
+surrounding rule says "do not act on one" is a dead end with extra steps: the model has the string
+it needs and no permission it can find to use it.
+
+### 20.2 Why it is not a guess
+
+The derived reference goes through `resolve_server_ref`'s ordinary id/name/host match — exact,
+case-insensitive comparison, no fuzzy branch. It either lands on a real row, ties with candidates,
+or answers `host_not_found` exactly as the first lookup would have, having changed nothing else —
+three outcomes, not two: the retry's answer is kept for every code except `host_not_found`,
+precisely so a tie's `choices` survive it. A miss on the
+derived name costs nothing new; the refusal names what the caller actually sent, not the string the
+resolver tried and discarded.
+
+What this does **not** rule out is a derivation that lands on a *different real* row — a cluster
+genuinely named `example` that is not the one the node belongs to. Moving the derivation into code
+makes that residue more reachable than the prose version did, because the model no longer narrates
+the step it is taking. It is not silent, though, and the reason is structural rather than a promise:
+the resolution happens once, at gate time, and both tools write the **resolved row** into the
+approval evidence (`EVIDENCE_SERVER_ID`, `EVIDENCE_SERVER_NAME`) rather than the string that
+produced it. Both runners then re-read the server by that id — `proxmox_nic_runner.py` and
+`proxmox_password_runner.py`, each stating it reads from the evidence and never from the arguments
+— so the card's machine line shows the cluster NOA resolved, and the gate's `asked` sentence
+carries the node and the vmid beside it. The derivation's input and its output are both on one
+card, which is what makes it checkable: an operator reads `example` on the machine line and
+`(examplepve09)` in the sentence under it. Node and vmid arrive inside that sentence because the
+card has no field for either — its body is a fixed shape — and no structured evidence block is
+drawn beside it either, because neither Proxmox tool writes an evidence heading. Two independent
+facts: writing a heading would draw a block with no reading in it and leave node and vmid exactly
+where they are. A derivation onto the wrong row is therefore
+visible to the one party who can tell, before anything runs.
+
+### 20.3 What it assumes
+
+One fleet, one convention: nodes named `<cluster>pve<NN>`, and each NOA row named for the cluster
+it fronts. A second convention turns the suffix pattern into something read from configuration
+instead of hardcoded; nothing else about the retry — the ordering, the miss behaviour, the tie
+behaviour — changes with it.
+
+The shipped `server_ref` description is bound to that assumption too, and less visibly, because it
+promises node resolution without naming a shape: "NOA resolves a node name to the server that runs
+it". A fleet naming its nodes some other way gets `host_not_found` from a promise that read as
+unconditional. The failure is graceful — that description's last sentence sends the model to the
+operator — but a second convention means editing the description as well as the pattern, and
+nothing will point that out at the time.
+
+### 20.4 Rejected alongside it
+
+- Teaching the derivation in the tool description and the operator's prompt — the approach the two
+  commits named in 20.1 shipped, withdrawn here for the reason given there. They are cited by
+  subject rather than by hash on purpose: this repo has landed a PR through GitHub's rebase
+  strategy before, which writes new commit objects, and a bare SHA in this file would resolve to
+  `fatal: bad object` for the next reader who tried it. `git log --grep` finds them either way.
+- Returning `choices` on a plain `host_not_found` miss — still a three-system diff with its own
+  question (does a typo put the server inventory into an LLM transcript?), and the retry narrows
+  the dead end that proposal was aimed at.
+- A Proxmox discovery/read tool — a `TOOL_CATALOG` surface decision, left to the owner.
