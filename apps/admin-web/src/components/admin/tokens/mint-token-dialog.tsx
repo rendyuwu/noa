@@ -24,6 +24,7 @@ import {
 } from '@/lib/admin/tokens/label-schema'
 import type { MintOutcome } from '@/lib/admin/tokens/use-tokens'
 import type { MintedToken } from '@/lib/admin/tokens/types'
+import { submitOnEnter } from '@/lib/forms/submit-on-enter'
 
 import { MintedTokenPanel } from './minted-token-panel'
 
@@ -148,7 +149,7 @@ function MintTokenForm({
         </p>
       </div>
 
-      <form onSubmit={submit} className="flex flex-col gap-5">
+      <form onSubmit={submit} onKeyDown={submitOnEnter(submit)} className="flex flex-col gap-5">
         <FormField
           label="Label"
           errorText={errors.label?.message}

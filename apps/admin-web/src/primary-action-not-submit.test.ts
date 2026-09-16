@@ -33,18 +33,29 @@ import { describe, expect, it } from 'vitest'
  * `role-detail-drawer.test.tsx`, `user-detail-drawer.test.tsx`). The Proxmox and PMG dialogs have
  * no such click test — stated rather than left to read as coverage.
  *
- * Nor does it bind Enter: with no submit button associated, a multi-field form has nothing for
- * implicit submission to click, so Enter does not save in these dialogs. Same as the login screen,
- * and unchanged by this file.
+ * Enter is the other half of the same rule, and it is bound below by counting rather than by
+ * rendering: a form with no submit button gets nothing from the browser's implicit submission, so
+ * every `<form>` here carries `submitOnEnter` (`src/lib/forms/submit-on-enter.ts`). The count says
+ * each form has one; it does not say the handler passed is that form's own.
  *
  * Watched fail: putting `type="submit"` back on the WHM dialog's Save button reddens `no source
- * file carries a submit control` with that path in the message.
+ * file carries a submit control` with that path in the message, and dropping the `onKeyDown` from
+ * the login form reddens `every form routes Enter to a handler` with that path.
  */
 
 const SRC = fileURLToPath(new URL('.', import.meta.url))
 
 /** `type="submit"`, and the `form="id"` association that makes an outside button submit one. */
 const BANNED = /type="submit"|\bform="/
+
+/**
+ * A rendered form, anchored at the start of a line: several files in this app explain the rule in
+ * prose, and a `<form onSubmit>` inside a comment is not a form.
+ */
+const FORM_TAG = /^[ \t]*<form[\s>]/gm
+const ENTER_HANDLER = /submitOnEnter\(/g
+
+const count = (source: string, pattern: RegExp) => (source.match(pattern) ?? []).length
 
 function tsxFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -74,6 +85,19 @@ describe('the primary action is never a form submit', () => {
 
   it('no source file carries a submit control', () => {
     expect(offenders(files)).toEqual([])
+  })
+
+  it('every form routes Enter to a handler', () => {
+    const unwired = files
+      .filter(({ source }) => count(source, FORM_TAG) !== count(source, ENTER_HANDLER))
+      .map(({ path: file }) => path.relative(SRC, file))
+    expect(unwired).toEqual([])
+  })
+
+  it('separates — the Enter count notices a form that has none', () => {
+    const planted = '  <form onSubmit={submit}>'
+    expect(count(planted, FORM_TAG)).toBe(1)
+    expect(count(planted, ENTER_HANDLER)).toBe(0)
   })
 
   it('separates — the scan finds the banned shape when it is there', () => {

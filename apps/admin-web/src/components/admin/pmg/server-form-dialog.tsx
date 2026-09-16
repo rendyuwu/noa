@@ -28,6 +28,7 @@ import {
   type PmgServerFormState,
 } from '@/lib/admin/pmg/pmg-form'
 import { buildPmgServerFormSchema } from '@/lib/admin/pmg/pmg-schema'
+import { submitOnEnter } from '@/lib/forms/submit-on-enter'
 
 export type ServerFormDialogProps = {
   open: boolean
@@ -106,7 +107,7 @@ function ServerForm({
         </DialogDescription>
       </DialogHeader>
 
-      <form onSubmit={submit} className="flex flex-col gap-5">
+      <form onSubmit={submit} onKeyDown={submitOnEnter(submit)} className="flex flex-col gap-5">
         <ServerHostFields form={form} busy={busy} />
         <ServerSshFields form={form} mode={mode} existingServer={existingServer} busy={busy} />
       </form>

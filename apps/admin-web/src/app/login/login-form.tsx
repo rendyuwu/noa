@@ -12,6 +12,7 @@ import { loginErrorMessage, type LoginMessage } from '@/app/login/login-messages
 import { setStoredUser, type AuthUser } from '@/lib/auth/auth-store'
 import { getApiUrl, jsonOrThrow } from '@/lib/auth/fetch-helper'
 import { sanitizeReturnTo } from '@/lib/auth/return-to'
+import { submitOnEnter } from '@/lib/forms/submit-on-enter'
 
 /**
  * LDAP sign-in — admin auth/session plumbing, the admin API's `/auth/login` contract.
@@ -32,10 +33,20 @@ import { sanitizeReturnTo } from '@/lib/auth/return-to'
  * rule is the same shape one origin over.
  *
  * The `<form>` element stays, with an `onSubmit` that routes to the SAME handler (reuse over
- * duplication, one definition): where forms do work — an operator who COPIED the address into a
- * fresh tab, which has
- * no opener to inherit from — Enter in a field and a password manager's submit both behave. It
- * carries no `action`, so there is no non-JS path that would post a credential anywhere.
+ * duplication, one definition), for whatever still reaches it — a password manager that calls
+ * `requestSubmit()`, say. It carries no `action`, so there is no non-JS path that would post a
+ * credential anywhere.
+ *
+ * **Enter is `onKeyDown`, and it has to be.** This file used to claim that Enter worked here for an
+ * operator who copied the address into a fresh tab. It did not, in any tab. MEASURED in Chromium
+ * 151 against this page: Enter in the email field and Enter in the password field each produced
+ * zero `submit` events and zero requests, while clicking the button posted once. The rule is the
+ * browser's: with no submit button associated with it, a form carrying more than one field that
+ * blocks implicit submission has nothing for Enter to click, and this form carries two. The jsdom
+ * spec below could not catch it, because `fireEvent.submit` dispatches the event directly and skips
+ * implicit submission entirely. `submitOnEnter` routes Enter to the same handler in JS, which also
+ * means it works in the sandboxed tab, where a hidden submit button would be just as inert as a
+ * visible one.
  */
 
 const schema = z.object({
@@ -116,12 +127,13 @@ export function LoginForm() {
         ) : null}
 
         {/*
-         * `onSubmit` is the copied-address path (Enter, password managers). It is never the only
-         * path: the button below does not submit this form, it calls the same handler directly.
+         * Three triggers, one handler: the button's click, Enter in a field, and whatever still
+         * dispatches a submit. None of them is a submit button.
          */}
         <form
           noValidate
           onSubmit={signIn}
+          onKeyDown={submitOnEnter(signIn)}
           aria-busy={isSubmitting}
           className="flex flex-col gap-4"
         >

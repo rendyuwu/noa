@@ -34,6 +34,7 @@ import {
   isLastActiveAdmin,
   isSelf,
 } from '@/lib/admin/users/user-status'
+import { submitOnEnter } from '@/lib/forms/submit-on-enter'
 
 export type UserDetailDrawerProps = {
   user: AdminUser | null
@@ -259,7 +260,11 @@ function UserDetailContent({
           </Button>
         </section>
 
-        <form onSubmit={submitRoles} className="flex flex-col gap-6">
+        <form
+          onSubmit={submitRoles}
+          onKeyDown={submitOnEnter(submitRoles)}
+          className="flex flex-col gap-6"
+        >
           <Controller
             control={control}
             name="roles"

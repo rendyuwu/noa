@@ -17,6 +17,7 @@ import {
 
 import type { MutationResult } from '@/lib/admin/roles/use-roles'
 import { createRoleSchema, type CreateRoleValues } from '@/lib/admin/roles/role-schema'
+import { submitOnEnter } from '@/lib/forms/submit-on-enter'
 
 export type CreateRoleDialogProps = {
   open: boolean
@@ -76,7 +77,7 @@ function CreateRoleForm({
         </DialogDescription>
       </DialogHeader>
 
-      <form onSubmit={submit}>
+      <form onSubmit={submit} onKeyDown={submitOnEnter(submit)}>
         <Controller
           control={control}
           name="name"

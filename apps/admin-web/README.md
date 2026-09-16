@@ -35,16 +35,26 @@ a form submit, and that is load-bearing rather than stylistic: `NOA_SIGN_IN_URL`
 an operator arrives is a click on the embed's 401 card link-out, and a measured run showed the tab such a
 click opens inherits the frame's sandbox — where `allow-forms` is absent, so a submit-driven
 login would be refused with nothing the operator can see, which is why an escape hatch ships the
-plain address and never a link alone. The `<form>` stays and routes to the same handler, for the operator who copies the address
-into a fresh tab instead.
+plain address and never a link alone. The `<form>` stays and routes to the same handler for
+whatever still dispatches a submit, such as a password manager calling `requestSubmit()`.
 
 That rule covers the whole app rather than the login page alone. The sandbox survives same-origin
 navigation, so every page reached from that tab inherits it and a submit-driven Save in any dialog
 is refused the same way — which is how it reached the WHM "add server" dialog. Every primary action
 is a `type="button"` with an `onClick` that calls the same handler the `<form onSubmit>` calls, and
 `src/primary-action-not-submit.test.ts` scans the source for the two attributes that would bring a
-submit control back. One cost, stated: with no submit button associated with them, Enter no longer
-saves a multi-field dialog, exactly as on the login screen.
+submit control back.
+
+Enter is put back by hand, in JS, by `src/lib/forms/submit-on-enter.ts`. It has to be: a form with
+no submit button associated with it gets nothing from the browser's implicit submission unless it
+carries exactly one field that blocks it, and these forms carry more. This page claimed for a while
+that Enter worked in a freshly opened tab; measured in Chromium 151 against the rendered login
+page, it did not, in any tab — Enter in the email field and Enter in the password field each
+produced zero submits and zero requests, against one request from the button. The helper fires the
+same handler on Enter in a text field, leaving textareas and every Radix trigger alone. A hidden
+submit button would not have done: measured inside a sandbox without `allow-forms`, Enter on that
+shape produces one "Blocked form submission" log and nothing else, while the keydown handler runs
+normally and logs nothing.
 
 ## Checks
 

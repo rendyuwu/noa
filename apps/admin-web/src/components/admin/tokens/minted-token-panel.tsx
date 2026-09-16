@@ -33,11 +33,13 @@ export type MintedTokenPanelProps = {
 //  - no `name` — a named control inside a form is submitted. There is no form
 //    here (see the next point), and the missing `name` means there is nothing to
 //    submit even if one were ever wrapped around it.
-//  - outside any `<form>` — the house dialog wraps its body in
-//    `<form onSubmit>` (server-form-dialog.tsx:109). Enter inside such a form
-//    either re-fires submit or, with no submit handler, performs a native GET
-//    that puts the token in the query string, the address bar and the history.
-//    This panel is a sibling of that pattern, never a child of it.
+//  - outside any `<form>` — the house dialog wraps its body in `<form onSubmit>`
+//    (every `server-form-dialog.tsx` under `components/admin/`, and this file's
+//    own `mint-token-dialog.tsx`). Enter inside such a form now runs the save
+//    handler (`lib/forms/submit-on-enter.ts`), and before that could re-fire
+//    submit or perform a native GET putting the token in the query string, the
+//    address bar and the history. This panel is a sibling of that pattern,
+//    never a child of it.
 //  - `autoComplete="off"` — a credential is not a value any password manager or
 //    form-fill heuristic should learn.
 //

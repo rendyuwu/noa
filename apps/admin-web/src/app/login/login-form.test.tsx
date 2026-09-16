@@ -136,10 +136,15 @@ describe('the JS-fetch sign-in control', () => {
   })
 
   it('the form path routes to the same handler, once', async () => {
-    // The copied-address case the JS-fetch rule names: a fresh tab has no opener to inherit a
-    // sandbox from, so
-    // Enter in a field and a password manager's submit both work there. One handler serves both
-    // triggers — two definitions would be two places for the endpoint to drift.
+    // Whatever still dispatches a submit — a password manager calling `requestSubmit()`, say —
+    // reaches the same handler the button calls. One handler for every trigger; two definitions
+    // would be two places for the endpoint to drift.
+    //
+    // This does NOT cover Enter, and reading it as if it did is how the Enter defect survived:
+    // `fireEvent.submit` dispatches the event directly, skipping the implicit submission that a
+    // browser would or would not have performed. jsdom does not implement implicit submission at
+    // all. The Enter path is asserted in the next spec, and the browser rule behind it was measured
+    // by hand (see `src/lib/forms/submit-on-enter.test.ts`).
     render(<LoginForm />)
     fillCredentials()
 
@@ -150,6 +155,23 @@ describe('the JS-fetch sign-in control', () => {
     expect(fetchMock.mock.calls[0]![0]).toBe('/api/auth/login')
     // `preventDefault` ran, so no navigation is attempted where forms do work.
     expect(submitted).toBe(false)
+  })
+
+  it('Enter in a field signs in, without a submit event', async () => {
+    // MEASURED in Chromium 151 before this existed: Enter in either field produced zero submits and
+    // zero requests, because a form with two fields that block implicit submission and no submit
+    // button has nothing for Enter to click. `submitOnEnter` puts the key back on the handler, in
+    // JS, so it also works in the sandboxed tab that the whole page shape exists for.
+    const submits = countSubmits()
+    render(<LoginForm />)
+    fillCredentials()
+
+    fireEvent.keyDown(screen.getByLabelText(/email/i), { key: 'Enter' })
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    expect(fetchMock.mock.calls[0]![0]).toBe('/api/auth/login')
+    expect(submits.count()).toBe(0)
+    submits.stop()
   })
 })
 
