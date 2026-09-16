@@ -259,7 +259,7 @@ function UserDetailContent({
           </Button>
         </section>
 
-        <form id="user-roles-form" onSubmit={submitRoles} className="flex flex-col gap-6">
+        <form onSubmit={submitRoles} className="flex flex-col gap-6">
           <Controller
             control={control}
             name="roles"
@@ -310,7 +310,13 @@ function UserDetailContent({
             </Button>
           }
         />
-        <Button type="submit" form="user-roles-form" loading={isSubmitting} disabled={!isDirty}>
+        {/* Click handler, not a submit button — sandbox-inheriting tabs refuse form submission. */}
+        <Button
+          type="button"
+          onClick={() => void submitRoles()}
+          loading={isSubmitting}
+          disabled={!isDirty}
+        >
           Save roles
         </Button>
       </DrawerFooter>

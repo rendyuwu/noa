@@ -76,7 +76,7 @@ function CreateRoleForm({
         </DialogDescription>
       </DialogHeader>
 
-      <form id="create-role-form" onSubmit={submit}>
+      <form onSubmit={submit}>
         <Controller
           control={control}
           name="name"
@@ -96,7 +96,8 @@ function CreateRoleForm({
         <Button variant="outline" onClick={() => onOpenChangeAction(false)} disabled={isSubmitting}>
           Cancel
         </Button>
-        <Button type="submit" form="create-role-form" loading={isSubmitting}>
+        {/* Click handler, not a submit button — sandbox-inheriting tabs refuse form submission. */}
+        <Button type="button" onClick={() => void submit()} loading={isSubmitting}>
           Create role
         </Button>
       </DialogFooter>
