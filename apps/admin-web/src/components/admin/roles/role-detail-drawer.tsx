@@ -114,7 +114,7 @@ function RoleDetailContent({
         <DrawerDescription>Manage the tool allowlist for this role.</DrawerDescription>
       </DrawerHeader>
 
-      <form id="role-tools-form" onSubmit={submit} className="flex min-h-0 flex-1 flex-col gap-4">
+      <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col gap-4">
         <FormField label="Filter tools">
           <Input
             value={filter}
@@ -155,7 +155,13 @@ function RoleDetailContent({
             </Button>
           }
         />
-        <Button type="submit" form="role-tools-form" loading={isSubmitting} disabled={!isDirty}>
+        {/* Click handler, not a submit button — sandbox-inheriting tabs refuse form submission. */}
+        <Button
+          type="button"
+          onClick={() => void submit()}
+          loading={isSubmitting}
+          disabled={!isDirty}
+        >
           Save allowlist
         </Button>
       </DrawerFooter>

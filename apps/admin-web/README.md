@@ -38,6 +38,14 @@ login would be refused with nothing the operator can see, which is why an escape
 plain address and never a link alone. The `<form>` stays and routes to the same handler, for the operator who copies the address
 into a fresh tab instead.
 
+That rule covers the whole app rather than the login page alone. The sandbox survives same-origin
+navigation, so every page reached from that tab inherits it and a submit-driven Save in any dialog
+is refused the same way — which is how it reached the WHM "add server" dialog. Every primary action
+is a `type="button"` with an `onClick` that calls the same handler the `<form onSubmit>` calls, and
+`src/primary-action-not-submit.test.ts` scans the source for the two attributes that would bring a
+submit control back. One cost, stated: with no submit button associated with them, Enter no longer
+saves a multi-field dialog, exactly as on the login screen.
+
 ## Checks
 
 ```bash

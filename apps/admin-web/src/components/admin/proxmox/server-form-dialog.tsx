@@ -110,7 +110,7 @@ function ServerForm({
         </DialogDescription>
       </DialogHeader>
 
-      <form id="proxmox-server-form" onSubmit={submit} className="flex flex-col gap-5">
+      <form onSubmit={submit} className="flex flex-col gap-5">
         <ServerApiFields form={form} mode={mode} busy={busy} />
       </form>
 
@@ -118,7 +118,8 @@ function ServerForm({
         <Button variant="outline" onClick={() => onOpenChangeAction(false)} disabled={busy}>
           Cancel
         </Button>
-        <Button type="submit" form="proxmox-server-form" loading={busy}>
+        {/* Click handler, not a submit button — sandbox-inheriting tabs refuse form submission. */}
+        <Button type="button" onClick={() => void submit()} loading={busy}>
           {isCreate ? 'Save' : 'Save changes'}
         </Button>
       </DialogFooter>

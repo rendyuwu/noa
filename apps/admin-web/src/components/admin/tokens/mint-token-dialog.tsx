@@ -148,7 +148,7 @@ function MintTokenForm({
         </p>
       </div>
 
-      <form id="mint-token-form" onSubmit={submit} className="flex flex-col gap-5">
+      <form onSubmit={submit} className="flex flex-col gap-5">
         <FormField
           label="Label"
           errorText={errors.label?.message}
@@ -167,7 +167,8 @@ function MintTokenForm({
         <Button variant="outline" onClick={onCancelAction} disabled={isSubmitting}>
           Cancel
         </Button>
-        <Button type="submit" form="mint-token-form" loading={isSubmitting}>
+        {/* Click handler, not a submit button — sandbox-inheriting tabs refuse form submission. */}
+        <Button type="button" onClick={() => void submit()} loading={isSubmitting}>
           Mint token
         </Button>
       </DialogFooter>
