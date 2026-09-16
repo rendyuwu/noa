@@ -26,6 +26,7 @@ import {
   type ProxmoxServerFormState,
 } from '@/lib/admin/proxmox/proxmox-form'
 import { buildProxmoxServerFormSchema } from '@/lib/admin/proxmox/proxmox-schema'
+import { submitOnEnter } from '@/lib/forms/submit-on-enter'
 
 export type ServerFormDialogProps = {
   open: boolean
@@ -110,7 +111,7 @@ function ServerForm({
         </DialogDescription>
       </DialogHeader>
 
-      <form onSubmit={submit} className="flex flex-col gap-5">
+      <form onSubmit={submit} onKeyDown={submitOnEnter(submit)} className="flex flex-col gap-5">
         <ServerApiFields form={form} mode={mode} busy={busy} />
       </form>
 

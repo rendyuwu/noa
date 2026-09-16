@@ -21,6 +21,7 @@ import {
 import { coerceStringArray } from '@/lib/admin/shared/coerce'
 import type { MutationResult } from '@/lib/admin/roles/use-roles'
 import { roleToolsSchema, type RoleToolsValues } from '@/lib/admin/roles/role-schema'
+import { submitOnEnter } from '@/lib/forms/submit-on-enter'
 
 export type RoleDetailDrawerProps = {
   role: string | null
@@ -114,7 +115,11 @@ function RoleDetailContent({
         <DrawerDescription>Manage the tool allowlist for this role.</DrawerDescription>
       </DrawerHeader>
 
-      <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col gap-4">
+      <form
+        onSubmit={submit}
+        onKeyDown={submitOnEnter(submit)}
+        className="flex min-h-0 flex-1 flex-col gap-4"
+      >
         <FormField label="Filter tools">
           <Input
             value={filter}

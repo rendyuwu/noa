@@ -29,6 +29,7 @@ import {
   type WhmServerFormState,
 } from '@/lib/admin/whm/whm-form'
 import { buildWhmServerFormSchema } from '@/lib/admin/whm/whm-schema'
+import { submitOnEnter } from '@/lib/forms/submit-on-enter'
 
 export type ServerFormDialogProps = {
   open: boolean
@@ -106,7 +107,7 @@ function ServerForm({
         </DialogDescription>
       </DialogHeader>
 
-      <form onSubmit={submit} className="flex flex-col gap-5">
+      <form onSubmit={submit} onKeyDown={submitOnEnter(submit)} className="flex flex-col gap-5">
         <ServerApiFields form={form} mode={mode} busy={busy} />
         <ServerSshFields form={form} mode={mode} existingServer={existingServer} busy={busy} />
       </form>
