@@ -47,7 +47,9 @@ export const getStoredUser = (): AuthUser | null => {
   }
 }
 
-export const clearStoredUser = (): void => {
+// Not exported: the teardown wiring below is its only caller, and a second way to
+// clear the cache is a second thing that can skip the session flow that owns it.
+const clearStoredUser = (): void => {
   setStoredUser(null)
 }
 

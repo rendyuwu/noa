@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 
 import type { AdminUser } from './types'
 import {
-  activeAdminCount,
   deriveUserStatus,
   formatRelativeTime,
   hasAdminRole,
@@ -51,12 +50,18 @@ describe('self and admin guards', () => {
   })
 
   it('counts only active admins', () => {
-    const users = [
-      user({ id: '1', roles: ['admin'], is_active: true }),
-      user({ id: '2', roles: ['admin'], is_active: false }),
-      user({ id: '3', roles: ['member'], is_active: true }),
-    ]
-    expect(activeAdminCount(users)).toBe(1)
+    // Asserted through `isLastActiveAdmin`, which is the whole of the count's public
+    // surface. The sole active admin is flagged, which can only hold if the disabled
+    // admin and the active member are both left out of the count: including either
+    // would take it to 2 and the flag would go false.
+    const activeAdmin = user({ id: '1', roles: ['admin'], is_active: true })
+    const disabledAdmin = user({ id: '2', roles: ['admin'], is_active: false })
+    const activeMember = user({ id: '3', roles: ['member'], is_active: true })
+    const users = [activeAdmin, disabledAdmin, activeMember]
+
+    expect(isLastActiveAdmin(activeAdmin, users)).toBe(true)
+    expect(isLastActiveAdmin(disabledAdmin, users)).toBe(false)
+    expect(isLastActiveAdmin(activeMember, users)).toBe(false)
   })
 
   it('flags the last active admin, and only while they are the last', () => {

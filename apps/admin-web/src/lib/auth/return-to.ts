@@ -30,7 +30,9 @@ const CONTROL_CHARS = /[\u0000-\u001f]/
 //  - percent-encoded slashes ("%2f", "%5c") — a target like "/api%2Fsecrets"
 //    slips past the literal "/api/" guard yet decodes to the proxy surface after
 //    navigation, so any encoded path/backslash separator is rejected outright.
-export const isSafeReturnTo = (raw: unknown): raw is string => {
+// Not exported: `sanitizeReturnTo` is the whole surface, and a second entry point
+// is a second thing a caller can reach for and get the fallback wrong.
+const isSafeReturnTo = (raw: unknown): raw is string => {
   if (typeof raw !== 'string' || raw.length === 0) return false
   if (!raw.startsWith('/')) return false
   if (raw.startsWith('//')) return false

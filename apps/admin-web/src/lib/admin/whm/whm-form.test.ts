@@ -5,7 +5,6 @@ import {
   EMPTY_WHM_FORM,
   buildWhmCreatePayload,
   buildWhmUpdatePayload,
-  clearWhmSecrets,
   validateWhmServerForm,
   whmFormStateFromServer,
   type WhmServerFormState,
@@ -63,24 +62,6 @@ describe('whmFormStateFromServer', () => {
   // all" — both read `false`. This is the case that can.
   it('seeds isResellerCredential true from a row already marked reseller', () => {
     expect(whmFormStateFromServer(resellerServer).isResellerCredential).toBe(true)
-  })
-})
-
-describe('clearWhmSecrets', () => {
-  it('blanks every secret field but keeps non-secret input', () => {
-    const dirty = form({
-      name: 'web1',
-      apiToken: 'TOKEN',
-      sshPassword: 'PW',
-      sshPrivateKey: 'KEY',
-      sshPrivateKeyPassphrase: 'PASS',
-    })
-    const cleared = clearWhmSecrets(dirty)
-    expect(cleared.name).toBe('web1')
-    expect(cleared.apiToken).toBe('')
-    expect(cleared.sshPassword).toBe('')
-    expect(cleared.sshPrivateKey).toBe('')
-    expect(cleared.sshPrivateKeyPassphrase).toBe('')
   })
 })
 

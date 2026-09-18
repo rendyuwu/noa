@@ -5,7 +5,6 @@ import {
   EMPTY_PMG_FORM,
   buildPmgCreatePayload,
   buildPmgUpdatePayload,
-  clearPmgSecrets,
   pmgFormStateFromServer,
   validatePmgServerForm,
   type PmgServerFormState,
@@ -46,24 +45,6 @@ describe('pmgFormStateFromServer', () => {
   it('opens a key-backed server in private_key auth mode', () => {
     const keyServer: PmgServer = { ...server, has_ssh_password: false, has_ssh_private_key: true }
     expect(pmgFormStateFromServer(keyServer).sshAuthMode).toBe('private_key')
-  })
-})
-
-describe('clearPmgSecrets', () => {
-  it('blanks every secret field but keeps non-secret input', () => {
-    const dirty = form({
-      name: 'pmg1',
-      sshHost: 'pmg.example.com',
-      sshPassword: 'PW',
-      sshPrivateKey: 'KEY',
-      sshPrivateKeyPassphrase: 'PASS',
-    })
-    const cleared = clearPmgSecrets(dirty)
-    expect(cleared.name).toBe('pmg1')
-    expect(cleared.sshHost).toBe('pmg.example.com')
-    expect(cleared.sshPassword).toBe('')
-    expect(cleared.sshPrivateKey).toBe('')
-    expect(cleared.sshPrivateKeyPassphrase).toBe('')
   })
 })
 

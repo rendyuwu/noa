@@ -24,15 +24,6 @@ export const EMPTY_PROXMOX_FORM: ProxmoxServerFormState = {
   verifySsl: false,
 }
 
-// The single secret field, cleared after every save/cancel/close/failure.
-// Exported so the dialog and controller clear exactly the same set — the single
-// source of truth for "what must never persist in component state".
-export const PROXMOX_SECRET_FIELDS = ['apiTokenSecret'] as const
-
-export function clearProxmoxSecrets(form: ProxmoxServerFormState): ProxmoxServerFormState {
-  return { ...form, apiTokenSecret: '' }
-}
-
 // Seed the edit form from a server. Non-secret fields carry over; the secret
 // field starts blank because the API never returns one.
 export function proxmoxFormStateFromServer(server: ProxmoxServer): ProxmoxServerFormState {

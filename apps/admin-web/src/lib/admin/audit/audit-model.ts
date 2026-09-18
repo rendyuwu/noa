@@ -24,7 +24,9 @@ export const TOOL_RUN_QUERY_KEYS = [
   'to',
 ] as const
 
-export function normalizeDateRange(filters: { fromDate: string; toDate: string }): {
+// Not exported: both query builders below are its only callers, and the day-to-instant
+// expansion is only ever observable as the `from`/`to` parameters they emit.
+function normalizeDateRange(filters: { fromDate: string; toDate: string }): {
   from?: string
   to?: string
 } {

@@ -39,20 +39,6 @@ export const EMPTY_WHM_FORM: WhmServerFormState = {
   sshPrivateKeyPassphrase: '',
 }
 
-// The secret fields, cleared after every save/cancel/close/failure. Exported so
-// the dialog and controller clear exactly the same set — the single source of
-// truth for "what must never persist in component state".
-export const WHM_SECRET_FIELDS = [
-  'apiToken',
-  'sshPassword',
-  'sshPrivateKey',
-  'sshPrivateKeyPassphrase',
-] as const
-
-export function clearWhmSecrets(form: WhmServerFormState): WhmServerFormState {
-  return { ...form, apiToken: '', sshPassword: '', sshPrivateKey: '', sshPrivateKeyPassphrase: '' }
-}
-
 // Seed the edit form from a server. Non-secret fields carry over; every secret
 // field starts blank because the API never returns one. enableSsh is inferred
 // from any stored SSH configuration so an existing setup opens expanded.

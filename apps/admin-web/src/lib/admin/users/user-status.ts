@@ -44,7 +44,9 @@ export function isSelf(user: AdminUser, meId: string): boolean {
   return user.id === meId
 }
 
-export function activeAdminCount(users: AdminUser[]): number {
+// Not exported: `isLastActiveAdmin` is the only question anyone asks of this count,
+// and the count on its own invites a caller to re-derive the rule from it.
+function activeAdminCount(users: AdminUser[]): number {
   return users.filter((user) => isActive(user) && hasAdminRole(user)).length
 }
 
