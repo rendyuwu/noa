@@ -252,20 +252,3 @@ async def revoke_own_token(
     """
     await tokens.revoke(current_user.user_id, token_id, actor_email=current_user.email)
     return RevokeTokenResponse(ok=True)
-
-
-__all__ = [
-    "McpTokenResponse",
-    "McpTokensResponse",
-    "MintTokenRequest",
-    "MintedTokenResponse",
-    "RevokeTokenResponse",
-    "admin_router",
-    "list_own_tokens",
-    "list_user_tokens",
-    "me_router",
-    "mint_own_token",
-    "mint_user_token",
-    "revoke_own_token",
-    "revoke_user_token",
-]

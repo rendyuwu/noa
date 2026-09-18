@@ -610,11 +610,3 @@ class AuthorizationService:
                 metadata=metadata,
             )
         )
-
-
-__all__ = [
-    "LOG_TOOL_LIST_NOTIFY_FAILED",
-    "MAX_ROLE_NAME_LENGTH",
-    "ROLE_NAME_PATTERN",
-    "AuthorizationService",
-]

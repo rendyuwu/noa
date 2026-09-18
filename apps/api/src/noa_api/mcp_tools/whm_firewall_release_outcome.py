@@ -404,14 +404,3 @@ def release_outcome(
         ),
         delta=delta(verification=VERIFICATION_VERIFIED, measured_verdict=verdict),
     )
-
-
-__all__ = [
-    "ERROR_ALLOW_FAILED",
-    "ERROR_RELEASE_FAILED",
-    "LOG_RELEASE_UNVERIFIED",
-    "TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW",
-    "ReleaseTarget",
-    "release_delta",
-    "release_outcome",
-]

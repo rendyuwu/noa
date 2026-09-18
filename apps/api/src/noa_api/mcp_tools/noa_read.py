@@ -174,13 +174,3 @@ def register_noa_read_tools(server: FastMCP, *, context: McpToolContext) -> dict
         )
 
     return {TOOL_NOA_GET_ACTION_RESULT: ToolRisk.READ}
-
-
-__all__ = [
-    "DESCRIPTION_NOA_GET_ACTION_RESULT",
-    "ERROR_ACTION_REQUEST_NOT_FOUND",
-    "MESSAGE_ACTION_REQUEST_NOT_FOUND",
-    "TOOL_NOA_GET_ACTION_RESULT",
-    "noa_get_action_result",
-    "register_noa_read_tools",
-]

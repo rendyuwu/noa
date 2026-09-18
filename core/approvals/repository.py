@@ -105,9 +105,3 @@ class SQLActionRequestRepository:
     async def commit(self) -> None:
         """Make the pending INSERT durable. See the module docstring."""
         await self._session.commit()
-
-
-__all__ = [
-    "ActionRequestRepository",
-    "SQLActionRequestRepository",
-]

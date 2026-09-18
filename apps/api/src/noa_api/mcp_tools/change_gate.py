@@ -79,7 +79,9 @@ from noa_api.mcp_tools.ui_resource import (
     # when the table surface became the second result carrying a NOA-origin document:
     # summary-plus-URL says that surface uses *this* mechanism rather than a second one, and two
     # spellings of "what makes LibreChat render a frame" is how one of them goes stale.
-    UI_RESOURCE_MIME_TYPE,
+    UI_RESOURCE_MIME_TYPE as UI_RESOURCE_MIME_TYPE,
+)
+from noa_api.mcp_tools.ui_resource import (
     build_ui_resource,
     embed_url,
 )
@@ -512,26 +514,3 @@ async def _write_pending(
         raise ChangeGateUnavailableError(
             f"`action_requests` INSERT for `{tool_name}` failed: {type(exc).__name__}"
         ) from exc
-
-
-__all__ = [
-    "ACTIVE_CHANGE_GATE_BRANCH",
-    "APPROVAL_CARD_PATH",
-    "EVIDENCE_ASKED",
-    "EVIDENCE_HEADING",
-    "EVIDENCE_HEADLINE",
-    "FORBIDDEN_REASON_KEYS",
-    "LOG_CHANGE_GATE_WRITE_FAILED",
-    "LOG_CHANGE_REQUEST_OPENED",
-    "REQUIRED_EVIDENCE_KEYS",
-    "UI_RESOURCE_MIME_TYPE",
-    "UI_RESOURCE_URI_PREFIX",
-    "ChangeGateBranch",
-    "PendingChangeRequest",
-    "approval_card_url",
-    "assert_evidence_usable",
-    "assert_no_reason_argument",
-    "build_approval_context",
-    "build_change_gate_response",
-    "open_change_request",
-]

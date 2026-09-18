@@ -592,26 +592,3 @@ async def _set_fingerprint(
     server.ssh_host_key_fingerprint = fingerprint
     await session.flush()
     return True
-
-
-__all__ = [
-    "SSH_VALUE_FIELDS",
-    "PMGServerAdminRepository",
-    "PMGServerCreate",
-    "PMGServerUpdate",
-    "ProxmoxServerAdminRepository",
-    "ProxmoxServerCreate",
-    "ProxmoxServerUpdate",
-    "SQLPMGHostKeyPinRepository",
-    "SQLPMGServerAdminRepository",
-    "SQLProxmoxServerAdminRepository",
-    "SQLWHMHostKeyPinRepository",
-    "SQLWHMServerAdminRepository",
-    "SSHCredentials",
-    "SSHCredentialsPatch",
-    "WHMServerAdminRepository",
-    "WHMServerCreate",
-    "WHMServerUpdate",
-    "apply_ssh_fields",
-    "apply_ssh_fields_with_pin_rule",
-]

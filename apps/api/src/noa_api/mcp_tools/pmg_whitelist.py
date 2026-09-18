@@ -386,27 +386,3 @@ def register_pmg_whitelist_tools(
         )
 
     return {TOOL_PMG_WHITELIST: ToolRisk.CHANGE}
-
-
-__all__ = [
-    "ACTIONS",
-    "ACTION_ADD",
-    "ACTION_REMOVE",
-    "DESCRIPTION_PMG_WHITELIST",
-    "ERROR_INVALID_ACTION",
-    "ERROR_SERVER_UNAVAILABLE",
-    "EVIDENCE_ACTION",
-    "EVIDENCE_ENDPOINT",
-    "EVIDENCE_MATCHES",
-    "EVIDENCE_NORMALIZED_TARGET",
-    "EVIDENCE_SERVER_ID",
-    "EVIDENCE_SERVER_NAME",
-    "EVIDENCE_TARGET",
-    "EVIDENCE_TOTAL_ENTRIES",
-    "MESSAGE_INVALID_ACTION",
-    "MESSAGE_SERVER_UNAVAILABLE",
-    "TOOL_PMG_WHITELIST",
-    "build_whitelist_evidence",
-    "pmg_whitelist",
-    "register_pmg_whitelist_tools",
-]

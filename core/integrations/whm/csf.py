@@ -250,13 +250,3 @@ def _parse_csf_grep_lines(lines: list[str], *, target: str, max_matches: int = 2
 def parse_csf_grep_output(output: str, *, target: str, max_matches: int = 20) -> CSFGrepParsed:
     """Parse `csf -g <target>` output. The only CSF read path (see module docstring)."""
     return _parse_csf_grep_lines(_text_to_lines(output), target=target, max_matches=max_matches)
-
-
-__all__ = [
-    "CSFGrepParsed",
-    "CSFGrepVerdict",
-    "CSFTarget",
-    "CSFTargetKind",
-    "parse_csf_grep_output",
-    "parse_csf_target",
-]

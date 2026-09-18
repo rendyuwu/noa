@@ -61,11 +61,15 @@ from noa_api.mcp_tools.change_target import (
     ERROR_SERVER_UNAVAILABLE,
     MESSAGE_EVIDENCE_UNUSABLE,
     MESSAGE_SERVER_UNAVAILABLE,
-    STATUS_CHANGED,
-    STATUS_NO_OP,
     VERIFICATION_UNAVAILABLE,
     WriteFailure,
     uuid_or_none,
+)
+from noa_api.mcp_tools.change_target import (
+    STATUS_CHANGED as STATUS_CHANGED,
+)
+from noa_api.mcp_tools.change_target import (
+    STATUS_NO_OP as STATUS_NO_OP,
 )
 from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.results import ERROR_UNKNOWN, ToolPayload, tool_failure
@@ -492,37 +496,3 @@ def refused_backend_verdict(*, failure: WriteFailure, contradicted: bool) -> tup
         # its own row, and a cause answers why there is no measurement.
         return VERIFICATION_MISMATCH, None
     return VERIFICATION_UNAVAILABLE, failure.code
-
-
-__all__ = [
-    "BACKEND_DISPLAY_NAMES",
-    "ERROR_EVIDENCE_UNUSABLE",
-    "ERROR_SERVER_UNAVAILABLE",
-    "EVIDENCE_FIREWALL",
-    "EVIDENCE_SERVER_ID",
-    "EVIDENCE_SERVER_NAME",
-    "EVIDENCE_TARGET",
-    "MESSAGE_EVIDENCE_UNUSABLE",
-    "MESSAGE_SERVER_UNAVAILABLE",
-    "STATUS_CHANGED",
-    "STATUS_NO_OP",
-    "VERIFICATION_UNAVAILABLE",
-    "BackendChange",
-    "FirewallChangeTarget",
-    "WriteFailure",
-    "backend_change_failure",
-    "backend_outcomes",
-    "backend_refusal_sentence",
-    "backend_write_failure",
-    "evidence_bound",
-    "evidence_verdict",
-    "firewall_state",
-    "firewall_verdict_sentence",
-    "holds_allow_entry",
-    "name_sources",
-    "refused_backend_verdict",
-    "resolve_firewall_change_target",
-    "tolerated_csf_step",
-    "tolerated_imunify_step",
-    "unanswered_backends",
-]

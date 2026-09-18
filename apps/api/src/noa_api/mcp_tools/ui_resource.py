@@ -52,6 +52,3 @@ def build_ui_resource(*, uri: str, url: str) -> EmbeddedResource:
             text=url,
         ),
     )
-
-
-__all__ = ["UI_RESOURCE_MIME_TYPE", "build_ui_resource", "embed_url"]

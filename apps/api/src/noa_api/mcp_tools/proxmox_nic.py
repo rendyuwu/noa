@@ -473,37 +473,3 @@ def register_proxmox_nic_tools(server: FastMCP, *, context: McpToolContext) -> d
         )
 
     return {TOOL_PROXMOX_VM_NIC: ToolRisk.CHANGE}
-
-
-__all__ = [
-    "ACTIONS",
-    "ACTION_DISABLE",
-    "ACTION_ENABLE",
-    "DESCRIPTION_PROXMOX_VM_NIC",
-    "ERROR_INVALID_ACTION",
-    "ERROR_INVALID_VMID",
-    "ERROR_NET_NOT_FOUND",
-    "ERROR_NET_SELECTION_REQUIRED",
-    "ERROR_NODE_REQUIRED",
-    "ERROR_NO_NICS_FOUND",
-    "EVIDENCE_ACTION",
-    "EVIDENCE_NET",
-    "EVIDENCE_NIC",
-    "EVIDENCE_NODE",
-    "EVIDENCE_SERVER_ID",
-    "EVIDENCE_SERVER_NAME",
-    "EVIDENCE_VM",
-    "EVIDENCE_VMID",
-    "MESSAGE_INVALID_ACTION",
-    "MESSAGE_INVALID_VMID",
-    "MESSAGE_NODE_REQUIRED",
-    "MESSAGE_NO_NICS_FOUND",
-    "TOOL_PROXMOX_VM_NIC",
-    "NICSelection",
-    "VMNICState",
-    "collect_nic_state",
-    "link_state_for",
-    "proxmox_vm_nic",
-    "register_proxmox_nic_tools",
-    "select_requested_nic",
-]

@@ -34,6 +34,3 @@ def now_utc(value: datetime | None = None) -> datetime:
 def as_utc(value: datetime) -> datetime:
     """Aware UTC. A naive value is assumed UTC rather than rejected."""
     return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
-
-
-__all__ = ["as_utc", "now_utc"]

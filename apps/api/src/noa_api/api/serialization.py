@@ -19,6 +19,3 @@ from datetime import datetime
 def iso_or_none(value: datetime | None) -> str | None:
     """ISO-8601 string, `None` preserved."""
     return value.isoformat() if value is not None else None
-
-
-__all__ = ["iso_or_none"]

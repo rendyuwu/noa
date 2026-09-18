@@ -298,24 +298,3 @@ async def run_pmgconfig_sync_restart(config: SSHConnectionConfig) -> str:
         result,
         default_message="PMG config sync failed",
     )
-
-
-__all__ = [
-    "MYNETWORKS_PATH",
-    "PMGCONFIG_BINARY",
-    "PMGSH_BINARY",
-    "build_pmgconfig_command",
-    "build_pmgsh_command",
-    "parse_pmgsh_json_output",
-    "require_pmg_mutation_success",
-    "require_pmgsh_success",
-    "run_pmg_mynetworks_add",
-    "run_pmg_mynetworks_delete",
-    "run_pmg_mynetworks_list",
-    "run_pmg_mynetworks_probe",
-    "run_pmg_version_probe",
-    "run_pmgconfig_command",
-    "run_pmgconfig_sync_restart",
-    "run_pmgsh_command",
-    "run_pmgsh_json",
-]

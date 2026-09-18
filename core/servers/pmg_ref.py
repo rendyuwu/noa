@@ -25,10 +25,18 @@ from typing import TypeVar
 from core.servers.pmg_repository import PMGServerReadRepository, PMGServerRowLike
 from core.servers.reference import (
     # Re-exported rather than re-declared — see `whm_ref` for why.
-    ERROR_AMBIGUOUS,
-    ERROR_NOT_FOUND,
-    ERROR_REQUIRED,
-    MAX_CHOICES,
+    ERROR_AMBIGUOUS as ERROR_AMBIGUOUS,
+)
+from core.servers.reference import (
+    ERROR_NOT_FOUND as ERROR_NOT_FOUND,
+)
+from core.servers.reference import (
+    ERROR_REQUIRED as ERROR_REQUIRED,
+)
+from core.servers.reference import (
+    MAX_CHOICES as MAX_CHOICES,
+)
+from core.servers.reference import (
     ServerRefResolution,
     required_message,
     resolve_server_ref,
@@ -71,16 +79,3 @@ async def resolve_pmg_server_ref(
         host_of=lambda server: server.ssh_host,
         describe=describe,
     )
-
-
-__all__ = [
-    "ERROR_AMBIGUOUS",
-    "ERROR_NOT_FOUND",
-    "ERROR_REQUIRED",
-    "MAX_CHOICES",
-    "MESSAGE_REQUIRED",
-    "SUBJECT",
-    "PMGServerRefResolution",
-    "describe",
-    "resolve_pmg_server_ref",
-]

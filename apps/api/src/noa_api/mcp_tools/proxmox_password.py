@@ -403,30 +403,3 @@ def text_or_none(value: Any) -> str | None:
         return None
     normalized = value.strip()
     return normalized or None
-
-
-__all__ = [
-    "DESCRIPTION_PROXMOX_RESET_VM_PASSWORD",
-    "ERROR_CLOUDINIT_USER_MISMATCH",
-    "ERROR_INVALID_VMID",
-    "ERROR_NODE_REQUIRED",
-    "ERROR_SERVER_UNAVAILABLE",
-    "ERROR_USERNAME_REQUIRED",
-    "EVIDENCE_NODE",
-    "EVIDENCE_SERVER_ID",
-    "EVIDENCE_SERVER_NAME",
-    "EVIDENCE_USERNAME",
-    "EVIDENCE_VM",
-    "EVIDENCE_VMID",
-    "MESSAGE_INVALID_VMID",
-    "MESSAGE_NODE_REQUIRED",
-    "MESSAGE_SERVER_UNAVAILABLE",
-    "MESSAGE_USERNAME_REQUIRED",
-    "TOOL_PROXMOX_RESET_VM_PASSWORD",
-    "VMCloudInitState",
-    "collect_vm_state",
-    "proxmox_reset_vm_password",
-    "register_proxmox_password_tools",
-    "text_or_none",
-    "upstream_failure",
-]

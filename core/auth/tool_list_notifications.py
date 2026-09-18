@@ -69,9 +69,3 @@ class NullToolListChangedNotifier:
 
     async def notify(self, user_ids: Collection[UUID]) -> None:
         """Do nothing, for any input."""
-
-
-__all__ = [
-    "NullToolListChangedNotifier",
-    "ToolListChangedNotifier",
-]

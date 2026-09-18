@@ -77,6 +77,3 @@ def build_change_runners(*, context: McpToolContext) -> dict[str, ChangeRunner]:
         **build_proxmox_nic_runners(context=context),
         **build_pmg_whitelist_runners(context=context),
     }
-
-
-__all__ = ["build_change_runners"]

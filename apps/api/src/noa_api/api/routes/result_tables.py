@@ -86,6 +86,3 @@ async def read_table(
         )
 
     return ResultTableResponse(**table.as_payload())
-
-
-__all__ = ["ResultTableResponse", "read_table", "router"]

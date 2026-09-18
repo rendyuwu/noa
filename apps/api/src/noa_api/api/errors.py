@@ -578,20 +578,3 @@ def install_error_handling(app: FastAPI) -> None:
             message=message,
             request_id=request_id_for(request.scope),
         )
-
-
-__all__ = [
-    "FALLBACK_HTTP_SHAPE",
-    "FALLBACK_STATUS",
-    "HTTP_ERROR_SHAPES",
-    "INTERNAL_SHAPE",
-    "STATUS_BY_ERROR",
-    "VALIDATION_SHAPE",
-    "envelope",
-    "error_body",
-    "error_headers",
-    "error_response",
-    "install_error_handling",
-    "redacted_validation_errors",
-    "status_for",
-]

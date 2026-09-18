@@ -16,6 +16,5 @@ importing the approval gate can reach the same `now`.
 
 from __future__ import annotations
 
-from core.clock import as_utc, now_utc
-
-__all__ = ["as_utc", "now_utc"]
+from core.clock import as_utc as as_utc
+from core.clock import now_utc as now_utc

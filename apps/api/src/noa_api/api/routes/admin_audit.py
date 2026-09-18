@@ -193,13 +193,3 @@ async def get_tool_run(
         raise ToolRunNotFoundError(f"no `tool_runs` row {parsed}")
 
     return AuditToolRunDetailResponse(**detail.as_payload())
-
-
-__all__ = [
-    "AuditToolRunDetailResponse",
-    "AuditToolRunListItemResponse",
-    "AuditToolRunListResponse",
-    "get_tool_run",
-    "list_tool_runs",
-    "router",
-]

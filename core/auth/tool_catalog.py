@@ -87,6 +87,3 @@ def is_known_tool(tool_name: str) -> bool:
     longer matches the name MCP dispatches on.
     """
     return tool_name in TOOL_CATALOG
-
-
-__all__ = ["NEVER_IMPLEMENT_TOOLS", "TOOL_CATALOG", "is_known_tool"]

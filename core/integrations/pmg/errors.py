@@ -57,6 +57,3 @@ class PMGSHCLIError(NoaError):
         self.error_code = code
         self.message = message
         super().__init__(message)
-
-
-__all__ = ["PMGSHCLIError"]

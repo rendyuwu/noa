@@ -250,11 +250,3 @@ class AuthService:
             is_active=user.is_active,
             roles=roles,
         )
-
-
-__all__ = [
-    "AuthService",
-    "AuthenticatedSession",
-    "DirectoryAuthenticator",
-    "SessionUser",
-]

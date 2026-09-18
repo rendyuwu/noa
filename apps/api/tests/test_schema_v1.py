@@ -6,7 +6,10 @@ Live migration behaviour is covered by `test_migrations.py`.
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from datetime import UTC, datetime
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -71,6 +74,29 @@ def test_metadata_declares_schema_v1_plus_only_the_later_tables_landed_so_far() 
     the migration history start drifting.
     """
     assert set(Base.metadata.tables) == SCHEMA_V1_TABLES | set(LATER_TABLES)
+
+
+def test_importing_the_package_alone_fills_the_metadata() -> None:
+    """`from core.db import Base` must bring the models with it, or autogenerate drops the schema.
+
+    `apps/api/alembic/env.py` imports `Base` and nothing else, so `core/db/__init__.py`'s model
+    imports are what put the tables on `Base.metadata` before a revision is generated. Emptying
+    that barrel reads 0 tables here rather than 13 (measured), and autogenerate would then
+    propose dropping every table it could not see.
+
+    A fresh interpreter, because every other test in this file imports `core.db.models` by hand
+    and would keep passing with the barrel emptied — the in-process check is green against that
+    break, so it is not the one guarding this.
+    """
+    proc = subprocess.run(
+        [sys.executable, "-c", "from core.db import Base; print(len(Base.metadata.tables))"],
+        cwd=Path(__file__).resolve().parents[3],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert int(proc.stdout.strip()) == len(SCHEMA_V1_TABLES | set(LATER_TABLES))
 
 
 def test_the_audit_log_table_has_not_landed_early() -> None:

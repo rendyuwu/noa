@@ -237,17 +237,3 @@ def _resolve_matches(
         message=message,
         choices=[describe(server) for server in matches[:MAX_CHOICES]],
     )
-
-
-__all__ = [
-    "ERROR_AMBIGUOUS",
-    "ERROR_NOT_FOUND",
-    "ERROR_REQUIRED",
-    "MAX_CHOICES",
-    "ServerRefRepository",
-    "ServerRefResolution",
-    "ServerRowLike",
-    "hostname_of",
-    "required_message",
-    "resolve_server_ref",
-]

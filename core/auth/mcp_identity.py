@@ -337,13 +337,3 @@ class McpIdentityResolver:
             return None
         normalized = librechat_user_id.strip()
         return normalized or None
-
-
-__all__ = [
-    "LIBRECHAT_USER_HEADER",
-    "DirectoryPresence",
-    "McpAuthenticationRow",
-    "McpIdentity",
-    "McpIdentityRepository",
-    "McpIdentityResolver",
-]

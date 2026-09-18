@@ -265,19 +265,3 @@ async def set_user_tools(
     raise DirectGrantsDisabledError(
         f"direct tool grants refused for `{user_id}` (permissions flow role → user)"
     )
-
-
-__all__ = [
-    "AdminUserResponse",
-    "AdminUsersResponse",
-    "DeleteUserResponse",
-    "SetUserRolesRequest",
-    "UpdateUserRequest",
-    "UpdateUserResponse",
-    "delete_user",
-    "list_users",
-    "router",
-    "set_user_roles",
-    "set_user_tools",
-    "update_user_active",
-]
