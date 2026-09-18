@@ -173,12 +173,3 @@ class RbacToolMiddleware(Middleware):
                 return set()
 
         return granted & self._registered_tools
-
-
-__all__ = [
-    "ERROR_TOOL_NOT_PERMITTED",
-    "LOG_IDENTITY_UNRESOLVED",
-    "LOG_TOOL_DENIED",
-    "MESSAGE_TOOL_NOT_PERMITTED",
-    "RbacToolMiddleware",
-]

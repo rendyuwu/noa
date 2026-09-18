@@ -118,10 +118,3 @@ class AuthorizationRepository(Protocol):
     # `AuthorizationService`'s docstring, and `AuthRepository.commit` for the same shape one
     # taxonomy over.
     async def commit(self) -> None: ...
-
-
-__all__ = [
-    "AuthorizationRepository",
-    "AuthorizationUserRecord",
-    "AuthorizedUser",
-]

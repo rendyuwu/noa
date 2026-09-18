@@ -94,10 +94,3 @@ class SQLPMGServerRepository:
         """
         result = await self._session.execute(select(PMGServer).where(PMGServer.id == server_id))
         return result.scalar_one_or_none()
-
-
-__all__ = [
-    "PMGServerReadRepository",
-    "PMGServerRowLike",
-    "SQLPMGServerRepository",
-]

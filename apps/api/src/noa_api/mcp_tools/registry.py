@@ -120,11 +120,3 @@ def assert_change_runners_cover(
             "CHANGE tools registered with no post-approval runner (an operator could approve "
             f"a change NOA cannot run): {uncovered}"
         )
-
-
-__all__ = [
-    "RegistryError",
-    "assert_change_runners_cover",
-    "assert_names_in_catalog",
-    "register_mcp_tools",
-]

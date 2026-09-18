@@ -48,6 +48,3 @@ def _generate_password(length: int = _DEFAULT_PASSWORD_LENGTH) -> str:
     if length < 1:
         raise ValueError("password length must be >= 1")
     return "".join(secrets.choice(PASSWORD_ALPHABET) for _ in range(length))
-
-
-__all__ = ["PASSWORD_ALPHABET", "_generate_password"]

@@ -171,16 +171,3 @@ class AuthRateLimitedError(RetryAfterMixin, AuthError):
         # what a rate limit means.
         self.retry_after_seconds = max(1, int(retry_after_seconds))
         super().__init__(detail)
-
-
-__all__ = [
-    "AuthAccountDisabledError",
-    "AuthConfigurationError",
-    "AuthError",
-    "AuthInvalidCredentialsError",
-    "AuthPendingApprovalError",
-    "AuthRateLimitedError",
-    "AuthSessionExpiredError",
-    "AuthSessionInvalidError",
-    "LdapUnavailableError",
-]

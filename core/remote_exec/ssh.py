@@ -279,11 +279,3 @@ async def ssh_exec(
     finally:
         connection.close()
         await connection.wait_closed()
-
-
-__all__ = [
-    "SSHExecutionError",
-    "command_from_argv",
-    "ssh_exec",
-    "ssh_get_host_fingerprint",
-]

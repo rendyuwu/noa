@@ -501,29 +501,3 @@ class McpAuthErrorMiddleware:
 
         await send({"type": "http.response.start", "status": status_code, "headers": headers})
         await send({"type": "http.response.body", "body": body})
-
-
-__all__ = [
-    "AUTHORIZATION_HEADER",
-    "CLAIM_EMAIL",
-    "CLAIM_LIBRECHAT_USER_ID",
-    "CLAIM_TOKEN_ID",
-    "CLAIM_USER_ID",
-    "LOG_DENIED",
-    "SCOPE_AUTH_ERROR",
-    "McpAuthContext",
-    "McpAuthErrorMiddleware",
-    "McpSessionFactory",
-    "McpToolIdentity",
-    "build_mcp_auth_context",
-    "current_mcp_identity",
-    "identity_claims",
-    "log_mcp_auth_denial",
-    "mount_relative_path",
-    "parse_bearer",
-    "read_librechat_user",
-    "read_presented_bearer",
-    "remember_mcp_auth_error",
-    "resolve_mcp_identity",
-    "take_mcp_auth_error",
-]

@@ -101,6 +101,3 @@ class PeriodicTask:
                     cause=type(exc).__name__,
                     detail=str(exc),
                 )
-
-
-__all__ = ["PeriodicTask"]

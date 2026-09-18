@@ -242,21 +242,3 @@ def find_nic(nics: list[NetworkInterface], key: str) -> NetworkInterface | None:
         if nic.key == key:
             return nic
     return None
-
-
-__all__ = [
-    "LINK_DOWN_SEGMENT",
-    "LINK_STATE_DOWN",
-    "LINK_STATE_UP",
-    "MAC_ADDRESS_PATTERN",
-    "NET_KEY_PATTERN",
-    "TRUE_WORDS",
-    "NetworkInterface",
-    "find_nic",
-    "list_nics",
-    "net_has_link_down",
-    "net_link_state",
-    "parse_net_segments",
-    "read_nic",
-    "set_link_down",
-]

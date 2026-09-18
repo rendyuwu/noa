@@ -20,7 +20,3 @@ four properties that are each a decision, and each cost something to get right:
 A second copy of those is a second thing that can drift, and the drift would be silent —
 the loop that stopped sleeping first still works.
 """
-
-from core.tasks.periodic import PeriodicTask
-
-__all__ = ["PeriodicTask"]

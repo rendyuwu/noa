@@ -217,21 +217,3 @@ async def list_tools(
     names are absent from the catalog, so they are absent here.
     """
     return AdminToolsResponse(tools=await authorization.list_tools())
-
-
-__all__ = [
-    "AdminRoleResponse",
-    "AdminRolesResponse",
-    "AdminToolsResponse",
-    "CreateRoleRequest",
-    "DeleteRoleResponse",
-    "RoleToolsResponse",
-    "SetRoleToolsRequest",
-    "create_role",
-    "delete_role",
-    "get_role_tools",
-    "list_roles",
-    "list_tools",
-    "router",
-    "set_role_tools",
-]

@@ -97,6 +97,3 @@ class SecretCipher:
     @staticmethod
     def is_encrypted_text(value: str) -> bool:
         return value.startswith(ENCRYPTED_PREFIX)
-
-
-__all__ = ["ENCRYPTED_PREFIX", "SecretCipher"]

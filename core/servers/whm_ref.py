@@ -28,10 +28,18 @@ from typing import TypeVar
 from core.servers.reference import (
     # Re-exported rather than re-declared: these are one contract across systems, and two
     # spellings of `host_ambiguous` is how a caller ends up branching on the one that drifted.
-    ERROR_AMBIGUOUS,
-    ERROR_NOT_FOUND,
-    ERROR_REQUIRED,
-    MAX_CHOICES,
+    ERROR_AMBIGUOUS as ERROR_AMBIGUOUS,
+)
+from core.servers.reference import (
+    ERROR_NOT_FOUND as ERROR_NOT_FOUND,
+)
+from core.servers.reference import (
+    ERROR_REQUIRED as ERROR_REQUIRED,
+)
+from core.servers.reference import (
+    MAX_CHOICES as MAX_CHOICES,
+)
+from core.servers.reference import (
     ServerRefResolution,
     hostname_of,
     required_message,
@@ -79,17 +87,3 @@ async def resolve_whm_server_ref(
         host_of=lambda server: hostname_of(server.base_url),
         describe=describe,
     )
-
-
-__all__ = [
-    "ERROR_AMBIGUOUS",
-    "ERROR_NOT_FOUND",
-    "ERROR_REQUIRED",
-    "MAX_CHOICES",
-    "MESSAGE_REQUIRED",
-    "SUBJECT",
-    "WHMServerRefResolution",
-    "describe",
-    "hostname_of",
-    "resolve_whm_server_ref",
-]

@@ -627,23 +627,3 @@ class PMGServerValidationService:
             repository = self._repository_factory(session)
             await repository.set_host_key_fingerprint(server_id, fingerprint)
             await repository.commit()
-
-
-__all__ = [
-    "MESSAGE_OK",
-    "REMOTE_FAILURES",
-    "SSH_PROBE_COMMAND",
-    "WHM_ACL_INSUFFICIENT_CODE",
-    "WHM_VALIDATE_READ_TIMEOUT_SECONDS",
-    "HostKeyCapture",
-    "HostKeyPinRepository",
-    "PMGServerValidationService",
-    "ProxmoxRowReader",
-    "ProxmoxServerValidationService",
-    "SSHProbe",
-    "ServerValidationResult",
-    "WHMServerValidationService",
-    "probe_pmg_reachable",
-    "probe_ssh_reachable",
-    "probe_with_trust_on_first_use",
-]

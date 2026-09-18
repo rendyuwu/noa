@@ -39,14 +39,14 @@ from core.auth.mcp_auth_errors import McpAuthError
 from core.auth.mcp_identity import McpIdentity
 from core.auth.mcp_token_service import hash_mcp_token
 from noa_api.mcp_request_auth import (
-    LOG_DENIED,
+    LOG_DENIED as LOG_DENIED,
+)
+from noa_api.mcp_request_auth import (
     McpAuthContext,
     identity_claims,
     remember_mcp_auth_error,
     resolve_mcp_identity,
 )
-
-__all__ = ["LOG_DENIED", "NoaTokenVerifier"]
 
 
 class NoaTokenVerifier(TokenVerifier):

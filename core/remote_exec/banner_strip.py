@@ -97,6 +97,3 @@ def strip_ssh_banners(text: str) -> str:
         return text
 
     return "\n".join(result)
-
-
-__all__ = ["strip_ssh_banners"]

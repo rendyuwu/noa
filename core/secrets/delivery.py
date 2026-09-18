@@ -70,6 +70,3 @@ def build_yopass_delivery(
         )
 
     return deliver
-
-
-__all__ = ["SecretDelivery", "build_yopass_delivery"]

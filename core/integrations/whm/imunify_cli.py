@@ -135,11 +135,3 @@ async def run_imunify_command(config: SSHConnectionConfig, *, args: list[str]) -
     except SSHExecutionError as exc:
         # Converted, not wrapped: one exception tree out of this module.
         raise ImunifyCLIError(code=exc.error_code, message=exc.message) from exc
-
-
-__all__ = [
-    "IMUNIFY_BINARY",
-    "build_imunify_command",
-    "parse_imunify_json_output",
-    "run_imunify_command",
-]

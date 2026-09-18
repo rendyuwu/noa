@@ -133,13 +133,3 @@ def sensitive_key_paths(value: object, *, _prefix: str = "") -> list[str]:
         for index, item in enumerate(value):
             found.extend(sensitive_key_paths(item, _prefix=f"{_prefix}[{index}]"))
     return found
-
-
-__all__ = [
-    "REDACTED",
-    "SENSITIVE_KEYS",
-    "is_sensitive_key",
-    "redact_mapping",
-    "redact_sensitive_data",
-    "sensitive_key_paths",
-]

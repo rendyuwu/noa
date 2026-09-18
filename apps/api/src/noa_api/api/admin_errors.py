@@ -44,6 +44,3 @@ class DirectGrantsDisabledError(NoaError):
         "Direct per-user tool grants are no longer supported. Grant the tools to a role and "
         "assign that role to the user."
     )
-
-
-__all__ = ["DirectGrantsDisabledError"]

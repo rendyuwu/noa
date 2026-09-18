@@ -305,6 +305,3 @@ class SQLAuthorizationRepository:
         have separate transactions. They do not — one request, one session, one commit.
         """
         await self._session.commit()
-
-
-__all__ = ["SQLAuthorizationRepository"]

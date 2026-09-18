@@ -126,11 +126,3 @@ def is_sudo_rights_failure(result: CommandResult) -> bool:
     if any(marker in stderr for marker in _SUDO_COMMAND_MISSING_MARKERS):
         return False
     return any(marker in stderr for marker in _SUDO_FAILURE_MARKERS)
-
-
-__all__ = [
-    "SSH_SUDO_REQUIRED_CODE",
-    "build_remote_command",
-    "is_sudo_rights_failure",
-    "requires_escalation",
-]

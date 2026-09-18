@@ -33,18 +33,10 @@ Three rules hold for everything in here.
    that row's `status`, never from an argument and never from an LLM claim; the
    decision itself arrives as a cookie POST from a NOA-origin document.
 
-Landed: `whm_list_servers`, `whm_list_accounts`, `whm_search_accounts`,
-`whm_preflight_firewall_entries`, `pmg_whitelist_search`, `pmg_whitelist_list`,
-`noa_get_action_result` (`noa_read.py`, the read side of the approval loop), the CHANGE gate's write
-side, the decision endpoints that answer it (`noa_api.api.routes.action_requests`), pending expiry
-(whose check-on-read the action-result tool is the first live caller of) and the post-approval
-executor with its reaper (`core.approvals.execution`), the CHANGE gate's result shape
-(`change_gate.py`) and the large-READ table surface's (`table_surface.py` — parked by
-`whm_list_accounts` and by `pmg_whitelist_list`, which is where "one surface, not a per-tool special
-case" stopped being prose), the WHM CHANGE tools (`whm_suspend_account`, `whm_unsuspend_account`,
-`whm_firewall_release_and_allow`, `whm_firewall_allowlist_remove`) and the first Proxmox one
-(`proxmox_reset_vm_password` — the first CHANGE whose subject is a value NOA generates and the model
-never sees). Still to come: `pmg_whitelist` and `proxmox_vm_nic`.
+Which tools exist is read from `core.auth.tool_catalog.TOOL_CATALOG` and `registry.py`, never
+from a list kept here: the inventory this docstring used to carry drifted, and still named
+`pmg_whitelist` and `proxmox_vm_nic` as unshipped long after both landed. A hand-kept copy of a
+set the code already holds can only go stale, and a stale one reads as current.
 
 The password reset is also the first tool whose two halves are two modules:
 `proxmox_password.py` opens the question and `proxmox_password_runner.py` performs the

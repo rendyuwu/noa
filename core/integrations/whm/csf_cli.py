@@ -95,11 +95,3 @@ async def run_csf_command(config: SSHConnectionConfig, *, args: list[str]) -> Co
     except SSHExecutionError as exc:
         # Converted, not wrapped: one exception tree out of this module.
         raise CSFCLIError(code=exc.error_code, message=exc.message) from exc
-
-
-__all__ = [
-    "CSF_BINARY",
-    "build_csf_command",
-    "require_csf_success",
-    "run_csf_command",
-]

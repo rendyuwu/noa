@@ -248,15 +248,3 @@ def _rows_sentence(parked: ParkedTable) -> str:
             f"{parked.stored_rows}. It is truncated — narrow the search to see the rest."
         )
     return f"{parked.total_rows} rows matched, and all of them are on the table."
-
-
-__all__ = [
-    "LOG_RESULT_TABLE_PARKED",
-    "LOG_RESULT_TABLE_WRITE_FAILED",
-    "TABLE_SURFACE_PATH",
-    "UI_RESOURCE_URI_PREFIX",
-    "build_table_result",
-    "park_table_result",
-    "table_result_envelope",
-    "table_surface_url",
-]

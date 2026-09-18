@@ -159,17 +159,3 @@ class RequestContextMiddleware:
         finally:
             structlog.contextvars.unbind_contextvars(LOG_REQUEST_ID)
             _request_id.reset(token)
-
-
-__all__ = [
-    "LOG_REQUEST_ID",
-    "MAX_REQUEST_ID_LENGTH",
-    "REQUEST_ID_HEADER",
-    "SCOPE_STATE_REQUEST_ID",
-    "RequestContextMiddleware",
-    "current_request_id",
-    "new_request_id",
-    "request_id_for",
-    "sanitize_header_label",
-    "sanitize_request_id",
-]

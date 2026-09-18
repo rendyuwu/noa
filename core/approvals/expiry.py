@@ -279,15 +279,3 @@ class PendingExpirySweeper:
         async with self._session_factory() as session:
             service = ActionRequestExpiryService(self._repository_factory(session))
             return await service.sweep()
-
-
-__all__ = [
-    "LOG_EXPIRED_ON_READ",
-    "LOG_SWEEP_EXPIRED",
-    "LOG_SWEEP_FAILED",
-    "SWEEP_TASK_NAME",
-    "ActionRequestExpiryRepository",
-    "ActionRequestExpiryService",
-    "PendingExpirySweeper",
-    "SQLActionRequestExpiryRepository",
-]

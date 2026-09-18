@@ -193,21 +193,3 @@ class SelfRemoveAdminRoleError(AuthorizationError):
 
     error_code: str = "self_remove_admin_role"
     message: str = "You cannot remove your own admin role. Ask another admin."
-
-
-__all__ = [
-    "AdminAccessRequiredError",
-    "AuthorizationError",
-    "InternalRoleError",
-    "InvalidRoleNameError",
-    "LastActiveAdminError",
-    "ReservedRoleError",
-    "RoleNotFoundError",
-    "SelfDeactivateAdminError",
-    "SelfDeleteAdminError",
-    "SelfDeleteError",
-    "SelfRemoveAdminRoleError",
-    "UnknownRoleError",
-    "UnknownToolError",
-    "UserNotFoundError",
-]

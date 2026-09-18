@@ -125,6 +125,3 @@ async def _yopass_store(
     # After the `#`: browsers never send it to the yopass server, so the instance stores a
     # blob it cannot decrypt.
     return f"{base_url}/#/s/{secret_id}/{passphrase}"
-
-
-__all__ = ["_yopass_store"]

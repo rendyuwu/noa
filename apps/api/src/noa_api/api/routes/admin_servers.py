@@ -797,29 +797,3 @@ async def validate_pmg_server(
     same function.
     """
     return _validation_response(await validation.validate(server_id, actor_email=admin_user.email))
-
-
-__all__ = [
-    "WHM_API_USERNAME_PATTERN",
-    "DeleteServerResponse",
-    "PMGServerCreateRequest",
-    "PMGServerDetailResponse",
-    "PMGServerResponse",
-    "PMGServerUpdateRequest",
-    "PMGServersResponse",
-    "ProxmoxServerCreateRequest",
-    "ProxmoxServerDetailResponse",
-    "ProxmoxServerResponse",
-    "ProxmoxServerUpdateRequest",
-    "ProxmoxServersResponse",
-    "SSHClearFlags",
-    "ValidateServerResponse",
-    "WHMServerCreateRequest",
-    "WHMServerDetailResponse",
-    "WHMServerResponse",
-    "WHMServerUpdateRequest",
-    "WHMServersResponse",
-    "pmg_router",
-    "proxmox_router",
-    "whm_router",
-]

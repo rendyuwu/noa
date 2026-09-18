@@ -27,14 +27,20 @@ from typing import Final, TypeVar
 from core.servers.proxmox_repository import ProxmoxServerReadRepository, ProxmoxServerRowLike
 from core.servers.reference import (
     # Re-exported rather than re-declared — see `whm_ref` for why.
-    ERROR_AMBIGUOUS,
+    ERROR_AMBIGUOUS as ERROR_AMBIGUOUS,
+)
+from core.servers.reference import (
     ERROR_NOT_FOUND,
-    ERROR_REQUIRED,
-    MAX_CHOICES,
     ServerRefResolution,
     hostname_of,
     required_message,
     resolve_server_ref,
+)
+from core.servers.reference import (
+    ERROR_REQUIRED as ERROR_REQUIRED,
+)
+from core.servers.reference import (
+    MAX_CHOICES as MAX_CHOICES,
 )
 
 # Invariant: `ProxmoxServerRefResolution` both holds a row and is constructed with one.
@@ -139,18 +145,3 @@ async def resolve_proxmox_server_ref(
     # goes back names what they did send. A *tie* on it is news: it carries `choices`, and with no
     # Proxmox read tool in the catalog that list is the only thing that unblocks the model.
     return retry if retry.error_code != ERROR_NOT_FOUND else resolution
-
-
-__all__ = [
-    "ERROR_AMBIGUOUS",
-    "ERROR_NOT_FOUND",
-    "ERROR_REQUIRED",
-    "MAX_CHOICES",
-    "MESSAGE_REQUIRED",
-    "NODE_DESCRIPTION",
-    "SERVER_REF_DESCRIPTION",
-    "SUBJECT",
-    "ProxmoxServerRefResolution",
-    "describe",
-    "resolve_proxmox_server_ref",
-]

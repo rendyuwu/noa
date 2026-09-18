@@ -150,12 +150,3 @@ def find_matching_entries(
     Deciding containment is a policy question PMG's own config does not encode.
     """
     return [entry for entry in entries if entry.normalized == normalized_target]
-
-
-__all__ = [
-    "MynetworksEntry",
-    "find_matching_entries",
-    "normalize_cidr",
-    "parse_mynetworks_entries",
-    "sort_entries",
-]

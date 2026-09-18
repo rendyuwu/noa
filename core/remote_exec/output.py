@@ -32,6 +32,3 @@ def command_output_text(result: CommandResult) -> str:
     if stderr:
         parts.append(stderr)
     return "\n".join(parts).strip()
-
-
-__all__ = ["command_output_text"]

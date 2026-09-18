@@ -186,15 +186,3 @@ async def check_firewall_binaries(config: SSHConnectionConfig) -> FirewallAvaila
         imunify=imunify_check.usable,
         sudo_required=csf_check.sudo_required or imunify_check.sudo_required,
     )
-
-
-__all__ = [
-    "BACKEND_CSF",
-    "BACKEND_IMUNIFY",
-    "FIREWALL_PROBE_TARGET",
-    "BinaryCheck",
-    "FirewallAvailability",
-    "check_csf_binary",
-    "check_firewall_binaries",
-    "check_imunify_binary",
-]

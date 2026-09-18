@@ -13,5 +13,3 @@ Still to come:
 
 - `core.secrets`     — Fernet `SecretCipher`, password gen, yopass
 """
-
-__all__: list[str] = []

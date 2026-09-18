@@ -84,10 +84,3 @@ class SQLActionReceiptRepository:
         )
         result = await self._session.execute(statement)
         return result.scalar_one_or_none()
-
-
-__all__ = [
-    "RECEIPT_UNIQUE_CONSTRAINT",
-    "ActionReceiptRepository",
-    "SQLActionReceiptRepository",
-]

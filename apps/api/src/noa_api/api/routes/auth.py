@@ -127,6 +127,3 @@ async def me(current_user: SessionUserDep) -> SessionResponse:
     every other session-authed route so the check cannot be forgotten on one of them.
     """
     return SessionResponse(user=SessionUserResponse.from_session_user(current_user))
-
-
-__all__ = ["LoginRequest", "SessionResponse", "SessionUserResponse", "router"]

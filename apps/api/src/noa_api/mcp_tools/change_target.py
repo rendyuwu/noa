@@ -306,20 +306,3 @@ def uuid_or_none(value: Any) -> UUID | None:
         return UUID(value)
     except ValueError:
         return None
-
-
-__all__ = [
-    "ERROR_EVIDENCE_UNUSABLE",
-    "ERROR_SERVER_UNAVAILABLE",
-    "MESSAGE_EVIDENCE_UNUSABLE",
-    "MESSAGE_SERVER_UNAVAILABLE",
-    "NON_ANSWER_ERROR_CODES",
-    "STATUS_CHANGED",
-    "STATUS_NO_OP",
-    "VERIFICATION_UNAVAILABLE",
-    "WriteFailure",
-    "confirmed_verification",
-    "confirmed_verification_sentence",
-    "uuid_or_none",
-    "write_failure_or_none",
-]

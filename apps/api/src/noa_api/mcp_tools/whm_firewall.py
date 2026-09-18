@@ -497,28 +497,3 @@ def register_whm_firewall_tools(server: FastMCP, *, context: McpToolContext) -> 
         )
 
     return {TOOL_WHM_PREFLIGHT_FIREWALL_ENTRIES: ToolRisk.READ}
-
-
-__all__: list[str] = [
-    "DESCRIPTION_WHM_PREFLIGHT_FIREWALL_ENTRIES",
-    "ERROR_INVALID_RESPONSE",
-    "ERROR_INVALID_TARGET",
-    "ERROR_TARGET_REQUIRED",
-    "MESSAGE_INVALID_TARGET",
-    "MESSAGE_TARGET_REQUIRED",
-    "NOA_COMMENT_MARKER",
-    "TOOL_WHM_PREFLIGHT_FIREWALL_ENTRIES",
-    "VERDICT_ALLOWLISTED",
-    "VERDICT_BLOCKED",
-    "VERDICT_NOT_FOUND",
-    "VERDICT_UNKNOWN",
-    "BackendLookup",
-    "combine_firewall_verdict",
-    "csf_firewall_entries",
-    "gather_firewall_entries",
-    "imunify_firewall_entries",
-    "noa_firewall_comment",
-    "register_whm_firewall_tools",
-    "whm_preflight_firewall_entries",
-    "without_noa_comment_text",
-]
