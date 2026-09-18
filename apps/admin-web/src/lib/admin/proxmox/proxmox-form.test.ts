@@ -5,7 +5,6 @@ import {
   EMPTY_PROXMOX_FORM,
   buildProxmoxCreatePayload,
   buildProxmoxUpdatePayload,
-  clearProxmoxSecrets,
   proxmoxFormStateFromServer,
   validateProxmoxServerForm,
   type ProxmoxServerFormState,
@@ -34,16 +33,6 @@ describe('proxmoxFormStateFromServer', () => {
     expect(seeded.verifySsl).toBe(true)
     // No secret is ever seeded from a server (the safe view carries none).
     expect(seeded.apiTokenSecret).toBe('')
-  })
-})
-
-describe('clearProxmoxSecrets', () => {
-  it('blanks the secret field but keeps non-secret input', () => {
-    const dirty = form({ name: 'pve1', apiTokenId: 'root@pam!noa', apiTokenSecret: 'SECRET' })
-    const cleared = clearProxmoxSecrets(dirty)
-    expect(cleared.name).toBe('pve1')
-    expect(cleared.apiTokenId).toBe('root@pam!noa')
-    expect(cleared.apiTokenSecret).toBe('')
   })
 })
 

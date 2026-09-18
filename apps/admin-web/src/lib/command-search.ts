@@ -32,8 +32,9 @@ type PageCommand = {
   href: string
 }
 
-// Flatten the role-visible nav (two levels max) into page commands.
-export const permittedPageCommands = (userRoles: string[]): PageCommand[] => {
+// Flatten the role-visible nav (two levels max) into page commands. Not exported:
+// `buildCommandGroups` is the only caller, and the palette is what the gate is for.
+const permittedPageCommands = (userRoles: string[]): PageCommand[] => {
   const commands: PageCommand[] = []
   for (const item of NAV_ITEMS) {
     if (!rolesAllow(userRoles, item.roles)) continue

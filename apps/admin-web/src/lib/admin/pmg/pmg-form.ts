@@ -36,19 +36,6 @@ export const EMPTY_PMG_FORM: PmgServerFormState = {
   sshPrivateKeyPassphrase: '',
 }
 
-// The secret fields, cleared after every save/cancel/close/failure. Exported so
-// the dialog and controller clear exactly the same set — the single source of
-// truth for "what must never persist in component state".
-export const PMG_SECRET_FIELDS = [
-  'sshPassword',
-  'sshPrivateKey',
-  'sshPrivateKeyPassphrase',
-] as const
-
-export function clearPmgSecrets(form: PmgServerFormState): PmgServerFormState {
-  return { ...form, sshPassword: '', sshPrivateKey: '', sshPrivateKeyPassphrase: '' }
-}
-
 // Seed the edit form from a server. Non-secret fields carry over; every secret
 // field starts blank because the API never returns one. The auth mode opens on
 // whichever credential the server already stores (private key preferred).

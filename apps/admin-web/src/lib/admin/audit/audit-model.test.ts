@@ -7,7 +7,6 @@ import {
   activeToolFilterCount,
   buildActionRequestQuery,
   buildToolRunQuery,
-  normalizeDateRange,
 } from './audit-model'
 import { DEFAULT_ACTION_REQUEST_FILTERS, DEFAULT_TOOL_FILTERS } from './types'
 
@@ -18,15 +17,26 @@ import { DEFAULT_ACTION_REQUEST_FILTERS, DEFAULT_TOOL_FILTERS } from './types'
 // of drifting apart silently. A filter the API ignores is a control that appears
 // to work and does not.
 
-describe('normalizeDateRange', () => {
+describe('the day-to-instant range', () => {
+  // Asserted through the query the panel actually sends, which is the only place the
+  // expansion is observable: the helper behind it is not exported.
   it('expands a from day to the UTC day start and a to day to the UTC day end', () => {
-    const { from, to } = normalizeDateRange({ fromDate: '2026-07-01', toDate: '2026-07-02' })
-    expect(from).toBe('2026-07-01T00:00:00.000Z')
-    expect(to).toBe('2026-07-02T23:59:59.999Z')
+    const params = new URLSearchParams(
+      buildToolRunQuery(
+        { ...DEFAULT_TOOL_FILTERS, fromDate: '2026-07-01', toDate: '2026-07-02' },
+        null,
+      ),
+    )
+
+    expect(params.get('from')).toBe('2026-07-01T00:00:00.000Z')
+    expect(params.get('to')).toBe('2026-07-02T23:59:59.999Z')
   })
 
   it('omits blank dates', () => {
-    expect(normalizeDateRange({ fromDate: '', toDate: '' })).toEqual({})
+    const params = new URLSearchParams(buildToolRunQuery(DEFAULT_TOOL_FILTERS, null))
+
+    expect(params.has('from')).toBe(false)
+    expect(params.has('to')).toBe(false)
   })
 })
 

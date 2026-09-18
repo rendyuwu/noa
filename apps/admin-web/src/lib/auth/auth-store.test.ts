@@ -20,7 +20,9 @@ describe('auth-store', () => {
       roles: ['admin'],
     })
 
-    store.clearStoredUser()
+    // `setStoredUser(null)` rather than the clearer that wraps it: the wrapper exists
+    // for the teardown wiring and is not exported.
+    store.setStoredUser(null)
     expect(store.getStoredUser()).toBeNull()
   })
 
@@ -32,7 +34,7 @@ describe('auth-store', () => {
     expect(window.localStorage.getItem('web-bigsu:auth-user')).not.toBeNull()
     expect(window.localStorage.getItem('noa.user')).toBe('legacy')
 
-    store.clearStoredUser()
+    store.setStoredUser(null)
     expect(window.localStorage.getItem('noa.user')).toBe('legacy')
   })
 
