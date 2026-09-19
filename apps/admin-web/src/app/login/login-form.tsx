@@ -9,7 +9,6 @@ import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 
 import { loginErrorMessage, type LoginMessage } from '@/app/login/login-messages'
-import { setStoredUser, type AuthUser } from '@/lib/auth/auth-store'
 import { getApiUrl, jsonOrThrow } from '@/lib/auth/fetch-helper'
 import { sanitizeReturnTo } from '@/lib/auth/return-to'
 import { submitOnEnter } from '@/lib/forms/submit-on-enter'
@@ -55,7 +54,6 @@ const schema = z.object({
 })
 
 type LoginValues = z.infer<typeof schema>
-type LoginResponse = { user?: AuthUser | null }
 
 /** What `session.ts` puts in `?reason=` when it sends an operator here (`ClearAuthReason`). */
 const ARRIVAL_NOTICE: Record<string, string> = {
@@ -91,12 +89,10 @@ export function LoginForm() {
         credentials: 'include',
         body: JSON.stringify(values),
       })
-      const payload = await jsonOrThrow<LoginResponse>(response)
-
-      // Presentation cache only (`auth-store.ts`). The authority is the httpOnly `noa_session`
-      // cookie the response just set plus the `/auth/me` re-read the protected layout
-      // runs on arrival.
-      setStoredUser(payload.user ?? null)
+      // Read for its throw, not its body: the authority is the httpOnly `noa_session` cookie
+      // the response just set plus the `/auth/me` re-read the protected layout runs on arrival,
+      // and the chrome paints from that verdict. Nothing here is worth keeping.
+      await jsonOrThrow<unknown>(response)
       router.push(sanitizeReturnTo(searchParams.get('returnTo')))
     } catch (error) {
       // The password is never logged and never rendered; the codes this maps carry no secret.

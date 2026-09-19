@@ -4,10 +4,14 @@ import { DEFAULT_RETURN_TO, sanitizeReturnTo } from '@/lib/auth/return-to'
 
 // Session-expiry signaling (issue #100 foundation). Owns the "the session is
 // gone" transport signal: the sentinel error transport helpers throw, the
-// idempotent clear-and-redirect flow, and cross-tab broadcast. The LDAP
-// sign-in UI and cached identity state are layered on top by issue #99, which
-// registers identity cleaners so app-local state is dropped whenever the
-// session ends.
+// idempotent clear-and-redirect flow, and cross-tab broadcast.
+//
+// There is no app-local identity to tear down: the only client-side identity
+// state is the `/auth/me` verdict held in React state by `use-verified-auth`,
+// which the redirect below unmounts. This file used to carry an identity-cleaner
+// registry for a `localStorage` cache no code ever read (issue #10). If app-local
+// identity is ever persisted again, its teardown belongs in `clearAuth` and in
+// the cross-tab listener — both paths, or a logged-out tab keeps it.
 
 export type ClearAuthReason = 'session_expired' | 'logged_out'
 
@@ -25,30 +29,6 @@ export class AuthRedirectError extends Error {
 
 export const isAuthRedirectError = (error: unknown): error is AuthRedirectError => {
   return error instanceof AuthRedirectError
-}
-
-// Identity cleaners (issue #99). App-local identity state (cached user) registers
-// here so a 401 or a cross-tab logout tears it down alongside the cookie, before
-// the redirect. Kept as a registry so session.ts stays free of any storage-key
-// knowledge — identity concerns belong to #99.
-type IdentityCleaner = () => void
-const identityCleaners = new Set<IdentityCleaner>()
-
-export const registerIdentityCleaner = (cleaner: IdentityCleaner): (() => void) => {
-  identityCleaners.add(cleaner)
-  return () => {
-    identityCleaners.delete(cleaner)
-  }
-}
-
-const runIdentityCleaners = (): void => {
-  for (const cleaner of identityCleaners) {
-    try {
-      cleaner()
-    } catch {
-      // A misbehaving cleaner must never block the cookie clear + redirect.
-    }
-  }
 }
 
 let clearAuthInProgress = false
@@ -82,15 +62,13 @@ function broadcastLogout(reason?: ClearAuthReason): void {
   }
 }
 
-// Idempotent session teardown: drop app-local identity, clear the server cookie,
-// notify other tabs, and redirect to the login page (preserving a safe
-// returnTo). One redirect per page lifecycle.
+// Idempotent session teardown: clear the server cookie, notify other tabs, and
+// redirect to the login page (preserving a safe returnTo). One redirect per page
+// lifecycle.
 export const clearAuth = (reason?: ClearAuthReason): void => {
   if (typeof window === 'undefined') return
   if (clearAuthInProgress) return
   clearAuthInProgress = true
-
-  runIdentityCleaners()
 
   // Fire-and-forget cookie clear via the same-origin proxy.
   fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {
@@ -119,7 +97,6 @@ function initLogoutListener(): void {
       // clearAuth with the correct reason/returnTo, so reacting here would clobber
       // it with a bare /login. Only other tabs (not mid-clear) react.
       if (clearAuthInProgress) return
-      runIdentityCleaners()
       if (typeof window !== 'undefined') {
         window.location.href = LOGIN_PATH
       }

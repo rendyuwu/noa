@@ -2,15 +2,14 @@
 
 import { useEffect, useState } from 'react'
 
-import { setStoredUser } from '@/lib/auth/auth-store'
 import { ApiError, fetchWithAuth, jsonOrThrow } from '@/lib/auth/fetch-helper'
 import { isAuthRedirectError } from '@/lib/auth/session'
 import { reportClientError } from '@/lib/observability/error-reporting'
 
 // Verified-auth guard (issue #99). Every protected route revalidates `/auth/me`
-// through the same-origin proxy before it renders protected data — the cached
-// user (auth-store) is presentation only and is never trusted for authorization.
-// FastAPI stays the source of truth; this hook only reflects its verdict.
+// through the same-origin proxy before it renders protected data. FastAPI stays
+// the source of truth; this hook only reflects its verdict, and the verdict is
+// shared with the chrome through AuthUserProvider — nothing is persisted.
 
 export type VerifiedUser = {
   id: string
@@ -68,14 +67,6 @@ export function useVerifiedAuth(options: UseVerifiedAuthOptions = {}): VerifiedA
         const roles = Array.isArray(user.roles) ? user.roles : []
         const isAdmin = roles.includes('admin')
         const verifiedUser: VerifiedUser = { ...user, roles }
-
-        // Refresh the presentation cache so AppShell chrome stays current.
-        setStoredUser({
-          id: verifiedUser.id,
-          email: verifiedUser.email,
-          display_name: verifiedUser.display_name ?? undefined,
-          roles,
-        })
 
         // Role-denied is distinct from pending/expired. The old repo redirected
         // here, to a chat landing every signed-in user could see. This app has no
