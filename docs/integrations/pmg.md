@@ -369,7 +369,8 @@ internal functions — they are not on the 14-tool exposed list.
 - Command build + execution: `core/integrations/pmg/pmgsh_cli.py`
 - `mynetworks` parsing + normalisation: `core/integrations/pmg/mynetworks.py`
 - Errors: `core/integrations/pmg/errors.py`
-- Inventory + reference resolution: `core/servers/pmg_repository.py`, `core/servers/pmg_ref.py`
+- Inventory + reference resolution: `core/servers/pmg_repository.py`,
+  `core/servers/repository.py`, `core/servers/reference.py`
 - Admin CRUD + validate: `apps/api/src/noa_api/api/routes/admin_servers.py`,
   `core/servers/admin_service.py`, `core/servers/admin_repository.py`,
   `core/servers/validation.py`

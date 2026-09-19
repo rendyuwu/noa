@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from core.servers.whm_ref import (
+from core.servers.reference import (
     ERROR_AMBIGUOUS,
     ERROR_NOT_FOUND,
     ERROR_REQUIRED,

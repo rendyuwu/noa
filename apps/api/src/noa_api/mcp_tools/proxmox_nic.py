@@ -60,9 +60,9 @@ from core.integrations.proxmox.nic import (
     find_nic,
     list_nics,
 )
-from core.servers.proxmox_ref import (
-    NODE_DESCRIPTION,
-    SERVER_REF_DESCRIPTION,
+from core.servers.reference import (
+    PROXMOX_NODE_DESCRIPTION,
+    PROXMOX_SERVER_REF_DESCRIPTION,
     resolve_proxmox_server_ref,
 )
 from noa_api.mcp_tools.change_gate import (
@@ -429,10 +429,10 @@ def register_proxmox_nic_tools(server: FastMCP, *, context: McpToolContext) -> d
         annotations={"readOnlyHint": False, "destructiveHint": True, "idempotentHint": True},
     )
     async def proxmox_vm_nic_tool(
-        server_ref: Annotated[str, Field(description=SERVER_REF_DESCRIPTION)],
+        server_ref: Annotated[str, Field(description=PROXMOX_SERVER_REF_DESCRIPTION)],
         node: Annotated[
             str,
-            Field(description=NODE_DESCRIPTION),
+            Field(description=PROXMOX_NODE_DESCRIPTION),
         ],
         vmid: Annotated[
             int,

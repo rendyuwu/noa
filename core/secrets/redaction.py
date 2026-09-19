@@ -23,7 +23,7 @@ choice costs nothing NOA needs: the audit surface shows an operator *what was as
 for*, and `[redacted]` answers that for a password field.
 
 Applied to results as well as arguments (`noa_api.mcp_audit`). `whm_list_servers` already
-renders through `core.servers.whm_ref.describe()` and carries no credential material — id,
+renders through `core.servers.reference.describe_whm()` and carries no credential material — id,
 name, `base_url` only — but the summary path is shared by every later tool and a
 per-tool exemption is how one of them eventually writes a secret into the audit trail.
 """

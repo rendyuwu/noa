@@ -32,7 +32,7 @@ import pytest
 
 from core.auth.tool_catalog import TOOL_CATALOG
 from core.remote_exec.errors import SSHExecutionError
-from core.servers.whm_ref import resolve_whm_server_ref
+from core.servers.reference import resolve_whm_server_ref
 from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.results import (
     ERROR_TIMEOUT,

@@ -66,9 +66,10 @@ from core.auth.tool_catalog import TOOL_CATALOG
 from core.config import Settings
 from core.db.models import ADMIN_ROLE_NAME, PMGServer, ProxmoxServer, WHMServer
 from core.servers.admin_service import (
-    PMGServerAdminService,
-    ProxmoxServerAdminService,
-    WHMServerAdminService,
+    PMG_ADMIN_POLICY,
+    PROXMOX_ADMIN_POLICY,
+    WHM_ADMIN_POLICY,
+    ServerAdminService,
 )
 from core.servers.errors import (
     PMGServerNotFoundError,
@@ -404,14 +405,14 @@ def admin_harness(
     # — the same split every other service above uses. Only the validate services are stubs, and
     # `support.server_admin.RecordingValidationService` records why.
     cipher = build_cipher()
-    app.dependency_overrides[get_whm_server_admin_service] = lambda: WHMServerAdminService(
-        repository=whm_servers, cipher=cipher, audit_sink=audit
+    app.dependency_overrides[get_whm_server_admin_service] = lambda: ServerAdminService(
+        repository=whm_servers, policy=WHM_ADMIN_POLICY, cipher=cipher, audit_sink=audit
     )
-    app.dependency_overrides[get_proxmox_server_admin_service] = lambda: ProxmoxServerAdminService(
-        repository=proxmox_servers, cipher=cipher, audit_sink=audit
+    app.dependency_overrides[get_proxmox_server_admin_service] = lambda: ServerAdminService(
+        repository=proxmox_servers, policy=PROXMOX_ADMIN_POLICY, cipher=cipher, audit_sink=audit
     )
-    app.dependency_overrides[get_pmg_server_admin_service] = lambda: PMGServerAdminService(
-        repository=pmg_servers, cipher=cipher, audit_sink=audit
+    app.dependency_overrides[get_pmg_server_admin_service] = lambda: ServerAdminService(
+        repository=pmg_servers, policy=PMG_ADMIN_POLICY, cipher=cipher, audit_sink=audit
     )
     app.dependency_overrides[get_whm_server_validation_service] = lambda: whm_validation
     app.dependency_overrides[get_proxmox_server_validation_service] = lambda: proxmox_validation

@@ -77,12 +77,11 @@ ORM row cannot be read after its session closes. Two consequences worth naming:
 from __future__ import annotations
 
 import json
-from typing import Final, Protocol
+from typing import Final
 
 from core.integrations.pmg.errors import PMGSHCLIError
-from core.remote_exec.errors import SSHExecutionError
 from core.remote_exec.output import command_output_text
-from core.remote_exec.ssh import ssh_exec
+from core.remote_exec.ssh import run_cli
 from core.remote_exec.sudo import (
     SSH_SUDO_REQUIRED_CODE,
     build_remote_command,
@@ -134,15 +133,9 @@ def require_pmg_mutation_success(result: CommandResult, *, default_message: str)
     carry it in the exit code. Read from `stdout` alone, never the combined text: a `200 OK` that
     arrived on stderr is a different shape and stays a failure.
     """
-    output = command_output_text(result)
-    if result.exit_code != 0 and "200 OK" not in result.stdout:
-        if is_sudo_rights_failure(result):
-            raise PMGSHCLIError(
-                code=SSH_SUDO_REQUIRED_CODE,
-                message=output or "pmgsh requires passwordless sudo for the configured SSH user",
-            )
-        raise PMGSHCLIError(code="pmgsh_command_failed", message=output or default_message)
-    return output
+    if result.exit_code != 0 and "200 OK" in result.stdout:
+        return command_output_text(result)
+    return require_pmgsh_success(result, default_message=default_message)
 
 
 def parse_pmgsh_json_output(output: str) -> object:
@@ -177,31 +170,6 @@ def parse_pmgsh_json_output(output: str) -> object:
     )
 
 
-class _CommandBuilder(Protocol):
-    """Either of the two public builders above, structurally."""
-
-    def __call__(self, args: list[str], *, config: SSHConnectionConfig) -> str: ...
-
-
-async def _run_command(
-    config: SSHConnectionConfig,
-    *,
-    args: list[str],
-    builder: _CommandBuilder,
-) -> CommandResult:
-    """Compose → execute, converting SSH failures into this module's tree.
-
-    The command is built from the same config that opens the connection, because the
-    composition reads the resolved username to decide escalation — a boolean parameter
-    would let one call site disagree with the connection it is running over.
-    """
-    try:
-        return await ssh_exec(config, command=builder(args, config=config))
-    except SSHExecutionError as exc:
-        # Converted, not wrapped: one exception tree out of this module.
-        raise PMGSHCLIError(code=exc.error_code, message=exc.message) from exc
-
-
 async def run_pmgsh_command(config: SSHConnectionConfig, *, args: list[str]) -> CommandResult:
     """Execute `pmgsh <args>` over `config`. Raises `PMGSHCLIError` on any SSH-side failure.
 
@@ -209,12 +177,14 @@ async def run_pmgsh_command(config: SSHConnectionConfig, *, args: list[str]) -> 
     mutation's non-zero exit with `200 OK` on stdout is a success (see
     `require_pmg_mutation_success`).
     """
-    return await _run_command(config, args=args, builder=build_pmgsh_command)
+    return await run_cli(config, build_pmgsh_command(args, config=config), error_cls=PMGSHCLIError)
 
 
 async def run_pmgconfig_command(config: SSHConnectionConfig, *, args: list[str]) -> CommandResult:
     """Execute `pmgconfig <args>` over `config`."""
-    return await _run_command(config, args=args, builder=build_pmgconfig_command)
+    return await run_cli(
+        config, build_pmgconfig_command(args, config=config), error_cls=PMGSHCLIError
+    )
 
 
 async def run_pmgsh_json(config: SSHConnectionConfig, *, args: list[str]) -> object:

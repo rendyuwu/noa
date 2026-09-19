@@ -49,9 +49,8 @@ time — one helper, not two; see that module for the count.
 from __future__ import annotations
 
 from core.integrations.whm.errors import CSFCLIError
-from core.remote_exec.errors import SSHExecutionError
 from core.remote_exec.output import command_output_text
-from core.remote_exec.ssh import ssh_exec
+from core.remote_exec.ssh import run_cli
 from core.remote_exec.sudo import (
     SSH_SUDO_REQUIRED_CODE,
     build_remote_command,
@@ -90,8 +89,4 @@ async def run_csf_command(config: SSHConnectionConfig, *, args: list[str]) -> Co
     Returns the raw `CommandResult` — the exit code is the caller's to interpret, because
     `csf -g` on a clean IP is a success with a "no matches" body, not an error.
     """
-    try:
-        return await ssh_exec(config, command=build_csf_command(args, config=config))
-    except SSHExecutionError as exc:
-        # Converted, not wrapped: one exception tree out of this module.
-        raise CSFCLIError(code=exc.error_code, message=exc.message) from exc
+    return await run_cli(config, build_csf_command(args, config=config), error_cls=CSFCLIError)

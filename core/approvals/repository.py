@@ -13,7 +13,7 @@ reach — would be holding the key to it. The split is asserted, not just descri
 `test_action_request_decisions_live.py` pins this class's public surface to `create_pending` and
 `commit`.
 
-**This repository owns its session and commits**, unlike `SQLWHMServerRepository` and
+**This repository owns its session and commits**, unlike `SQLServerRepository` and
 `SQLAuthorizationRepository`, which flush into a caller's transaction. Same split and the
 same reason as `SQLToolRunRepository`: the MCP tool path runs outside FastAPI's
 dependency graph, so there is no request transaction to join, and a pending request that

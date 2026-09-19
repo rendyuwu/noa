@@ -38,7 +38,7 @@ from mcp.types import EmbeddedResource, TextContent
 from core.approvals.errors import ChangeReasonForbiddenError
 from core.auth.tool_catalog import TOOL_CATALOG
 from core.db.lifecycle import ActionRequestStatus, ToolRisk
-from core.servers.proxmox_ref import NODE_DESCRIPTION, SERVER_REF_DESCRIPTION
+from core.servers.reference import PROXMOX_NODE_DESCRIPTION, PROXMOX_SERVER_REF_DESCRIPTION
 from noa_api.mcp_server import build_mcp_server
 from noa_api.mcp_tools.change_gate import (
     APPROVAL_CARD_PATH,
@@ -362,7 +362,7 @@ async def test_both_proxmox_tools_publish_the_same_identity_descriptions(tool_na
     catch.
 
     **Why identity rather than a substring.** The two modules held byte-identical copies of both
-    strings until they moved to `core.servers.proxmox_ref`; a future edit to one file is exactly
+    strings until they moved to `core.servers.reference`; a future edit to one file is exactly
     how they would stop agreeing, and a model asking the NIC tool and the password tool for
     different things about the same field is a bug no behaviour test would show.
 
@@ -390,8 +390,8 @@ async def test_both_proxmox_tools_publish_the_same_identity_descriptions(tool_na
     properties = tool.parameters["properties"]
     server_ref_description = properties["server_ref"]["description"]
 
-    assert server_ref_description == SERVER_REF_DESCRIPTION
-    assert properties["node"]["description"] == NODE_DESCRIPTION
+    assert server_ref_description == PROXMOX_SERVER_REF_DESCRIPTION
+    assert properties["node"]["description"] == PROXMOX_NODE_DESCRIPTION
     assert "node" in server_ref_description
     # The `node` description once ended "and not the `server_ref`", one parameter away from a
     # `server_ref` description that now accepts exactly that. Restoring it would keep both equality

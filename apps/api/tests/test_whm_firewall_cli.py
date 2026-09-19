@@ -31,6 +31,7 @@ from fastapi import status
 
 import core.integrations.whm.csf_cli as csf_cli_mod
 import core.integrations.whm.imunify_cli as imunify_cli_mod
+import core.remote_exec.ssh as ssh_module
 from core.errors import NoaError
 from core.integrations.whm.csf_cli import (
     CSF_BINARY,
@@ -221,28 +222,30 @@ async def test_run_imunify_command_sends_the_composed_command_over_ssh(monkeypat
 
 
 @pytest.mark.parametrize(
-    ("runner", "module", "error"),
+    ("runner", "error"),
     [
-        pytest.param(run_csf_command, csf_cli_mod, CSFCLIError, id="csf"),
-        pytest.param(run_imunify_command, imunify_cli_mod, ImunifyCLIError, id="imunify"),
+        pytest.param(run_csf_command, CSFCLIError, id="csf"),
+        pytest.param(run_imunify_command, ImunifyCLIError, id="imunify"),
     ],
 )
 async def test_run_converts_an_ssh_failure_into_the_backend_error_tree(
     monkeypatch,  # type: ignore[no-untyped-def]
     runner,  # type: ignore[no-untyped-def]
-    module,  # type: ignore[no-untyped-def]
     error: type[WHMFirewallCLIError],
 ) -> None:
     """One exception tree out of the module, so a caller does not catch two.
 
     The transport code travels intact rather than being flattened: `ssh_host_key_mismatch` and
     `csf_command_failed` send an operator to different places.
+
+    Patched on `core.remote_exec.ssh` because both runners reach the transport through
+    `run_cli`, which resolves `ssh_exec` from that module's globals.
     """
 
     async def refuse(config, *, command: str, **_):  # type: ignore[no-untyped-def]
         raise SSHExecutionError(code="ssh_host_key_mismatch", message="presented key ≠ pin")
 
-    monkeypatch.setattr(module, "ssh_exec", refuse)
+    monkeypatch.setattr(ssh_module, "ssh_exec", refuse)
 
     with pytest.raises(error) as exc:
         await runner(ssh_config(), args=["-v"])

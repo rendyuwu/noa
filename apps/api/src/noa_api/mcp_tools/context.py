@@ -42,6 +42,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import partial
+from typing import Final
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -67,13 +68,18 @@ from core.integrations.whm.ssh import WHMClientFactory, build_whm_client
 from core.results.tables import SQLToolResultTableWriter, ToolResultTableWriter
 from core.secrets.crypto import SecretCipher
 from core.secrets.delivery import SecretDelivery
-from core.servers.pmg_repository import PMGServerReadRepository, SQLPMGServerRepository
-from core.servers.proxmox_repository import (
-    ProxmoxServerReadRepository,
-    SQLProxmoxServerRepository,
-)
-from core.servers.whm_repository import SQLWHMServerRepository, WHMServerReadRepository
+from core.servers.pmg_repository import PMGServerReadRepository
+from core.servers.proxmox_repository import ProxmoxServerReadRepository
+from core.servers.repository import SQLServerRepository
+from core.servers.whm_repository import WHMServerReadRepository
 from noa_api.mcp_request_auth import McpSessionFactory
+
+# The three inventory read factories, bound to their table. Named constants rather than
+# `partial(...)` written straight into the field defaults below, because a call expression in a
+# dataclass default is `RUF009` — the wiring is the same either way.
+_WHM_SERVER_READS: Final = partial(SQLServerRepository, model=WHMServer)
+_PMG_SERVER_READS: Final = partial(SQLServerRepository, model=PMGServer)
+_PROXMOX_SERVER_READS: Final = partial(SQLServerRepository, model=ProxmoxServer)
 
 
 @dataclass(frozen=True)
@@ -133,16 +139,16 @@ class McpToolContext:
     )
     # Typed to the concrete row, not to `WHMServerRowLike`: a tool that resolves a server then
     # calls it needs the credentials off *that* row, and the repository Protocol is generic
-    # precisely so this can say so without widening the narrow view `core.servers.whm_ref`
+    # precisely so this can say so without widening the narrow view `core.servers.reference`
     # matches against.
     whm_server_repository_factory: Callable[[AsyncSession], WHMServerReadRepository[WHMServer]] = (
-        SQLWHMServerRepository
+        _WHM_SERVER_READS
     )
     # Same construction, one system over. Typed to `PMGServer` rather than to
     # `PMGServerRowLike` because the whitelist tools resolve a node and then *connect* to it,
     # which needs the SSH columns off the row that won the resolution.
     pmg_server_repository_factory: Callable[[AsyncSession], PMGServerReadRepository[PMGServer]] = (
-        SQLPMGServerRepository
+        _PMG_SERVER_READS
     )
     # Same construction, third system. Typed to `ProxmoxServer` rather than to
     # `ProxmoxServerRowLike` for the reason the two above are: `proxmox_reset_vm_password`
@@ -151,7 +157,7 @@ class McpToolContext:
     # judged against.
     proxmox_server_repository_factory: Callable[
         [AsyncSession], ProxmoxServerReadRepository[ProxmoxServer]
-    ] = SQLProxmoxServerRepository
+    ] = _PROXMOX_SERVER_READS
     tool_run_repository_factory: Callable[[AsyncSession], ToolRunRepository] = SQLToolRunRepository
     # The CHANGE gate's writer. Beside the audit one and not folded into it: they write
     # different tables at different moments — this one before a change is authorised, that one

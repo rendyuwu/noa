@@ -1,10 +1,10 @@
 """Doubles for a WHM box's firewall, as the tool layer sees it.
 
-A firewall tool call crosses three modules that each bound their own `ssh_exec` name
-(`availability`, `csf_cli`, `imunify_cli`), so the double is installed in all three from one
-recorder — that is what lets a test assert the whole command sequence rather than one hop of
-it. `FIREWALL_SSH_MODULES` is the list, and it is here rather than in each test file because a
-module missing from it means an unreplaced `ssh_exec` and a test that tries to open a socket.
+A firewall tool call crosses three modules (`availability`, `csf_cli`, `imunify_cli`), and the
+double is installed for all three from one recorder — that is what lets a test assert the whole
+command sequence rather than one hop of it. `FIREWALL_SSH_MODULES` is the list, and it is here
+rather than in each test file because a module missing from it means an unreplaced `ssh_exec`
+and a test that tries to open a socket.
 
 Its own module rather than `support/whm.py`, which owns the server row and nothing else
 (`test_support_layout.py` holds that line), and rather than `support/remote_exec.py`, which is
@@ -44,6 +44,7 @@ from support.remote_exec import (
     FakeSSH,
     command_result,
     install_fake_ssh_exec_in,
+    patch_ssh_exec,
     ssh_config,
 )
 from support.secrets import build_cipher
@@ -57,8 +58,18 @@ TARGET = "203.0.113.10"
 SSH_PASSWORD_PLAINTEXT = "operator-ssh-password"
 SSH_PRIVATE_KEY_PLAINTEXT = "-----BEGIN OPENSSH PRIVATE KEY-----"
 
-# Every module that binds its own `ssh_exec` name on a firewall tool's path.
+# Every module on a firewall tool's path a fake `ssh_exec` has to reach. `csf_cli` and
+# `imunify_cli` hold no binding of their own — they run through `core.remote_exec.ssh.run_cli`,
+# which `install_fake_ssh_exec_in` patches at the source — and `availability` still imports the
+# name directly. Listing all three keeps the tuple the path's description rather than a fact
+# about today's import style.
 FIREWALL_SSH_MODULES = (availability_mod, csf_cli_mod, imunify_cli_mod)
+
+
+def patch_firewall_ssh_exec(monkeypatch, replacement) -> None:  # type: ignore[no-untyped-def]
+    """`patch_ssh_exec` over `FIREWALL_SSH_MODULES`, for a stand-in that has to await."""
+    patch_ssh_exec(monkeypatch, FIREWALL_SSH_MODULES, replacement)
+
 
 # Real `csf -g` shapes. Verdicts are read from marker strings in human-facing text, so an
 # invented fixture would test nothing.
@@ -403,6 +414,7 @@ __all__ = [
     "imunify_step",
     "is_probe",
     "is_query",
+    "patch_firewall_ssh_exec",
     "preflight_server",
     "working_box",
 ]

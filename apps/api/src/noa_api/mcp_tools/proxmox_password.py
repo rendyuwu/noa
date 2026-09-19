@@ -39,9 +39,9 @@ from pydantic import Field
 from core.db.lifecycle import ToolRisk
 from core.integrations.proxmox.client import ProxmoxClient
 from core.integrations.proxmox.cloudinit import cloudinit_carries_password
-from core.servers.proxmox_ref import (
-    NODE_DESCRIPTION,
-    SERVER_REF_DESCRIPTION,
+from core.servers.reference import (
+    PROXMOX_NODE_DESCRIPTION,
+    PROXMOX_SERVER_REF_DESCRIPTION,
     resolve_proxmox_server_ref,
 )
 from noa_api.mcp_tools.change_gate import (
@@ -345,8 +345,8 @@ def register_proxmox_password_tools(
         annotations={"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False},
     )
     async def proxmox_reset_vm_password_tool(
-        server_ref: Annotated[str, Field(description=SERVER_REF_DESCRIPTION)],
-        node: Annotated[str, Field(description=NODE_DESCRIPTION)],
+        server_ref: Annotated[str, Field(description=PROXMOX_SERVER_REF_DESCRIPTION)],
+        node: Annotated[str, Field(description=PROXMOX_NODE_DESCRIPTION)],
         vmid: Annotated[
             int,
             Field(

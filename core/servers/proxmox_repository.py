@@ -1,22 +1,13 @@
-"""SQL behind Proxmox server inventory.
+"""The Proxmox inventory surface the password-reset and NIC tools read against.
 
-The third of these, after `whm_repository.py` and `pmg_repository.py`, and written
-the same way for the same reasons — so the note here is only about what differs.
-
-**Reads only.** `create`/`update`/`delete` belong to the admin server-CRUD routes and are not
-ported; landing them now would be untested, unreachable code a reviewer has to treat as live.
+The third of these, after `whm_repository.py` and `pmg_repository.py`, holding the same pair
+for the same reasons — a narrow row view and the repository Protocol over it, with the SQL in
+`core.servers.repository` and the writes in `core.servers.admin_repository` — so the note here
+is only about what differs.
 
 **A narrower row than WHM's.** Proxmox is an HTTP API and nothing else (I.ext), so
 `ProxmoxServerRowLike` carries `id`, `name` and `base_url` — the three fields reference
 resolution matches on — and no SSH surface exists on the table to leave out.
-
-`get_by_name` is not a query here either: `resolve_proxmox_server_ref` already holds the full
-list to answer the hostname pass, and a second round trip that can disagree with the list a tie
-was judged against is a race rather than an optimization (`whm_repository`'s note).
-
-The session belongs to the caller, as everywhere in `core/` — nothing here commits, and both
-methods are `SELECT`s, so a tool that opens a session and never writes closes it with no
-transaction to resolve.
 """
 
 from __future__ import annotations
@@ -24,11 +15,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any, Protocol, TypeVar
 from uuid import UUID
-
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from core.db.models import ProxmoxServer
 
 
 class ProxmoxServerRowLike(Protocol):
@@ -69,33 +55,3 @@ class ProxmoxServerReadRepository(Protocol[RowT_co]):
     async def list_servers(self) -> Sequence[RowT_co]: ...
 
     async def get_by_id(self, server_id: UUID) -> RowT_co | None: ...
-
-
-class SQLProxmoxServerRepository:
-    """`ProxmoxServerReadRepository[ProxmoxServer]` over one `AsyncSession`."""
-
-    def __init__(self, session: AsyncSession) -> None:
-        self._session = session
-
-    async def list_servers(self) -> list[ProxmoxServer]:
-        """Every Proxmox server, ordered by name.
-
-        Ordered in SQL rather than by the caller so the tool result, the admin list and the
-        ambiguity `choices` all present one sequence — an operator picking row three out of a
-        candidate list should not find a different row three next time.
-        """
-        result = await self._session.execute(
-            select(ProxmoxServer).order_by(ProxmoxServer.name.asc())
-        )
-        return list(result.scalars().all())
-
-    async def get_by_id(self, server_id: UUID) -> ProxmoxServer | None:
-        """One server by primary key, or `None`.
-
-        `None` rather than a raise: the caller is `resolve_proxmox_server_ref`, and "no server with
-        that id" is a `host_not_found` *result* the model can act on, not an exception.
-        """
-        result = await self._session.execute(
-            select(ProxmoxServer).where(ProxmoxServer.id == server_id)
-        )
-        return result.scalar_one_or_none()

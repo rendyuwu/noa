@@ -18,12 +18,12 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from core.servers.pmg_ref import (
+from core.servers.reference import (
     ERROR_AMBIGUOUS,
     ERROR_NOT_FOUND,
     ERROR_REQUIRED,
     MAX_CHOICES,
-    describe,
+    describe_pmg,
     resolve_pmg_server_ref,
 )
 from support.servers import FakePMGServerRepository, pmg_server
@@ -123,7 +123,7 @@ def test_a_choice_names_the_server_without_a_credential() -> None:
     unambiguously, and nothing that would be a leak in a LibreChat transcript."""
     server = pmg_server("pmg1", ssh_host="gw.example.com")
 
-    assert describe(server) == {
+    assert describe_pmg(server) == {
         "id": str(server.id),
         "name": "pmg1",
         "ssh_host": "gw.example.com",

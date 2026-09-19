@@ -18,7 +18,10 @@ Both paths reach the callback through the same `known_hosts` value, so there is 
 get wrong and one place to test — see `_connection_kwargs` for why `None` is the wrong value.
 
 `sudo -n` composition lives in `core.remote_exec.sudo`, not here: this module runs a
-command string, it does not decide what escalation that string needs.
+command string, it does not decide what escalation that string needs. `run_cli` takes an
+already-composed string for exactly that reason — it converts SSH failures into an
+integration's own error tree and needs nothing from `sudo.py`, which imports `command_from_argv`
+from here.
 """
 
 from __future__ import annotations
@@ -26,10 +29,11 @@ from __future__ import annotations
 import hmac
 import shlex
 import time
-from typing import Final
+from typing import Final, Protocol
 
 import asyncssh
 
+from core.errors import NoaError
 from core.remote_exec.banner_strip import strip_ssh_banners
 from core.remote_exec.errors import SSHExecutionError
 from core.remote_exec.types import CommandResult, SSHConnectionConfig
@@ -279,3 +283,24 @@ async def ssh_exec(
     finally:
         connection.close()
         await connection.wait_closed()
+
+
+class CLIErrorFactory(Protocol):
+    """An integration's command error, constructed the way `SSHExecutionError` is."""
+
+    def __call__(self, *, code: str, message: str) -> NoaError: ...
+
+
+async def run_cli(
+    config: SSHConnectionConfig, command: str, *, error_cls: CLIErrorFactory
+) -> CommandResult:
+    """Execute `command` over `config`, converting SSH failures into the caller's tree.
+
+    Converted, not wrapped: one exception tree out of each integration module, so a caller
+    catches one thing. `csf_cli`, `imunify_cli` and `pmgsh_cli` held byte-identical copies of
+    this — including the comment.
+    """
+    try:
+        return await ssh_exec(config, command=command)
+    except SSHExecutionError as exc:
+        raise error_cls(code=exc.error_code, message=exc.message) from exc

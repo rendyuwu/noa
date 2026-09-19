@@ -1,19 +1,9 @@
-"""SQL behind PMG server inventory.
+"""The PMG inventory surface the whitelist tools read against.
 
-The PMG sibling of `core.servers.whm_repository`, and it makes the same two calls that module
-made, for the same reasons.
-
-**Reads only.** `noa-old`'s `storage/postgres/pmg_servers.py` also had `create`/`update`/
-`delete`, and their only caller in this design is the admin server-CRUD routes. Porting them now
-would land ~130 lines of unreachable code a reviewer has to treat as live.
-
-**`get_by_name` is not a query.** `resolve_pmg_server_ref` already holds the whole list to
-answer the host case, and a second round trip that can disagree with the list a tie was judged
-against is a race rather than an optimization.
-
-The session belongs to the caller, as everywhere else in `core/`: nothing here commits, and
-both methods are read-only, so a tool that opens a session and never writes closes it without
-a transaction to resolve.
+The PMG sibling of `core.servers.whm_repository`, and what it holds is the same pair: a narrow
+row view and the repository Protocol over it. The SQL is one generic class in
+`core.servers.repository`, the writes are in `core.servers.admin_repository`, and what is left
+here is the part that is PMG's alone — an `ssh_host` column where WHM has a `base_url`.
 """
 
 from __future__ import annotations
@@ -21,11 +11,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol, TypeVar
 from uuid import UUID
-
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from core.db.models import PMGServer
 
 
 class PMGServerRowLike(Protocol):
@@ -68,29 +53,3 @@ class PMGServerReadRepository(Protocol[RowT_co]):
     async def list_servers(self) -> Sequence[RowT_co]: ...
 
     async def get_by_id(self, server_id: UUID) -> RowT_co | None: ...
-
-
-class SQLPMGServerRepository:
-    """`PMGServerReadRepository[PMGServer]` over one `AsyncSession`."""
-
-    def __init__(self, session: AsyncSession) -> None:
-        self._session = session
-
-    async def list_servers(self) -> list[PMGServer]:
-        """Every PMG server, ordered by name.
-
-        Ordered in SQL rather than by the caller so the ambiguity `choices` an operator picks
-        from present the same sequence every time — "the second one" should mean the same row
-        on the next call.
-        """
-        result = await self._session.execute(select(PMGServer).order_by(PMGServer.name.asc()))
-        return list(result.scalars().all())
-
-    async def get_by_id(self, server_id: UUID) -> PMGServer | None:
-        """One server by primary key, or `None`.
-
-        `None` rather than a raise: "no server with that id" is a `host_not_found` *result* the
-        model can act on, not an exception.
-        """
-        result = await self._session.execute(select(PMGServer).where(PMGServer.id == server_id))
-        return result.scalar_one_or_none()

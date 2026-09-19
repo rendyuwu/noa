@@ -22,7 +22,7 @@ Every row is built **with** an API token and SSH credentials, even where the tes
 care. A row with no secrets cannot fail a "no secrets leaked" assertion, which would make
 that test pass for the wrong reason.
 
-**`SQLWHMServerRepository` is not doubled away entirely** — `test_whm_server_repository.py`
+**`SQLServerRepository` is not doubled away entirely** — `test_whm_server_repository.py`
 runs it against a scratch Postgres. This double covers policy (resolution order, ties,
 the tool's shape); the SQL has its own coverage. Same split as `support.rbac`.
 """
@@ -271,9 +271,10 @@ class FakePMGServerRepository:
     against this order, and a double that returned insertion order would let a test pass
     against a repository that does not.
 
-    Kept as a separate class rather than one generic double, matching the two production
-    repositories: `SQLPMGServerRepository` selects a different table, and a shared double would
-    stop being evidence that the tool asked PMG's inventory rather than WHM's.
+    Kept as a separate class rather than one generic double, even though production binds the
+    table with a parameter now (`SQLServerRepository(session, model=PMGServer)`): a shared
+    double would stop being evidence that the tool asked PMG's inventory rather than WHM's,
+    which is the claim `model=` makes on the production side.
     """
 
     def __init__(self, servers: Iterable[PMGServer] = ()) -> None:
@@ -296,9 +297,9 @@ class FakeProxmoxServerRepository:
     against this order, and a double that returned insertion order would let a test pass against
     a repository that does not.
 
-    Kept as a separate class rather than one generic double, matching the three production
-    repositories: `SQLProxmoxServerRepository` selects a different table, and a shared double
-    would stop being evidence that the tool asked Proxmox's inventory rather than WHM's.
+    Kept as a separate class rather than one generic double, for the reason its PMG twin is:
+    `SQLServerRepository(session, model=ProxmoxServer)` selects a different table, and a shared
+    double would stop being evidence that the tool asked Proxmox's inventory rather than WHM's.
     """
 
     def __init__(self, servers: Iterable[ProxmoxServer] = ()) -> None:
