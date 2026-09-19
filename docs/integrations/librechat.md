@@ -252,7 +252,7 @@ than replaces them.
 exposes `whm_list_servers` and no Proxmox equivalent, so the operator's pasted VM lookup block is
 the discovery step the "look before you ask" clause asks for. What the prompt does not say is how a
 node name becomes a server, on purpose: that mapping is the resolver's job now
-(`resolve_proxmox_server_ref`, `core/servers/proxmox_ref.py`), so the clause says "send it as both"
+(`resolve_proxmox_server_ref`, `core/servers/reference.py`), so the clause says "send it as both"
 and nothing about how. The cloud-init sentence survives because the block *looks* like it answers
 `username` and does not — `Email:` is the pool owner's contact address, `username` is the guest's
 cloud-init user, and `proxmox_reset_vm_password` refuses at the `ciuser` check

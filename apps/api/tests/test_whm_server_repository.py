@@ -1,4 +1,4 @@
-"""`SQLWHMServerRepository` against a live database.
+"""`SQLServerRepository` over `whm_servers`, against a live database.
 
 `test_whm_server_ref.py` and `test_whm_tools_read.py` cover policy over in-memory doubles;
 this covers the SQL. Everything asserted here is something a fake cannot tell you:
@@ -24,7 +24,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from core.db.models import WHMServer
-from core.servers.whm_repository import SQLWHMServerRepository
+from core.servers.repository import SQLServerRepository
 from support.database import MUTATED_TABLES, migrated_database, truncate
 from support.servers import API_TOKEN, SSH_PASSWORD
 
@@ -55,8 +55,8 @@ async def session(database_url: str) -> AsyncIterator[AsyncSession]:
 
 
 @pytest.fixture
-def repository(session: AsyncSession) -> SQLWHMServerRepository:
-    return SQLWHMServerRepository(session)
+def repository(session: AsyncSession) -> SQLServerRepository[WHMServer]:
+    return SQLServerRepository(session, model=WHMServer)
 
 
 async def insert(session: AsyncSession, name: str, *, base_url: str | None = None) -> WHMServer:
@@ -77,7 +77,7 @@ async def insert(session: AsyncSession, name: str, *, base_url: str | None = Non
 
 
 async def test_servers_come_back_ordered_by_name(
-    session: AsyncSession, repository: SQLWHMServerRepository
+    session: AsyncSession, repository: SQLServerRepository[WHMServer]
 ) -> None:
     """The `ORDER BY` is the database's, not the caller's.
 
@@ -94,13 +94,13 @@ async def test_servers_come_back_ordered_by_name(
     assert [server.name for server in servers] == ["alpha", "bravo", "charlie"]
 
 
-async def test_an_empty_table_lists_nothing(repository: SQLWHMServerRepository) -> None:
+async def test_an_empty_table_lists_nothing(repository: SQLServerRepository[WHMServer]) -> None:
     """No servers configured is an empty list, not an error."""
     assert await repository.list_servers() == []
 
 
 async def test_get_by_id_finds_the_row(
-    session: AsyncSession, repository: SQLWHMServerRepository
+    session: AsyncSession, repository: SQLServerRepository[WHMServer]
 ) -> None:
     written = await insert(session, "alpha")
 
@@ -112,14 +112,14 @@ async def test_get_by_id_finds_the_row(
 
 
 async def test_get_by_id_answers_none_for_a_missing_row(
-    repository: SQLWHMServerRepository,
+    repository: SQLServerRepository[WHMServer],
 ) -> None:
     """`None`, not a raise: `resolve_whm_server_ref` turns it into `host_not_found`."""
     assert await repository.get_by_id(uuid4()) is None
 
 
 async def test_a_stored_row_renders_safely(
-    session: AsyncSession, repository: SQLWHMServerRepository
+    session: AsyncSession, repository: SQLServerRepository[WHMServer]
 ) -> None:
     """`to_safe_dict` on a real row: identifiers present, credentials absent.
 

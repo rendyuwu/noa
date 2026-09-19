@@ -40,20 +40,18 @@ from core.servers.admin_repository import (
     PMGServerUpdate,
     ProxmoxServerCreate,
     ProxmoxServerUpdate,
-    SQLPMGHostKeyPinRepository,
-    SQLPMGServerAdminRepository,
-    SQLProxmoxServerAdminRepository,
-    SQLWHMHostKeyPinRepository,
-    SQLWHMServerAdminRepository,
+    SQLHostKeyPinRepository,
+    SQLServerAdminRepository,
     SSHCredentials,
     SSHCredentialsPatch,
     WHMServerCreate,
     WHMServerUpdate,
 )
 from core.servers.admin_service import (
-    PMGServerAdminService,
-    ProxmoxServerAdminService,
-    WHMServerAdminService,
+    PMG_ADMIN_POLICY,
+    PROXMOX_ADMIN_POLICY,
+    WHM_ADMIN_POLICY,
+    ServerAdminService,
 )
 from core.servers.errors import WHMServerNameExistsError
 from support.database import MUTATED_TABLES, migrated_database, truncate
@@ -108,25 +106,34 @@ def cipher() -> SecretCipher:
     return build_cipher()
 
 
-def whm_service(session: AsyncSession, cipher: SecretCipher) -> WHMServerAdminService:
-    return WHMServerAdminService(
-        repository=SQLWHMServerAdminRepository(session),
+def whm_service(
+    session: AsyncSession, cipher: SecretCipher
+) -> ServerAdminService[WHMServer, WHMServerCreate, WHMServerUpdate]:
+    return ServerAdminService(
+        repository=SQLServerAdminRepository(session, model=WHMServer, host_field="base_url"),
+        policy=WHM_ADMIN_POLICY,
         cipher=cipher,
         audit_sink=RecordingAuditSink(),
     )
 
 
-def proxmox_service(session: AsyncSession, cipher: SecretCipher) -> ProxmoxServerAdminService:
-    return ProxmoxServerAdminService(
-        repository=SQLProxmoxServerAdminRepository(session),
+def proxmox_service(
+    session: AsyncSession, cipher: SecretCipher
+) -> ServerAdminService[ProxmoxServer, ProxmoxServerCreate, ProxmoxServerUpdate]:
+    return ServerAdminService(
+        repository=SQLServerAdminRepository(session, model=ProxmoxServer),
+        policy=PROXMOX_ADMIN_POLICY,
         cipher=cipher,
         audit_sink=RecordingAuditSink(),
     )
 
 
-def pmg_service(session: AsyncSession, cipher: SecretCipher) -> PMGServerAdminService:
-    return PMGServerAdminService(
-        repository=SQLPMGServerAdminRepository(session),
+def pmg_service(
+    session: AsyncSession, cipher: SecretCipher
+) -> ServerAdminService[PMGServer, PMGServerCreate, PMGServerUpdate]:
+    return ServerAdminService(
+        repository=SQLServerAdminRepository(session, model=PMGServer, host_field="ssh_host"),
+        policy=PMG_ADMIN_POLICY,
         cipher=cipher,
         audit_sink=RecordingAuditSink(),
     )
@@ -276,7 +283,8 @@ async def test_commit_makes_a_create_outlive_the_request(
     checked before anything commits.
     """
     # Negative control: flush only.
-    flushed = await SQLWHMServerAdminRepository(session).create(whm_spec("control"))
+    control_repository = SQLServerAdminRepository(session, model=WHMServer, host_field="base_url")
+    flushed = await control_repository.create(whm_spec("control"))
     assert await observed_names(session_factory, WHMServer) == set()
 
     created = await whm_service(session, cipher).create(whm_spec("committed"), actor_email=ACTOR)
@@ -304,7 +312,7 @@ async def test_commit_makes_an_update_outlive_the_request(
     control = await service.create(whm_spec("control"), actor_email=ACTOR)
 
     # Negative control: the identical edit through the repository alone, flush only.
-    await SQLWHMServerAdminRepository(session).update(
+    await SQLServerAdminRepository(session, model=WHMServer, host_field="base_url").update(
         control.id, WHMServerUpdate(name="control-renamed")
     )
     assert "control-renamed" not in await observed_names(session_factory, WHMServer)
@@ -332,7 +340,8 @@ async def test_commit_makes_a_delete_outlive_the_request(
     control = await service.create(pmg_spec("control"), actor_email=ACTOR)
 
     # Negative control: the identical delete through the repository alone, flush only.
-    assert await SQLPMGServerAdminRepository(session).delete(control.id)
+    control_repository = SQLServerAdminRepository(session, model=PMGServer, host_field="ssh_host")
+    assert await control_repository.delete(control.id)
     assert "control" in await observed_names(session_factory, PMGServer)
 
     await service.delete(subject.id, actor_email=ACTOR)
@@ -420,7 +429,7 @@ async def test_validate_persists_the_captured_fingerprint(
 
     # Negative control: the write through a *flush* only, on a second server, stays invisible.
     control = await whm_service(session, cipher).create(whm_spec("control"), actor_email=ACTOR)
-    control_pin = SQLWHMHostKeyPinRepository(session)
+    control_pin = SQLHostKeyPinRepository(session, model=WHMServer)
     assert await control_pin.set_host_key_fingerprint(control.id, FINGERPRINT)
 
     async def observed_control_pin() -> str | None:
@@ -432,7 +441,7 @@ async def test_validate_persists_the_captured_fingerprint(
 
     assert await observed_control_pin() is None
 
-    pins = SQLWHMHostKeyPinRepository(session)
+    pins = SQLHostKeyPinRepository(session, model=WHMServer)
     assert await pins.set_host_key_fingerprint(created.id, FINGERPRINT)
     await pins.commit()
 
@@ -450,7 +459,7 @@ async def test_the_pmg_pin_repository_commits_too(
         PMGServerCreate(name="unpinned", ssh_host="unpinned.example.net"), actor_email=ACTOR
     )
 
-    pins = SQLPMGHostKeyPinRepository(session)
+    pins = SQLHostKeyPinRepository(session, model=PMGServer)
     assert await pins.set_host_key_fingerprint(created.id, FINGERPRINT)
     await pins.commit()
 
@@ -466,22 +475,18 @@ async def test_the_pmg_pin_repository_commits_too(
 async def test_a_pin_repository_cannot_reach_another_column(session: AsyncSession) -> None:
     """The narrowness is the guarantee, so it is asserted rather than described.
 
-    A reachability probe holds one of these. If it grew a `create`, an `update` or a `delete`,
-    a validate could rewrite a credential — the reason these are separate classes from the CRUD
-    repositories at all (`core.servers.admin_repository`).
+    A reachability probe holds one of these, bound to its table. If it grew a `create`, an
+    `update` or a `delete`, a validate could rewrite a credential — the reason this is a
+    separate class from the CRUD repository at all (`core.servers.admin_repository`). One
+    class covers both tables now, so one assertion covers both validate flows.
     """
     surface = {
         name
-        for name in dir(SQLWHMHostKeyPinRepository)
-        if not name.startswith("_") and callable(getattr(SQLWHMHostKeyPinRepository, name))
+        for name in dir(SQLHostKeyPinRepository)
+        if not name.startswith("_") and callable(getattr(SQLHostKeyPinRepository, name))
     }
 
     assert surface == {"get_by_id", "set_host_key_fingerprint", "commit"}
-    assert surface == {
-        name
-        for name in dir(SQLPMGHostKeyPinRepository)
-        if not name.startswith("_") and callable(getattr(SQLPMGHostKeyPinRepository, name))
-    }
 
 
 # --- The unique-name constraint, as the backstop it is ---
@@ -496,7 +501,7 @@ async def test_the_unique_index_is_the_backstop_behind_the_service_check(
     concurrent creates. The constraint is what does, and this asserts it is really there rather
     than assumed from the model declaration.
     """
-    repository = SQLWHMServerAdminRepository(session)
+    repository = SQLServerAdminRepository(session, model=WHMServer, host_field="base_url")
     await repository.create(whm_spec("duplicate"))
 
     with pytest.raises(IntegrityError):
@@ -504,11 +509,15 @@ async def test_the_unique_index_is_the_backstop_behind_the_service_check(
 
 
 @pytest.mark.parametrize(
-    ("model", "table"),
-    [(WHMServer, "whm_servers"), (ProxmoxServer, "proxmox_servers"), (PMGServer, "pmg_servers")],
+    ("model", "table", "host_field"),
+    [
+        (WHMServer, "whm_servers", "base_url"),
+        (ProxmoxServer, "proxmox_servers", None),
+        (PMGServer, "pmg_servers", "ssh_host"),
+    ],
 )
 async def test_the_name_check_is_case_insensitive_in_sql(
-    session: AsyncSession, model: type, table: str
+    session: AsyncSession, model: type, table: str, host_field: str | None
 ) -> None:
     """`func.lower(...)` on both sides, on every table.
 
@@ -516,13 +525,8 @@ async def test_the_name_check_is_case_insensitive_in_sql(
     case-sensitive unique index and both match `NODE1`, which is a permanent `host_ambiguous`
     for a reference an operator will keep typing.
     """
-    repositories = {
-        "whm_servers": SQLWHMServerAdminRepository,
-        "proxmox_servers": SQLProxmoxServerAdminRepository,
-        "pmg_servers": SQLPMGServerAdminRepository,
-    }
     specs = {"whm_servers": whm_spec, "proxmox_servers": proxmox_spec, "pmg_servers": pmg_spec}
-    repository = repositories[table](session)
+    repository = SQLServerAdminRepository(session, model=model, host_field=host_field)
 
     created = await repository.create(specs[table]("Node1"))  # type: ignore[arg-type]
 
@@ -555,9 +559,13 @@ async def test_the_list_order_comes_from_the_database(
 
 async def test_get_by_id_answers_none_for_an_absent_row(session: AsyncSession) -> None:
     """`None`, not a raise — the caller's 404 (`scalar_one()` would raise instead)."""
-    assert await SQLWHMServerAdminRepository(session).get_by_id(uuid4()) is None
-    assert await SQLProxmoxServerAdminRepository(session).get_by_id(uuid4()) is None
-    assert await SQLPMGServerAdminRepository(session).get_by_id(uuid4()) is None
+    whm = SQLServerAdminRepository(session, model=WHMServer, host_field="base_url")
+    proxmox = SQLServerAdminRepository(session, model=ProxmoxServer)
+    pmg = SQLServerAdminRepository(session, model=PMGServer, host_field="ssh_host")
+
+    assert await whm.get_by_id(uuid4()) is None
+    assert await proxmox.get_by_id(uuid4()) is None
+    assert await pmg.get_by_id(uuid4()) is None
 
 
 async def test_a_created_row_carries_its_server_generated_columns(

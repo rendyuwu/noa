@@ -13,7 +13,7 @@ One transaction spanning the call would make the row appear only once the call e
 process that died mid-call would leave nothing — which is the exact case `STARTED` exists
 for (the schema's model docstring; the reaper sweeps them).
 
-**This repository owns its session and commits**, unlike `SQLWHMServerRepository` and
+**This repository owns its session and commits**, unlike `SQLServerRepository` and
 `SQLAuthorizationRepository`, which flush into a caller's transaction. Same split, same
 reason, as `SQLMcpIdentityRepository`: the MCP tool path runs outside FastAPI's
 dependency graph, so there is no request transaction to join, and an audit row that rolls

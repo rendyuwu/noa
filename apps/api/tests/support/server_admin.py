@@ -67,7 +67,7 @@ class _Journal:
 
 
 class FakeWHMServerAdminRepository:
-    """In-memory `WHMServerAdminRepository`."""
+    """In-memory `ServerAdminRepository` for `whm_servers`."""
 
     def __init__(self, servers: Iterable[WHMServer] = ()) -> None:
         self.servers: list[WHMServer] = list(servers)
@@ -148,7 +148,7 @@ class FakeWHMServerAdminRepository:
 
 
 class FakeProxmoxServerAdminRepository:
-    """In-memory `ProxmoxServerAdminRepository`. No SSH block and no pin (I.ext)."""
+    """In-memory `ServerAdminRepository` for `proxmox_servers`. No SSH block and no pin (I.ext)."""
 
     def __init__(self, servers: Iterable[ProxmoxServer] = ()) -> None:
         self.servers: list[ProxmoxServer] = list(servers)
@@ -210,7 +210,7 @@ class FakeProxmoxServerAdminRepository:
 
 
 class FakePMGServerAdminRepository:
-    """In-memory `PMGServerAdminRepository`."""
+    """In-memory `ServerAdminRepository` for `pmg_servers`."""
 
     def __init__(self, servers: Iterable[PMGServer] = ()) -> None:
         self.servers: list[PMGServer] = list(servers)
@@ -283,8 +283,8 @@ class FakePMGServerAdminRepository:
 class FakeHostKeyPinRepository:
     """In-memory `HostKeyPinRepository` — one row's pin, and nothing else it can touch.
 
-    Deliberately generic over the row type, unlike the three above: this double stands in for
-    `SQLWHMHostKeyPinRepository` *and* `SQLPMGHostKeyPinRepository`, which are the same two
+    Deliberately generic over the row type, unlike the three above: production binds one
+    `SQLHostKeyPinRepository` to `whm_servers` and another to `pmg_servers`, the same two
     methods over two tables. There is nothing table-specific left to get wrong, so a shared
     double is not hiding anything — the write it makes is `ssh_host_key_fingerprint = …`.
 

@@ -38,9 +38,8 @@ exist and both match `NODE1`. Dropping the ambiguity branch because "the column 
 be wrong for exactly that case.
 
 **Error codes are `noa-old`'s, verbatim** (`host_required`, `host_not_found`, `host_ambiguous`)
-because they are the strings the model and the admin panel already branch on. They live here now
-rather than three times; `whm_ref`, `pmg_ref` and `proxmox_ref` re-export them so no caller's
-import path changed when this module landed.
+because they are the strings the model and the admin panel already branch on. They live here
+rather than three times.
 
 **The resolved row keeps its own type**. Matching only ever reads `id`, `name` and the host
 accessor's output — the `ServerRowLike` bound — but a tool that resolves a server then *calls* it
@@ -48,15 +47,27 @@ needs the credentials off the row it resolved, and re-reading it by id would let
 disagree with the list the tie was judged against. So this is generic in the row, and a caller
 declaring `ServerRefRepository[WHMServer]` reaches the credentials with no cast and without
 widening the narrow view this module works against.
+
+**The three per-system wrappers are at the bottom of this file**, each a `describe` plus one
+call into `resolve_server_ref`. They were three modules until they held nothing but a docstring
+explaining why they were thin and a re-export block that existed because the module did; both
+die with the file. The per-system *row views* stay where they are — this module imports
+`WHMServerRowLike`, `PMGServerRowLike` and `ProxmoxServerRowLike` and nothing else from them,
+which is what keeps a resolver double from being handed to something that decrypts.
 """
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Generic, Protocol, TypeVar
+from typing import Final, Generic, Protocol, TypeVar
 from urllib.parse import urlsplit
 from uuid import UUID
+
+from core.servers.pmg_repository import PMGServerRowLike
+from core.servers.proxmox_repository import ProxmoxServerRowLike
+from core.servers.whm_repository import WHMServerRowLike
 
 
 class ServerRowLike(Protocol):
@@ -91,9 +102,9 @@ class ServerRefRepository(Protocol[RowT_co]):
     """The inventory surface resolution needs, parametrised by the row it yields.
 
     Structurally what `WHMServerReadRepository`, `PMGServerReadRepository` and
-    `ProxmoxServerReadRepository` already are, named here so this module depends on none of
-    them — the per-system repositories keep their own names because each also states which
-    `to_safe_dict` renders it outward, which is a claim about that table and not about
+    `ProxmoxServerReadRepository` already are, named here so the shared policy states its own
+    requirement — the per-system repositories keep their own names because each also states
+    which `to_safe_dict` renders it outward, which is a claim about that table and not about
     resolution.
     """
 
@@ -237,3 +248,173 @@ def _resolve_matches(
         message=message,
         choices=[describe(server) for server in matches[:MAX_CHOICES]],
     )
+
+
+# --- WHM ---
+
+# Invariant: a resolution both holds a row and is constructed with one.
+WHMRowT = TypeVar("WHMRowT", bound=WHMServerRowLike)
+
+
+def describe_whm(server: WHMServerRowLike) -> dict[str, str]:
+    """One candidate, as a `choices` entry.
+
+    Id, name and `base_url` — the three fields that let an operator recognise a server and then
+    name it unambiguously. No credentials and no SSH fields: this text goes into an LLM
+    transcript.
+    """
+    return {"id": str(server.id), "name": server.name, "base_url": server.base_url}
+
+
+async def resolve_whm_server_ref(
+    server_ref: str, *, repository: ServerRefRepository[WHMRowT]
+) -> ServerRefResolution[WHMRowT]:
+    """Resolve `server_ref` to one WHM server, or refuse with a named code.
+
+    Never raises for a bad reference: every outcome is a resolution the tool layer turns into a
+    structured result, because "I could not tell which server" is information the model can act
+    on, while an exception is not.
+    """
+    return await resolve_server_ref(
+        server_ref,
+        repository=repository,
+        subject="WHM",
+        host_of=lambda server: hostname_of(server.base_url),
+        describe=describe_whm,
+    )
+
+
+# --- PMG ---
+
+PMGRowT = TypeVar("PMGRowT", bound=PMGServerRowLike)
+
+
+def describe_pmg(server: PMGServerRowLike) -> dict[str, str]:
+    """One candidate, as a `choices` entry.
+
+    Id, name and `ssh_host` — what lets an operator recognise a node and then name it
+    unambiguously. No credentials: this text goes into an LLM transcript.
+    """
+    return {"id": str(server.id), "name": server.name, "ssh_host": server.ssh_host}
+
+
+async def resolve_pmg_server_ref(
+    server_ref: str, *, repository: ServerRefRepository[PMGRowT]
+) -> ServerRefResolution[PMGRowT]:
+    """Resolve `server_ref` to one PMG server, or refuse with a named code.
+
+    Never raises for a bad reference: every outcome is a resolution the tool layer turns into a
+    structured result, because "I could not tell which server" is information the model can act
+    on, while an exception is not.
+
+    PMG is SSH-only (the external interface contract), so the host is the bare `ssh_host` column
+    rather than something parsed out of a URL, and that column is what a candidate is recognised
+    by. That difference — one accessor and one `choices` field — is the whole of what made three
+    copies of this look necessary.
+    """
+    return await resolve_server_ref(
+        server_ref,
+        repository=repository,
+        subject="PMG",
+        host_of=lambda server: server.ssh_host,
+        describe=describe_pmg,
+    )
+
+
+# --- Proxmox ---
+
+ProxmoxRowT = TypeVar("ProxmoxRowT", bound=ProxmoxServerRowLike)
+
+# The two identity parameters both Proxmox tools publish, and the only copies of them.
+#
+# Here rather than in `mcp_tools/` because they are `required_message("Proxmox")`'s question
+# asked in the other direction — one is what NOA says when a reference is missing, the other is
+# what it asks for before one is sent — and because the password tool and the NIC tool held
+# byte-identical copies of both that a longer rule would have let drift apart.
+#
+# Prefixed, unlike the resolvers: a bare `SERVER_REF_DESCRIPTION` in a module serving three
+# systems reads as if it served all three.
+PROXMOX_SERVER_REF_DESCRIPTION: Final = (
+    "Which Proxmox server: its id, its name in NOA, its hostname, or the node the VM runs on "
+    "(a VM lookup's `Host Node`) — NOA resolves a node name to the server that runs it. Ask the "
+    "operator if they have not named one."
+)
+
+PROXMOX_NODE_DESCRIPTION: Final = (
+    "The Proxmox node the VM runs on, exactly as Proxmox names it (for example `examplepve09`). "
+    "It is the cluster member, not the VM."
+)
+
+# This fleet names its nodes `<cluster>pve<NN>` and names each NOA row after the cluster, so a
+# node name resolves once the suffix is off: `examplepve09` is a member of `example`. Proxmox
+# does not require that naming, which is why the pattern sits on the Proxmox resolver rather
+# than in `resolve_server_ref`, where WHM and PMG would inherit a convention that is not theirs.
+#
+# ponytail: one hardcoded convention, no config. A second fleet with different node naming turns
+# this into an env-read pattern; nothing else about the retry changes.
+_NODE_SUFFIX: Final = re.compile(r"[-_.]?pve\d+$", re.IGNORECASE)
+
+
+def describe_proxmox(server: ProxmoxServerRowLike) -> dict[str, str]:
+    """One candidate, as a `choices` entry.
+
+    Id, name and `base_url` — enough for an operator to recognise an endpoint and then name it
+    unambiguously. No `api_token_id` and no secret: this text goes into an LLM transcript.
+    """
+    return {"id": str(server.id), "name": server.name, "base_url": server.base_url}
+
+
+def _cluster_of_node(reference: str) -> str | None:
+    """`examplepve09` → `example`, or `None` when there is nothing new to try.
+
+    `None` covers two cases that must not reach a second lookup: a reference carrying no node
+    suffix at all, and one that is *only* a suffix — `pve1` is a legitimate server name (this
+    repo's own fixtures use it), and stripping it would search for the empty string.
+    """
+    reference = reference.strip()
+    derived = _NODE_SUFFIX.sub("", reference).strip()
+    return derived if derived and derived != reference else None
+
+
+async def _resolve_proxmox(
+    reference: str, *, repository: ServerRefRepository[ProxmoxRowT]
+) -> ServerRefResolution[ProxmoxRowT]:
+    """The shared policy, with Proxmox's two parameters. Written once so the retry cannot drift."""
+    return await resolve_server_ref(
+        reference,
+        repository=repository,
+        subject="Proxmox",
+        host_of=lambda server: hostname_of(server.base_url),
+        describe=describe_proxmox,
+    )
+
+
+async def resolve_proxmox_server_ref(
+    server_ref: str, *, repository: ServerRefRepository[ProxmoxRowT]
+) -> ServerRefResolution[ProxmoxRowT]:
+    """Resolve `server_ref` to one Proxmox server, or refuse with a named code.
+
+    Never raises for a bad reference: every outcome is a resolution the tool layer turns into a
+    structured result, because "I could not tell which server" is information the model can act
+    on, while an exception is not. It matters more here than on a READ path — the caller is
+    a CHANGE tool, and a resolver that guessed would open an approval card for a machine the
+    operator never named.
+
+    A reference that matches nothing and ends in a node suffix is tried once more as its cluster,
+    so the node name an operator pastes out of a VM lookup finds the server that runs it. The
+    exact lookup runs first and wins, and the derived reference goes through the same exact,
+    case-insensitive match as a typed one — so this is a second lookup, not a similarity search.
+    """
+    resolution = await _resolve_proxmox(server_ref, repository=repository)
+    if resolution.error_code != ERROR_NOT_FOUND:
+        return resolution
+
+    cluster = _cluster_of_node(server_ref)
+    if cluster is None:
+        return resolution
+
+    retry = await _resolve_proxmox(cluster, repository=repository)
+    # A miss on the derived name is not news — the operator never typed it, so the refusal that
+    # goes back names what they did send. A *tie* on it is news: it carries `choices`, and with no
+    # Proxmox read tool in the catalog that list is the only thing that unblocks the model.
+    return retry if retry.error_code != ERROR_NOT_FOUND else resolution

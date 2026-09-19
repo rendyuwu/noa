@@ -22,6 +22,7 @@ has not expired yet.
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
+from functools import partial
 from typing import Annotated, Final, TypeVar, cast
 
 from fastapi import Depends, Request
@@ -53,22 +54,26 @@ from core.auth.mcp_token_repository import SQLMcpTokenRepository
 from core.auth.mcp_token_service import McpTokenService
 from core.auth.tool_list_notifications import ToolListChangedNotifier
 from core.config import Settings
-from core.db.models import ADMIN_ROLE_NAME
+from core.db.models import ADMIN_ROLE_NAME, PMGServer, ProxmoxServer, WHMServer
 from core.results.tables import ResultTableService, SQLToolResultTableReader
 from core.secrets.crypto import SecretCipher
 from core.servers.admin_repository import (
-    SQLPMGHostKeyPinRepository,
-    SQLPMGServerAdminRepository,
-    SQLProxmoxServerAdminRepository,
-    SQLWHMHostKeyPinRepository,
-    SQLWHMServerAdminRepository,
+    PMGServerCreate,
+    PMGServerUpdate,
+    ProxmoxServerCreate,
+    ProxmoxServerUpdate,
+    SQLHostKeyPinRepository,
+    SQLServerAdminRepository,
+    WHMServerCreate,
+    WHMServerUpdate,
 )
 from core.servers.admin_service import (
-    PMGServerAdminService,
-    ProxmoxServerAdminService,
-    WHMServerAdminService,
+    PMG_ADMIN_POLICY,
+    PROXMOX_ADMIN_POLICY,
+    WHM_ADMIN_POLICY,
+    ServerAdminService,
 )
-from core.servers.proxmox_repository import SQLProxmoxServerRepository
+from core.servers.repository import SQLServerRepository
 from core.servers.validation import (
     PMGServerValidationService,
     ProxmoxServerValidationService,
@@ -452,19 +457,20 @@ SecretCipherDep = Annotated[SecretCipher, Depends(get_secret_cipher)]
 def get_whm_server_admin_service(
     session: SessionDep,
     cipher: SecretCipherDep,
-) -> WHMServerAdminService:
+) -> ServerAdminService[WHMServer, WHMServerCreate, WHMServerUpdate]:
     """WHM inventory CRUD, wired to this request's session.
 
     Built per request like `AuthorizationService` and `McpTokenService`, and for the same
     reason: the write and its audit event share one transaction, and the service commits that
     transaction itself because `get_db_session` does not.
 
-    `SQLWHMServerAdminRepository` — not the read repository the MCP tool path gets. The tool
+    `SQLServerAdminRepository` — not the read repository the MCP tool path gets. The tool
     path resolves a server reference and must not hold an object that can delete one, which is
     the split `get_approval_card_service` makes one table over.
     """
-    return WHMServerAdminService(
-        repository=SQLWHMServerAdminRepository(session),
+    return ServerAdminService(
+        repository=SQLServerAdminRepository(session, model=WHMServer, host_field="base_url"),
+        policy=WHM_ADMIN_POLICY,
         cipher=cipher,
         audit_sink=StructlogAdminAuditSink(),
     )
@@ -473,10 +479,15 @@ def get_whm_server_admin_service(
 def get_proxmox_server_admin_service(
     session: SessionDep,
     cipher: SecretCipherDep,
-) -> ProxmoxServerAdminService:
-    """Proxmox inventory CRUD, wired to this request's session."""
-    return ProxmoxServerAdminService(
-        repository=SQLProxmoxServerAdminRepository(session),
+) -> ServerAdminService[ProxmoxServer, ProxmoxServerCreate, ProxmoxServerUpdate]:
+    """Proxmox inventory CRUD, wired to this request's session.
+
+    No `host_field`: the table has no SSH block, so there are no credentials to apply and no
+    pin to invalidate.
+    """
+    return ServerAdminService(
+        repository=SQLServerAdminRepository(session, model=ProxmoxServer),
+        policy=PROXMOX_ADMIN_POLICY,
         cipher=cipher,
         audit_sink=StructlogAdminAuditSink(),
     )
@@ -485,20 +496,28 @@ def get_proxmox_server_admin_service(
 def get_pmg_server_admin_service(
     session: SessionDep,
     cipher: SecretCipherDep,
-) -> PMGServerAdminService:
+) -> ServerAdminService[PMGServer, PMGServerCreate, PMGServerUpdate]:
     """PMG inventory CRUD, wired to this request's session."""
-    return PMGServerAdminService(
-        repository=SQLPMGServerAdminRepository(session),
+    return ServerAdminService(
+        repository=SQLServerAdminRepository(session, model=PMGServer, host_field="ssh_host"),
+        policy=PMG_ADMIN_POLICY,
         cipher=cipher,
         audit_sink=StructlogAdminAuditSink(),
     )
 
 
-WHMServerAdminServiceDep = Annotated[WHMServerAdminService, Depends(get_whm_server_admin_service)]
-ProxmoxServerAdminServiceDep = Annotated[
-    ProxmoxServerAdminService, Depends(get_proxmox_server_admin_service)
+WHMServerAdminServiceDep = Annotated[
+    ServerAdminService[WHMServer, WHMServerCreate, WHMServerUpdate],
+    Depends(get_whm_server_admin_service),
 ]
-PMGServerAdminServiceDep = Annotated[PMGServerAdminService, Depends(get_pmg_server_admin_service)]
+ProxmoxServerAdminServiceDep = Annotated[
+    ServerAdminService[ProxmoxServer, ProxmoxServerCreate, ProxmoxServerUpdate],
+    Depends(get_proxmox_server_admin_service),
+]
+PMGServerAdminServiceDep = Annotated[
+    ServerAdminService[PMGServer, PMGServerCreate, PMGServerUpdate],
+    Depends(get_pmg_server_admin_service),
+]
 
 
 def get_whm_server_validation_service(
@@ -516,14 +535,14 @@ def get_whm_server_validation_service(
     reads its row in one short session, closes it, does the network work, and opens a second
     session only when there is a host key to store.
 
-    `SQLWHMHostKeyPinRepository` is the narrowest thing this can be handed: it reads one row and
+    `SQLHostKeyPinRepository` is the narrowest thing this can be handed: it reads one row and
     writes one column. A reachability probe must not be able to rewrite a credential — the
     argument `get_approval_card_service` makes about a render path that must not grant an
     authorization.
     """
     return WHMServerValidationService(
         session_factory=get_session_factory(request),
-        repository_factory=SQLWHMHostKeyPinRepository,
+        repository_factory=partial(SQLHostKeyPinRepository, model=WHMServer),
         cipher=cipher,
         audit_sink=StructlogAdminAuditSink(),
     )
@@ -536,14 +555,14 @@ def get_proxmox_server_validation_service(
     """Proxmox's reachability probe.
 
     Same session discipline as WHM's above, and a strictly weaker repository:
-    `SQLProxmoxServerRepository` is the `SELECT`-only read repository, because Proxmox has no
+    `SQLServerRepository` is the `SELECT`-only read repository, because Proxmox has no
     SSH path and therefore no host key to pin (per the external-system transports). This
     validate writes nothing at all, and
     the type says so.
     """
     return ProxmoxServerValidationService(
         session_factory=get_session_factory(request),
-        repository_factory=SQLProxmoxServerRepository,
+        repository_factory=partial(SQLServerRepository, model=ProxmoxServer),
         cipher=cipher,
         audit_sink=StructlogAdminAuditSink(),
     )
@@ -556,7 +575,7 @@ def get_pmg_server_validation_service(
     """PMG's reachability probe. Same shape as WHM's, one table over."""
     return PMGServerValidationService(
         session_factory=get_session_factory(request),
-        repository_factory=SQLPMGHostKeyPinRepository,
+        repository_factory=partial(SQLHostKeyPinRepository, model=PMGServer),
         cipher=cipher,
         audit_sink=StructlogAdminAuditSink(),
     )

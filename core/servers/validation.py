@@ -128,10 +128,10 @@ RowT_co = TypeVar("RowT_co", covariant=True)
 class HostKeyPinRepository(Protocol[RowT_co]):
     """Read one server row; write only its host-key fingerprint.
 
-    The narrowest thing a reachability probe can be handed. `SQLWHMHostKeyPinRepository` and
-    `SQLPMGHostKeyPinRepository` are the implementations, and neither can change a credential
-    or delete a row — the split `noa_api.api.deps` makes for the approval card, spelled against
-    inventory (the pin is the thing being protected here).
+    The narrowest thing a reachability probe can be handed. `SQLHostKeyPinRepository`, bound to
+    `whm_servers` or to `pmg_servers`, is the implementation, and it can change no credential
+    and delete no row — the split `noa_api.api.deps` makes for the approval card, spelled
+    against inventory (the pin is the thing being protected here).
     """
 
     async def get_by_id(self, server_id: UUID) -> RowT_co | None: ...

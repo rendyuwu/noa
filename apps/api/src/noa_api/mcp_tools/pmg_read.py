@@ -70,7 +70,7 @@ from core.integrations.pmg.mynetworks import (
 from core.integrations.pmg.pmgsh_cli import run_pmg_mynetworks_list
 from core.integrations.pmg.ssh import resolve_pmg_ssh_config
 from core.results.tables import TableColumn
-from core.servers.pmg_ref import resolve_pmg_server_ref
+from core.servers.reference import resolve_pmg_server_ref
 from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.results import (
     ERROR_UNKNOWN,

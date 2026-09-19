@@ -82,7 +82,7 @@ from core.integrations.whm.imunify import (
 from core.integrations.whm.imunify_cli import parse_imunify_json_output, run_imunify_command
 from core.integrations.whm.ssh import resolve_whm_ssh_config
 from core.remote_exec.types import SSHConnectionConfig
-from core.servers.whm_ref import resolve_whm_server_ref
+from core.servers.reference import resolve_whm_server_ref
 from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.results import (
     ERROR_UNKNOWN,

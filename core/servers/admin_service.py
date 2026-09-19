@@ -1,10 +1,10 @@
 """Server-inventory CRUD policy: names, encryption, audit, commit.
 
-Three services, one per table, and they hold every rule the fifteen admin routes have. The
-routes (`noa_api.api.routes.admin_servers`) resolve the actor, call one method and shape the
-answer — the split `noa_api.api.routes.mcp_tokens` states one file over, and the reason is the
-same: these rules are properties of the *row*, so a future CLI, fixture or bootstrap script
-gets them too, not only whoever calls the HTTP path.
+One service over three policy constants — one per table — and between them they hold every
+rule the fifteen admin routes have. The routes (`noa_api.api.routes.admin_servers`) resolve the
+actor, call one method and shape the answer — the split `noa_api.api.routes.mcp_tokens` states
+one file over, and the reason is the same: these rules are properties of the *row*, so a future
+CLI, fixture or bootstrap script gets them too, not only whoever calls the HTTP path.
 
 Five rules, and each is here rather than in a route:
 
@@ -31,7 +31,8 @@ Five rules, and each is here rather than in a route:
    only flips the flag is refused too. `false` rows are not bound — the sixteen root rows
    cannot all be named `root`. It is the first cross-field rule on this surface, and it is here
    for the reason the name check is: it is a property of the row, so a fixture or a bootstrap
-   script that inserts a reseller credential owes it as well.
+   script that inserts a reseller credential owes it as well. It reaches the shared flow through
+   `ServerAdminPolicy.check`, which the other two tables fill with `_no_check`.
 
 Deliberately NOT here: the reachability probe. `POST …/validate` opens a socket to somebody else's
 host, and holding a pooled connection across that hop is how a slow server becomes a database outage
@@ -41,9 +42,9 @@ the session factory, and can write exactly one column.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from dataclasses import replace
-from typing import Any, TypeVar
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, replace
+from typing import Any, Final, Generic, TypeVar
 from uuid import UUID
 
 from core.audit.admin_events import (
@@ -62,14 +63,15 @@ from core.audit.admin_events import (
 from core.db.models import PMGServer, ProxmoxServer, WHMServer
 from core.secrets.crypto import SecretCipher
 from core.servers.admin_repository import (
-    PMGServerAdminRepository,
+    CreateT,
+    PatchT,
     PMGServerCreate,
     PMGServerUpdate,
-    ProxmoxServerAdminRepository,
     ProxmoxServerCreate,
     ProxmoxServerUpdate,
+    RowT,
+    ServerAdminRepository,
     SSHCredentials,
-    WHMServerAdminRepository,
     WHMServerCreate,
     WHMServerUpdate,
 )
@@ -78,6 +80,7 @@ from core.servers.errors import (
     PMGServerNotFoundError,
     ProxmoxServerNameExistsError,
     ProxmoxServerNotFoundError,
+    ServerInventoryError,
     WHMResellerCredentialNameMismatchError,
     WHMServerNameExistsError,
     WHMServerNotFoundError,
@@ -85,6 +88,12 @@ from core.servers.errors import (
 from core.servers.naming import normalize_whm_identity
 
 SSHCredentialsT = TypeVar("SSHCredentialsT", bound=SSHCredentials)
+
+# Constrained to the create-or-update pair of one table, so `replace` keeps the concrete type
+# and the encrypt functions below cannot be handed another vertical's spec.
+WHMSpecT = TypeVar("WHMSpecT", WHMServerCreate, WHMServerUpdate)
+ProxmoxSpecT = TypeVar("ProxmoxSpecT", ProxmoxServerCreate, ProxmoxServerUpdate)
+PMGSpecT = TypeVar("PMGSpecT", PMGServerCreate, PMGServerUpdate)
 
 
 def encrypt_ssh_credentials(values: SSHCredentialsT, *, cipher: SecretCipher) -> SSHCredentialsT:
@@ -144,90 +153,203 @@ def _ssh_metadata(server: WHMServer | PMGServer) -> dict[str, Any]:
     }
 
 
-class WHMServerAdminService:
-    """List / create / update / delete for `whm_servers`."""
+# --- What differed between the three tables ---
+
+
+def _encrypt_whm(spec: WHMSpecT, cipher: SecretCipher) -> WHMSpecT:
+    """A WHM create or patch with its secrets encrypted.
+
+    `_maybe_encrypt` covers both: on a create `api_token` is always set, and on a patch `None`
+    means "leave the stored value alone", which encrypting would turn into "wipe it".
+    """
+    return replace(
+        spec,
+        api_token=_maybe_encrypt(spec.api_token, cipher=cipher),
+        ssh=encrypt_ssh_credentials(spec.ssh, cipher=cipher),
+    )
+
+
+def _encrypt_proxmox(spec: ProxmoxSpecT, cipher: SecretCipher) -> ProxmoxSpecT:
+    return replace(spec, api_token_secret=_maybe_encrypt(spec.api_token_secret, cipher=cipher))
+
+
+def _encrypt_pmg(spec: PMGSpecT, cipher: SecretCipher) -> PMGSpecT:
+    return replace(spec, ssh=encrypt_ssh_credentials(spec.ssh, cipher=cipher))
+
+
+def _whm_metadata(server: WHMServer) -> dict[str, Any]:
+    return {
+        "base_url": server.base_url,
+        "api_username": server.api_username,
+        "verify_ssl": server.verify_ssl,
+        # Which credential class this row now holds. An account CHANGE is refused or allowed
+        # by the owner compare, so "when did this row become a reseller credential, and who
+        # said so" is a question the trail must answer.
+        "is_reseller_credential": server.is_reseller_credential,
+        **_ssh_metadata(server),
+    }
+
+
+def _proxmox_metadata(server: ProxmoxServer) -> dict[str, Any]:
+    return {
+        "base_url": server.base_url,
+        "api_token_id": server.api_token_id,
+        "verify_ssl": server.verify_ssl,
+    }
+
+
+def _pmg_metadata(server: PMGServer) -> dict[str, Any]:
+    return {"ssh_host": server.ssh_host, **_ssh_metadata(server)}
+
+
+def _no_check(current: Any, spec: Any) -> None:
+    """Proxmox and PMG have no cross-field rule on the row a write produces."""
+
+
+def _check_whm_reseller_name(
+    current: WHMServer | None, spec: WHMServerCreate | WHMServerUpdate
+) -> None:
+    """The owner-name-match rule, against the row the write *produces*.
+
+    `current` is `None` on create, where every field the rule reads is required, so the
+    fallbacks below only ever run on update — which is the path a patch that flips the flag on
+    and touches nothing else arrives by, and the one reading the request body alone would let
+    through.
+    """
+    is_reseller = spec.is_reseller_credential
+    if is_reseller is None:
+        is_reseller = current.is_reseller_credential  # update only; `current` is set there
+    if not is_reseller:
+        return
+    _require_reseller_name_matches(
+        name=spec.name if spec.name is not None else current.name,
+        api_username=(spec.api_username if spec.api_username is not None else current.api_username),
+    )
+
+
+# --- One policy per table, one service over all three ---
+
+
+@dataclass(frozen=True)
+class ServerAdminPolicy(Generic[RowT, CreateT, PatchT]):
+    """Everything that differed between the three deleted CRUD services.
+
+    A frozen constant per vertical rather than six constructor keywords at three wiring sites:
+    the point of one service is that the three verticals' differences sit side by side, and
+    that only happens if they are written in one file.
+    """
+
+    table: str
+    not_found: type[ServerInventoryError]
+    name_exists: type[ServerInventoryError]
+    event_created: str
+    event_updated: str
+    event_deleted: str
+    encrypt: Callable[[Any, SecretCipher], Any]
+    metadata: Callable[[Any], dict[str, Any]]
+    # Runs before the name query on both writes, with the stored row (`None` on create) and the
+    # incoming spec. WHM's owner-name-match rule is the only user.
+    check: Callable[[Any, Any], None]
+
+
+WHM_ADMIN_POLICY: Final = ServerAdminPolicy(
+    table="whm_servers",
+    not_found=WHMServerNotFoundError,
+    name_exists=WHMServerNameExistsError,
+    event_created=EVENT_WHM_SERVER_CREATED,
+    event_updated=EVENT_WHM_SERVER_UPDATED,
+    event_deleted=EVENT_WHM_SERVER_DELETED,
+    encrypt=_encrypt_whm,
+    metadata=_whm_metadata,
+    check=_check_whm_reseller_name,
+)
+
+PROXMOX_ADMIN_POLICY: Final = ServerAdminPolicy(
+    table="proxmox_servers",
+    not_found=ProxmoxServerNotFoundError,
+    name_exists=ProxmoxServerNameExistsError,
+    event_created=EVENT_PROXMOX_SERVER_CREATED,
+    event_updated=EVENT_PROXMOX_SERVER_UPDATED,
+    event_deleted=EVENT_PROXMOX_SERVER_DELETED,
+    encrypt=_encrypt_proxmox,
+    metadata=_proxmox_metadata,
+    check=_no_check,
+)
+
+PMG_ADMIN_POLICY: Final = ServerAdminPolicy(
+    table="pmg_servers",
+    not_found=PMGServerNotFoundError,
+    name_exists=PMGServerNameExistsError,
+    event_created=EVENT_PMG_SERVER_CREATED,
+    event_updated=EVENT_PMG_SERVER_UPDATED,
+    event_deleted=EVENT_PMG_SERVER_DELETED,
+    encrypt=_encrypt_pmg,
+    metadata=_pmg_metadata,
+    check=_no_check,
+)
+
+
+class ServerAdminService(Generic[RowT, CreateT, PatchT]):
+    """List / create / update / delete for one server-inventory table.
+
+    A row with no SSH credentials is still creatable on every table that has them: an admin
+    filling in a host before the key arrives is a legitimate order of operations, and
+    `resolve_*_ssh_config` answers `ssh_not_configured` in the meantime, which names the
+    remedy. Refusing here would add a rule no invariant asks for; the same call
+    `core.auth.mcp_token_service` makes about minting for an inactive operator.
+    """
 
     def __init__(
         self,
         *,
-        repository: WHMServerAdminRepository,
+        repository: ServerAdminRepository[RowT, CreateT, PatchT],
+        policy: ServerAdminPolicy[RowT, CreateT, PatchT],
         cipher: SecretCipher,
         audit_sink: AdminAuditSink,
     ) -> None:
         self._repository = repository
+        self._policy = policy
         self._cipher = cipher
         self._audit = audit_sink
 
-    async def list_servers(self) -> Sequence[WHMServer]:
-        """Every WHM server, ordered by name in SQL (see the read repository)."""
+    async def list_servers(self) -> Sequence[RowT]:
+        """Every server of this table, ordered by name in SQL (see the read repository)."""
         return await self._repository.list_servers()
 
-    async def create(self, spec: WHMServerCreate, *, actor_email: str | None = None) -> WHMServer:
+    async def create(self, spec: CreateT, *, actor_email: str | None = None) -> RowT:
         """Insert one server. `spec`'s secrets are **plaintext** on the way in."""
-        # Before the name query: this one needs no round trip, and a mismatched reseller row is
-        # refused whether or not the name is also taken.
-        if spec.is_reseller_credential:
-            _require_reseller_name_matches(name=spec.name, api_username=spec.api_username)
+        # Before the name query: the cross-field rule needs no round trip, and a row it
+        # refuses is refused whether or not the name is also taken.
+        self._policy.check(None, spec)
         if await self._repository.name_taken(spec.name):
-            raise WHMServerNameExistsError(f"`whm_servers.name` `{spec.name}` is taken")
+            raise self._policy.name_exists(f"`{self._policy.table}.name` `{spec.name}` is taken")
 
-        server = await self._repository.create(
-            replace(
-                spec,
-                api_token=self._cipher.encrypt_text(spec.api_token),
-                ssh=encrypt_ssh_credentials(spec.ssh, cipher=self._cipher),
-            )
-        )
-        await self._record(EVENT_WHM_SERVER_CREATED, actor_email, server)
+        server = await self._repository.create(self._policy.encrypt(spec, self._cipher))
+        await self._record(self._policy.event_created, actor_email, server)
         await self._repository.commit()
         return server
 
     async def update(
-        self, server_id: UUID, patch: WHMServerUpdate, *, actor_email: str | None = None
-    ) -> WHMServer:
+        self, server_id: UUID, patch: PatchT, *, actor_email: str | None = None
+    ) -> RowT:
         """Apply a partial edit. Absent row → 404 before the name check, not after."""
         current = await self._repository.get_by_id(server_id)
         if current is None:
-            raise WHMServerNotFoundError(f"no `whm_servers` row `{server_id}`")
+            raise self._policy.not_found(f"no `{self._policy.table}` row `{server_id}`")
 
-        # The owner-name-match rule against the row the patch *produces*, which is why the stored
-        # values are read here: a patch flipping the flag on carries neither field, and a patch
-        # renaming an already-reseller row carries only one of the two.
-        is_reseller = (
-            current.is_reseller_credential
-            if patch.is_reseller_credential is None
-            else patch.is_reseller_credential
-        )
-        if is_reseller:
-            _require_reseller_name_matches(
-                name=current.name if patch.name is None else patch.name,
-                api_username=(
-                    current.api_username if patch.api_username is None else patch.api_username
-                ),
-            )
+        self._policy.check(current, patch)
         if patch.name is not None and await self._repository.name_taken(
             patch.name, exclude_id=server_id
         ):
-            raise WHMServerNameExistsError(f"`whm_servers.name` `{patch.name}` is taken")
+            raise self._policy.name_exists(f"`{self._policy.table}.name` `{patch.name}` is taken")
 
-        server = await self._repository.update(
-            server_id,
-            replace(
-                patch,
-                api_token=(
-                    self._cipher.encrypt_text(patch.api_token)
-                    if patch.api_token is not None
-                    else None
-                ),
-                ssh=encrypt_ssh_credentials(patch.ssh, cipher=self._cipher),
-            ),
-        )
+        server = await self._repository.update(server_id, self._policy.encrypt(patch, self._cipher))
         if server is None:
             # Reachable only if the row was deleted between the guard above and here. The
-            # answer is still 404, and raising beats returning `None` from a `-> WHMServer`.
-            raise WHMServerNotFoundError(f"no `whm_servers` row `{server_id}`")
+            # answer is still 404, and raising beats returning `None` from a `-> RowT`.
+            raise self._policy.not_found(f"no `{self._policy.table}` row `{server_id}`")
 
-        await self._record(EVENT_WHM_SERVER_UPDATED, actor_email, server)
+        await self._record(self._policy.event_updated, actor_email, server)
         await self._repository.commit()
         return server
 
@@ -235,12 +357,12 @@ class WHMServerAdminService:
         """Delete one server. Its tool grants are unaffected — grants name tools, not hosts."""
         server = await self._repository.get_by_id(server_id)
         if server is None or not await self._repository.delete(server_id):
-            raise WHMServerNotFoundError(f"no `whm_servers` row `{server_id}`")
+            raise self._policy.not_found(f"no `{self._policy.table}` row `{server_id}`")
 
-        await self._record(EVENT_WHM_SERVER_DELETED, actor_email, server)
+        await self._record(self._policy.event_deleted, actor_email, server)
         await self._repository.commit()
 
-    async def _record(self, event_type: str, actor_email: str | None, server: WHMServer) -> None:
+    async def _record(self, event_type: str, actor_email: str | None, server: RowT) -> None:
         await self._audit.record(
             AdminAuditEvent(
                 event_type=event_type,
@@ -249,186 +371,7 @@ class WHMServerAdminService:
                 metadata={
                     "server_id": str(server.id),
                     "server_name": server.name,
-                    "base_url": server.base_url,
-                    "api_username": server.api_username,
-                    "verify_ssl": server.verify_ssl,
-                    # Which credential class this row now holds. An account CHANGE is refused
-                    # or allowed by the owner compare, so "when did this row become a
-                    # reseller credential, and who said so" is a question the trail must answer.
-                    "is_reseller_credential": server.is_reseller_credential,
-                    **_ssh_metadata(server),
-                },
-            )
-        )
-
-
-class ProxmoxServerAdminService:
-    """List / create / update / delete for `proxmox_servers`.
-
-    No SSH block anywhere: Proxmox is an HTTP API and nothing else, so there is one
-    secret column and no host key to pin.
-    """
-
-    def __init__(
-        self,
-        *,
-        repository: ProxmoxServerAdminRepository,
-        cipher: SecretCipher,
-        audit_sink: AdminAuditSink,
-    ) -> None:
-        self._repository = repository
-        self._cipher = cipher
-        self._audit = audit_sink
-
-    async def list_servers(self) -> Sequence[ProxmoxServer]:
-        return await self._repository.list_servers()
-
-    async def create(
-        self, spec: ProxmoxServerCreate, *, actor_email: str | None = None
-    ) -> ProxmoxServer:
-        """Insert one server. `spec.api_token_secret` is **plaintext** on the way in."""
-        if await self._repository.name_taken(spec.name):
-            raise ProxmoxServerNameExistsError(f"`proxmox_servers.name` `{spec.name}` is taken")
-
-        server = await self._repository.create(
-            replace(spec, api_token_secret=self._cipher.encrypt_text(spec.api_token_secret))
-        )
-        await self._record(EVENT_PROXMOX_SERVER_CREATED, actor_email, server)
-        await self._repository.commit()
-        return server
-
-    async def update(
-        self, server_id: UUID, patch: ProxmoxServerUpdate, *, actor_email: str | None = None
-    ) -> ProxmoxServer:
-        if await self._repository.get_by_id(server_id) is None:
-            raise ProxmoxServerNotFoundError(f"no `proxmox_servers` row `{server_id}`")
-        if patch.name is not None and await self._repository.name_taken(
-            patch.name, exclude_id=server_id
-        ):
-            raise ProxmoxServerNameExistsError(f"`proxmox_servers.name` `{patch.name}` is taken")
-
-        server = await self._repository.update(
-            server_id,
-            replace(
-                patch,
-                api_token_secret=(
-                    self._cipher.encrypt_text(patch.api_token_secret)
-                    if patch.api_token_secret is not None
-                    else None
-                ),
-            ),
-        )
-        if server is None:
-            raise ProxmoxServerNotFoundError(f"no `proxmox_servers` row `{server_id}`")
-
-        await self._record(EVENT_PROXMOX_SERVER_UPDATED, actor_email, server)
-        await self._repository.commit()
-        return server
-
-    async def delete(self, server_id: UUID, *, actor_email: str | None = None) -> None:
-        server = await self._repository.get_by_id(server_id)
-        if server is None or not await self._repository.delete(server_id):
-            raise ProxmoxServerNotFoundError(f"no `proxmox_servers` row `{server_id}`")
-
-        await self._record(EVENT_PROXMOX_SERVER_DELETED, actor_email, server)
-        await self._repository.commit()
-
-    async def _record(
-        self, event_type: str, actor_email: str | None, server: ProxmoxServer
-    ) -> None:
-        await self._audit.record(
-            AdminAuditEvent(
-                event_type=event_type,
-                actor_email=actor_email,
-                target=server.name,
-                metadata={
-                    "server_id": str(server.id),
-                    "server_name": server.name,
-                    "base_url": server.base_url,
-                    "api_token_id": server.api_token_id,
-                    "verify_ssl": server.verify_ssl,
-                },
-            )
-        )
-
-
-class PMGServerAdminService:
-    """List / create / update / delete for `pmg_servers`.
-
-    SSH is not optional here, unlike WHM: PMG is reached over `pmgsh` over SSH and nothing
-    else, so a row with no credentials is a row no tool can use. It is still
-    *creatable* — an admin filling in a host before the key arrives is a legitimate order of
-    operations, and `resolve_pmg_ssh_config` answers `ssh_not_configured` in the meantime,
-    which names the remedy. Refusing here would add a rule no invariant asks for; the same
-    call `core.auth.mcp_token_service` makes about minting for an inactive operator.
-    """
-
-    def __init__(
-        self,
-        *,
-        repository: PMGServerAdminRepository,
-        cipher: SecretCipher,
-        audit_sink: AdminAuditSink,
-    ) -> None:
-        self._repository = repository
-        self._cipher = cipher
-        self._audit = audit_sink
-
-    async def list_servers(self) -> Sequence[PMGServer]:
-        return await self._repository.list_servers()
-
-    async def create(self, spec: PMGServerCreate, *, actor_email: str | None = None) -> PMGServer:
-        """Insert one server. `spec.ssh` carries **plaintext** secrets on the way in."""
-        if await self._repository.name_taken(spec.name):
-            raise PMGServerNameExistsError(f"`pmg_servers.name` `{spec.name}` is taken")
-
-        server = await self._repository.create(
-            replace(spec, ssh=encrypt_ssh_credentials(spec.ssh, cipher=self._cipher))
-        )
-        await self._record(EVENT_PMG_SERVER_CREATED, actor_email, server)
-        await self._repository.commit()
-        return server
-
-    async def update(
-        self, server_id: UUID, patch: PMGServerUpdate, *, actor_email: str | None = None
-    ) -> PMGServer:
-        if await self._repository.get_by_id(server_id) is None:
-            raise PMGServerNotFoundError(f"no `pmg_servers` row `{server_id}`")
-        if patch.name is not None and await self._repository.name_taken(
-            patch.name, exclude_id=server_id
-        ):
-            raise PMGServerNameExistsError(f"`pmg_servers.name` `{patch.name}` is taken")
-
-        server = await self._repository.update(
-            server_id,
-            replace(patch, ssh=encrypt_ssh_credentials(patch.ssh, cipher=self._cipher)),
-        )
-        if server is None:
-            raise PMGServerNotFoundError(f"no `pmg_servers` row `{server_id}`")
-
-        await self._record(EVENT_PMG_SERVER_UPDATED, actor_email, server)
-        await self._repository.commit()
-        return server
-
-    async def delete(self, server_id: UUID, *, actor_email: str | None = None) -> None:
-        server = await self._repository.get_by_id(server_id)
-        if server is None or not await self._repository.delete(server_id):
-            raise PMGServerNotFoundError(f"no `pmg_servers` row `{server_id}`")
-
-        await self._record(EVENT_PMG_SERVER_DELETED, actor_email, server)
-        await self._repository.commit()
-
-    async def _record(self, event_type: str, actor_email: str | None, server: PMGServer) -> None:
-        await self._audit.record(
-            AdminAuditEvent(
-                event_type=event_type,
-                actor_email=actor_email,
-                target=server.name,
-                metadata={
-                    "server_id": str(server.id),
-                    "server_name": server.name,
-                    "ssh_host": server.ssh_host,
-                    **_ssh_metadata(server),
+                    **self._policy.metadata(server),
                 },
             )
         )

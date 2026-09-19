@@ -318,7 +318,7 @@ what the missing methods were for.
 - **A server row is a cluster; `node` is one member of it, and both tools take both.** `server_ref`
   matches a row's id, its `name`, or the host of its `base_url`, exactly and case-insensitively — no
   fuzzy branch. When none of the three match and the reference ends in a `pve<NN>` suffix,
-  `resolve_proxmox_server_ref` (`core/servers/proxmox_ref.py`) strips the suffix and tries the
+  `resolve_proxmox_server_ref` (`core/servers/reference.py`) strips the suffix and tries the
   lookup **once** more, so a node reference like `examplepve09` resolves to the server named
   `example`. The exact match still wins whenever a row really is named after its own node — the
   retry only runs after the first lookup misses outright. A reference that is *only* a suffix, with
@@ -337,9 +337,8 @@ what the missing methods were for.
 - API client + credential factory: `core/integrations/proxmox/client.py`
 - Cloud-init reading + the crypt guard: `core/integrations/proxmox/cloudinit.py`
 - The `netN` codec: `core/integrations/proxmox/nic.py`
-- Server-ref resolution: `core/servers/proxmox_ref.py` over the shared
-  `core/servers/reference.py` (the password-reset tool extracted the policy the three systems
-  share — one helper, not two)
+- Server-ref resolution: `core/servers/reference.py`, which holds the policy the three systems
+  share *and* the three thin per-system wrappers over it
 - Admin CRUD + validate: `apps/api/src/noa_api/api/routes/admin_servers.py`,
   `core/servers/admin_service.py`, `core/servers/admin_repository.py`,
   `core/servers/validation.py`

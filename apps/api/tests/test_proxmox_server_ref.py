@@ -27,13 +27,13 @@ from uuid import uuid4
 
 import pytest
 
-from core.servers.proxmox_ref import (
+from core.servers.reference import (
     ERROR_AMBIGUOUS,
     ERROR_NOT_FOUND,
     ERROR_REQUIRED,
     MAX_CHOICES,
-    MESSAGE_REQUIRED,
-    describe,
+    describe_proxmox,
+    required_message,
     resolve_proxmox_server_ref,
 )
 from support.servers import (
@@ -148,12 +148,12 @@ def test_a_choice_names_the_server_without_a_credential() -> None:
     """
     server = proxmox_server("pve1", base_url="https://pve1.example.net:8006")
 
-    assert describe(server) == {
+    assert describe_proxmox(server) == {
         "id": str(server.id),
         "name": "pve1",
         "base_url": "https://pve1.example.net:8006",
     }
-    assert PROXMOX_API_TOKEN_SECRET not in describe(server).values()
+    assert PROXMOX_API_TOKEN_SECRET not in describe_proxmox(server).values()
 
 
 # --- The blank-reference guard and the not-found cases ---
@@ -171,7 +171,7 @@ async def test_a_blank_reference_is_refused() -> None:
 
     assert resolution.ok is False
     assert resolution.error_code == ERROR_REQUIRED
-    assert resolution.message == MESSAGE_REQUIRED
+    assert resolution.message == required_message("Proxmox")
     assert repository.reads == 0
 
 

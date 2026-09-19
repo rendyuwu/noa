@@ -29,7 +29,7 @@ validate routes. Reference doc: `docs/integrations/proxmox.md`.
 Not ported from `MCP`: the never-implement client methods (`get_user`, `get_pool`,
 `get_effective_permissions`, `add_vms_to_pool`, `remove_vms_from_pool`) and the
 `core/workflows/proxmox/` presentation layer, dropped with chat. Server-ref resolution
-landed with the password-reset tool, in `core.servers.proxmox_ref` — *finding* a server
+landed with the password-reset tool, in `core.servers.reference` — *finding* a server
 belongs to `core/servers/` (the server-list split), and this package talks to one it has
 been handed.
 """

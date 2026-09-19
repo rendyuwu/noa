@@ -1,4 +1,4 @@
-"""`SQLPMGServerRepository` against a live database.
+"""`SQLServerRepository` over `pmg_servers`, against a live database.
 
 `test_pmg_server_ref.py` and `test_pmg_tools_whitelist_search.py` cover policy over in-memory
 doubles; this covers the SQL. The same split `test_whm_server_repository.py` makes, and the same
@@ -25,7 +25,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from core.db.models import PMGServer
-from core.servers.pmg_repository import SQLPMGServerRepository
+from core.servers.repository import SQLServerRepository
 from support.database import MUTATED_TABLES, migrated_database, truncate
 from support.servers import SSH_PASSWORD
 
@@ -56,8 +56,8 @@ async def session(database_url: str) -> AsyncIterator[AsyncSession]:
 
 
 @pytest.fixture
-def repository(session: AsyncSession) -> SQLPMGServerRepository:
-    return SQLPMGServerRepository(session)
+def repository(session: AsyncSession) -> SQLServerRepository[PMGServer]:
+    return SQLServerRepository(session, model=PMGServer)
 
 
 async def insert(session: AsyncSession, name: str, *, ssh_host: str | None = None) -> PMGServer:
@@ -76,7 +76,7 @@ async def insert(session: AsyncSession, name: str, *, ssh_host: str | None = Non
 
 
 async def test_servers_come_back_ordered_by_name(
-    session: AsyncSession, repository: SQLPMGServerRepository
+    session: AsyncSession, repository: SQLServerRepository[PMGServer]
 ) -> None:
     """The `ORDER BY` is the database's, not the caller's.
 
@@ -92,13 +92,13 @@ async def test_servers_come_back_ordered_by_name(
     assert [server.name for server in servers] == ["alpha", "bravo", "charlie"]
 
 
-async def test_an_empty_table_lists_nothing(repository: SQLPMGServerRepository) -> None:
+async def test_an_empty_table_lists_nothing(repository: SQLServerRepository[PMGServer]) -> None:
     """No PMG servers configured is an empty list, not an error."""
     assert await repository.list_servers() == []
 
 
 async def test_get_by_id_finds_the_row(
-    session: AsyncSession, repository: SQLPMGServerRepository
+    session: AsyncSession, repository: SQLServerRepository[PMGServer]
 ) -> None:
     written = await insert(session, "pmg1")
 
@@ -110,14 +110,14 @@ async def test_get_by_id_finds_the_row(
 
 
 async def test_get_by_id_answers_none_for_a_missing_row(
-    repository: SQLPMGServerRepository,
+    repository: SQLServerRepository[PMGServer],
 ) -> None:
     """`None`, not a raise: `resolve_pmg_server_ref` turns it into `host_not_found`."""
     assert await repository.get_by_id(uuid4()) is None
 
 
 async def test_a_stored_row_carries_its_generated_identity(
-    session: AsyncSession, repository: SQLPMGServerRepository
+    session: AsyncSession, repository: SQLServerRepository[PMGServer]
 ) -> None:
     """`id`, `created_at` and `updated_at` are filled at insert, never by the caller, and the
     in-memory rows fill them by hand — this is the only place the real thing is checked."""
@@ -131,7 +131,7 @@ async def test_a_stored_row_carries_its_generated_identity(
 
 
 async def test_a_stored_row_renders_safely(
-    session: AsyncSession, repository: SQLPMGServerRepository
+    session: AsyncSession, repository: SQLServerRepository[PMGServer]
 ) -> None:
     """`to_safe_dict` on a real row: identifiers present, credentials absent.
 

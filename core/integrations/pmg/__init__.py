@@ -36,6 +36,6 @@ CHANGE tool `pmg_whitelist` (still to come); and the admin server CRUD + validat
 Reference doc: `docs/integrations/pmg.md`.
 
 Not ported from `MCP`: `pmg/server_ref.py` — reference resolution is inventory, not integration,
-so PMG's landed in `core/servers/pmg_ref.py` at the whitelist search's landing exactly where
+so PMG's landed in `core/servers/reference.py` at the whitelist search's landing exactly where
 WHM's did at the server-list tool's — and `core/workflows/pmg/` (dropped with chat presentation).
 """

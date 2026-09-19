@@ -1027,7 +1027,7 @@ If a PMG grant is ever narrowed, this rule is the one to apply there.
 
 ## 20. DECIDED — a Proxmox node name resolves to the server that runs it (2026-09-15)
 
-**The rule: `resolve_proxmox_server_ref` (`core/servers/proxmox_ref.py`) strips a `pve<NN>` suffix
+**The rule: `resolve_proxmox_server_ref` (`core/servers/reference.py`) strips a `pve<NN>` suffix
 off a `server_ref` and retries the lookup once — only after the first, exact lookup misses
 outright, never before it.**
 

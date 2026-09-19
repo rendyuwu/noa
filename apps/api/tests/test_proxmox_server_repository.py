@@ -1,4 +1,4 @@
-"""`SQLProxmoxServerRepository` against a live database.
+"""`SQLServerRepository` over `proxmox_servers`, against a live database.
 
 `test_proxmox_server_ref.py` and `test_proxmox_tools_reset_password.py` cover policy over
 in-memory doubles; this covers the SQL. The same split `test_whm_server_repository.py` and
@@ -31,7 +31,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from core.db.models import ProxmoxServer
-from core.servers.proxmox_repository import SQLProxmoxServerRepository
+from core.servers.repository import SQLServerRepository
 from support.database import MUTATED_TABLES, migrated_database, truncate
 from support.servers import PROXMOX_API_TOKEN_SECRET
 
@@ -62,8 +62,8 @@ async def session(database_url: str) -> AsyncIterator[AsyncSession]:
 
 
 @pytest.fixture
-def repository(session: AsyncSession) -> SQLProxmoxServerRepository:
-    return SQLProxmoxServerRepository(session)
+def repository(session: AsyncSession) -> SQLServerRepository[ProxmoxServer]:
+    return SQLServerRepository(session, model=ProxmoxServer)
 
 
 async def insert(
@@ -88,7 +88,7 @@ async def insert(
 
 
 async def test_servers_come_back_ordered_by_name(
-    session: AsyncSession, repository: SQLProxmoxServerRepository
+    session: AsyncSession, repository: SQLServerRepository[ProxmoxServer]
 ) -> None:
     """The `ORDER BY` is the database's, not the caller's.
 
@@ -104,13 +104,13 @@ async def test_servers_come_back_ordered_by_name(
     assert [server.name for server in servers] == ["alpha", "bravo", "charlie"]
 
 
-async def test_an_empty_table_lists_nothing(repository: SQLProxmoxServerRepository) -> None:
+async def test_an_empty_table_lists_nothing(repository: SQLServerRepository[ProxmoxServer]) -> None:
     """No Proxmox servers configured is an empty list, not an error."""
     assert await repository.list_servers() == []
 
 
 async def test_get_by_id_finds_the_row(
-    session: AsyncSession, repository: SQLProxmoxServerRepository
+    session: AsyncSession, repository: SQLServerRepository[ProxmoxServer]
 ) -> None:
     written = await insert(session, "pve1")
 
@@ -122,7 +122,7 @@ async def test_get_by_id_finds_the_row(
 
 
 async def test_get_by_id_answers_none_for_a_missing_row(
-    repository: SQLProxmoxServerRepository,
+    repository: SQLServerRepository[ProxmoxServer],
 ) -> None:
     """`None`, not a raise: `resolve_proxmox_server_ref` turns it into `host_not_found`,
     and on the CHANGE path a raise here would reach an operator as a failed run rather than
@@ -131,7 +131,7 @@ async def test_get_by_id_answers_none_for_a_missing_row(
 
 
 async def test_a_stored_row_carries_its_generated_identity(
-    session: AsyncSession, repository: SQLProxmoxServerRepository
+    session: AsyncSession, repository: SQLServerRepository[ProxmoxServer]
 ) -> None:
     """`id`, `created_at` and `updated_at` are filled at insert, never by the caller, and the
     in-memory rows fill them by hand — this is the only place the real thing is checked."""
@@ -158,7 +158,7 @@ async def test_verify_ssl_defaults_off_for_a_row_that_does_not_set_it() -> None:
 
 
 async def test_verify_ssl_round_trips_when_it_is_set(
-    session: AsyncSession, repository: SQLProxmoxServerRepository
+    session: AsyncSession, repository: SQLServerRepository[ProxmoxServer]
 ) -> None:
     """The other half: a row that turns verification on keeps it on."""
     await insert(session, "pve1", verify_ssl=True)
@@ -171,7 +171,7 @@ async def test_verify_ssl_round_trips_when_it_is_set(
 
 
 async def test_a_stored_row_renders_safely(
-    session: AsyncSession, repository: SQLProxmoxServerRepository
+    session: AsyncSession, repository: SQLServerRepository[ProxmoxServer]
 ) -> None:
     """`to_safe_dict` on a real row: identifiers present, the secret absent.
 

@@ -24,6 +24,7 @@ from typing import Any
 
 import asyncssh
 
+import core.remote_exec.ssh as ssh_module
 from core.remote_exec.types import CommandResult, SSHConnectionConfig
 
 PINNED_FINGERPRINT = "SHA256:pinned-fingerprint-value"
@@ -91,16 +92,36 @@ class FakeSSH:
         return self.handler(command)
 
 
+def patch_ssh_exec(
+    monkeypatch,  # type: ignore[no-untyped-def]
+    modules: Iterable[ModuleType],
+    replacement: object,
+) -> None:
+    """Bind `replacement` everywhere `modules` can reach `ssh_exec`.
+
+    `core.remote_exec.ssh` itself first: `csf_cli`, `imunify_cli` and `pmgsh_cli` run their
+    commands through `run_cli`, which resolves `ssh_exec` from that module's own globals, so
+    patching there is what covers them. `availability` still does
+    `from core.remote_exec.ssh import ssh_exec`, and that name was bound at import — hence the
+    per-module pass as well, for whichever of `modules` carries its own binding.
+
+    Separate from `install_fake_ssh_exec_in` because a test whose stand-in has to *await*
+    something cannot express itself as that function's synchronous `handler`, and a second
+    hand-written copy of this two-step is a second thing to forget when a module changes how it
+    reaches the transport.
+    """
+    monkeypatch.setattr(ssh_module, "ssh_exec", replacement)
+    for module in modules:
+        if hasattr(module, "ssh_exec"):
+            monkeypatch.setattr(module, "ssh_exec", replacement)
+
+
 def install_fake_ssh_exec_in(
     monkeypatch,  # type: ignore[no-untyped-def]
     modules: Iterable[ModuleType],
     handler: Callable[[str], CommandResult],
 ) -> FakeSSH:
-    """Replace `ssh_exec` inside each module's namespace, sharing one recorder.
-
-    Per-module because `csf_cli`, `imunify_cli`, `availability` and `pmgsh_cli` each did
-    `from core.remote_exec.ssh import ssh_exec` — patching the source module would leave those
-    names bound to the original.
+    """Replace `ssh_exec` everywhere the named modules can reach it, sharing one recorder.
 
     Several modules at once because a tool call crosses them: the dual-backend firewall read's
     preflight probes through
@@ -108,8 +129,7 @@ def install_fake_ssh_exec_in(
     is what lets a test assert the *whole* command sequence and its order.
     """
     fake = FakeSSH(handler=handler)
-    for module in modules:
-        monkeypatch.setattr(module, "ssh_exec", fake)
+    patch_ssh_exec(monkeypatch, modules, fake)
     return fake
 
 
@@ -235,5 +255,6 @@ __all__ = [
     "install_fake_ssh_exec_in",
     "loopback_ssh_config",
     "loopback_ssh_server",
+    "patch_ssh_exec",
     "ssh_config",
 ]

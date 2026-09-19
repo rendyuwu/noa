@@ -38,15 +38,19 @@ from sqlalchemy.orm import InstrumentedAttribute
 from core.db.models import WHMServer
 from core.secrets.crypto import SecretCipher
 from core.servers.admin_repository import (
-    SQLWHMServerAdminRepository,
+    SQLServerAdminRepository,
     WHMServerCreate,
     WHMServerUpdate,
 )
-from core.servers.admin_service import WHMServerAdminService
+from core.servers.admin_service import WHM_ADMIN_POLICY, ServerAdminService
 from core.servers.errors import WHMResellerCredentialNameMismatchError
 from support.database import MUTATED_TABLES, migrated_database, truncate
 from support.rbac import RecordingAuditSink
 from support.secrets import build_cipher
+
+# The one service shape this file exercises, named once: the subscript is what carries the row
+# and spec types through `ServerAdminService`'s three parameters.
+WHMAdminService = ServerAdminService[WHMServer, WHMServerCreate, WHMServerUpdate]
 
 SCRATCH_DB = "noa_whm_reseller_credential_test"
 
@@ -94,9 +98,10 @@ def cipher() -> SecretCipher:
 
 
 @pytest.fixture
-def service(session: AsyncSession, cipher: SecretCipher) -> WHMServerAdminService:
-    return WHMServerAdminService(
-        repository=SQLWHMServerAdminRepository(session),
+def service(session: AsyncSession, cipher: SecretCipher) -> WHMAdminService:
+    return ServerAdminService(
+        repository=SQLServerAdminRepository(session, model=WHMServer, host_field="base_url"),
+        policy=WHM_ADMIN_POLICY,
         cipher=cipher,
         audit_sink=RecordingAuditSink(),
     )
@@ -198,7 +203,7 @@ async def test_the_column_refuses_null(session: AsyncSession) -> None:
 
 
 async def test_a_reseller_create_not_named_after_its_api_username_is_refused(
-    service: WHMServerAdminService, session_factory: async_sessionmaker[AsyncSession]
+    service: WHMAdminService, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     """The row an account CHANGE could never address, refused at the write — the name ==
     `api_username` rule, owner-as-`server_ref`."""
@@ -216,7 +221,7 @@ async def test_a_reseller_create_not_named_after_its_api_username_is_refused(
 
 
 async def test_a_reseller_create_named_after_its_api_username_is_stored(
-    service: WHMServerAdminService, session_factory: async_sessionmaker[AsyncSession]
+    service: WHMAdminService, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     """The accepting twin. Without it, the refusal above passes against a blanket refusal."""
     created = await service.create(
@@ -228,7 +233,7 @@ async def test_a_reseller_create_named_after_its_api_username_is_stored(
 
 
 async def test_a_root_row_may_be_named_anything(
-    service: WHMServerAdminService, session_factory: async_sessionmaker[AsyncSession]
+    service: WHMAdminService, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     """`false` rows are not bound: sixteen root credentials cannot all be named `root`.
 
@@ -242,7 +247,7 @@ async def test_a_root_row_may_be_named_anything(
 
 
 async def test_the_compare_ignores_case_and_surrounding_whitespace(
-    service: WHMServerAdminService,
+    service: WHMAdminService,
 ) -> None:
     """`strip().lower()` on both sides — the normalisation the owner-as-`server_ref` compare uses.
 
@@ -274,7 +279,7 @@ async def test_the_compare_ignores_case_and_surrounding_whitespace(
 
 
 async def test_flipping_the_flag_on_alone_is_refused(
-    service: WHMServerAdminService, session_factory: async_sessionmaker[AsyncSession]
+    service: WHMAdminService, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     """The patch that carries neither field, which is why the rule reads the stored row."""
     created = await service.create(whm_spec("web16", api_username=RESELLER), actor_email=ACTOR)
@@ -288,7 +293,7 @@ async def test_flipping_the_flag_on_alone_is_refused(
 
 
 async def test_flipping_the_flag_on_alone_is_accepted_when_the_row_already_matches(
-    service: WHMServerAdminService, session_factory: async_sessionmaker[AsyncSession]
+    service: WHMAdminService, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     """The accepting twin of the case above, on a row whose name already is its username."""
     created = await service.create(whm_spec(RESELLER, api_username=RESELLER), actor_email=ACTOR)
@@ -302,7 +307,7 @@ async def test_flipping_the_flag_on_alone_is_accepted_when_the_row_already_match
 
 
 async def test_renaming_a_reseller_row_away_from_its_api_username_is_refused(
-    service: WHMServerAdminService, session_factory: async_sessionmaker[AsyncSession]
+    service: WHMAdminService, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     """One operand from the patch, one from the row — and the stored name survives the refusal."""
     created = await service.create(
@@ -316,7 +321,7 @@ async def test_renaming_a_reseller_row_away_from_its_api_username_is_refused(
 
 
 async def test_moving_only_the_api_username_of_a_reseller_row_is_refused(
-    service: WHMServerAdminService, session_factory: async_sessionmaker[AsyncSession]
+    service: WHMAdminService, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     """The mirror image: the row keeps its name and the credential moves out from under it.
 
@@ -338,7 +343,7 @@ async def test_moving_only_the_api_username_of_a_reseller_row_is_refused(
 
 
 async def test_a_reseller_row_may_move_both_together(
-    service: WHMServerAdminService, session_factory: async_sessionmaker[AsyncSession]
+    service: WHMAdminService, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     """A rekeyed reseller row is a legitimate save, and this is what makes the two refusals
     above assertions about the *pair* rather than about editing a reseller row at all."""
@@ -357,7 +362,7 @@ async def test_a_reseller_row_may_move_both_together(
 
 
 async def test_unmarking_a_row_frees_its_name(
-    service: WHMServerAdminService, session_factory: async_sessionmaker[AsyncSession]
+    service: WHMAdminService, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     """Clearing the checkbox and renaming in one save is accepted, because the resulting row is
     a root credential and the rule is about the result — the name == `api_username` rule."""
@@ -377,7 +382,7 @@ async def test_unmarking_a_row_frees_its_name(
 
 
 async def test_an_unrelated_patch_leaves_a_reseller_row_alone(
-    service: WHMServerAdminService, session_factory: async_sessionmaker[AsyncSession]
+    service: WHMAdminService, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     """A save that touches neither field keeps the flag: `None` means "leave alone" here too,
     so editing an SSH port cannot silently unmark a reseller credential."""

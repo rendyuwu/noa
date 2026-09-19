@@ -5,7 +5,7 @@ deferred to this task in prose: `create`, `update`, `delete`, and the one-column
 validate flow makes when it captures a host key.
 
 **Separate classes from the read repositories, not extra methods on them.** The MCP tool path
-holds `SQLWHMServerRepository` to resolve a server reference, and it must not hold
+holds `SQLServerRepository` to resolve a server reference, and it must not hold
 an object that can delete one. That is the split `noa_api.api.deps` already makes twice —
 `SQLApprovalCardRepository` has no `commit` and issues no statement that is not a `SELECT`, so
 a render path cannot grant an authorization — spelled here against inventory. The reads are
@@ -48,17 +48,15 @@ answers 200 over a rollback — the same flush-only rollback hole, one table apa
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
-from typing import Final, Protocol
+from dataclasses import dataclass, fields
+from typing import Any, Final, Generic, Protocol, TypeVar
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db.models import PMGServer, ProxmoxServer, WHMServer
-from core.servers.pmg_repository import SQLPMGServerRepository
-from core.servers.proxmox_repository import SQLProxmoxServerRepository
-from core.servers.whm_repository import SQLWHMServerRepository
+from core.servers.repository import ServerModelT, SQLServerRepository
 
 # The `SSHCredentialsMixin` columns (`core.db.models`), in one tuple so the value walk and the
 # clear walk cannot drift apart. Each has a matching `clear_<name>` flag on the patch below.
@@ -240,228 +238,113 @@ def apply_ssh_fields_with_pin_rule(
         row.ssh_host_key_fingerprint = None
 
 
-# --- WHM ---
+# --- One admin repository, three tables ---
+
+RowT = TypeVar("RowT")
+CreateT = TypeVar("CreateT")
+PatchT = TypeVar("PatchT")
 
 
-class WHMServerAdminRepository(Protocol):
-    """What `WHMServerAdminService` needs from `whm_servers`.
+class ServerAdminRepository(Protocol[RowT, CreateT, PatchT]):
+    """What `ServerAdminService` needs from one inventory table.
 
     `name_taken` takes `exclude_id` rather than being two methods: an update has to allow a
     row to keep its own name, and a caller passing the wrong id would otherwise refuse every
     save that did not rename.
+
+    Three parameters rather than three Protocols: the methods were byte-identical across WHM,
+    Proxmox and PMG and only the row and spec types differed, so the difference is the
+    parameter list.
     """
 
-    async def list_servers(self) -> Sequence[WHMServer]: ...
+    async def list_servers(self) -> Sequence[RowT]: ...
 
-    async def get_by_id(self, server_id: UUID) -> WHMServer | None: ...
+    async def get_by_id(self, server_id: UUID) -> RowT | None: ...
 
     async def name_taken(self, name: str, *, exclude_id: UUID | None = None) -> bool: ...
 
-    async def create(self, spec: WHMServerCreate) -> WHMServer: ...
+    async def create(self, spec: CreateT) -> RowT: ...
 
-    async def update(self, server_id: UUID, patch: WHMServerUpdate) -> WHMServer | None: ...
+    async def update(self, server_id: UUID, patch: PatchT) -> RowT | None: ...
 
     async def delete(self, server_id: UUID) -> bool: ...
 
     async def commit(self) -> None: ...
 
 
-class SQLWHMServerAdminRepository:
-    """`WHMServerAdminRepository` over one `AsyncSession`."""
+def _column_values(spec: Any, *, skip_none: bool) -> dict[str, Any]:
+    """A create/update dataclass as column keywords. `ssh` is the one field that is not one.
 
-    def __init__(self, session: AsyncSession) -> None:
+    Every other field name on the six spec dataclasses is its column name, which is what lets
+    one loop replace three hand-written `if patch.X is not None: row.X = patch.X` chains.
+    `skip_none=True` is the update contract — `None` means "leave alone" — and
+    `skip_none=False` is create, where no field is ever `None` (the three `*Create` dataclasses
+    have no optional scalar).
+    """
+    values: dict[str, Any] = {}
+    for spec_field in fields(spec):
+        if spec_field.name == "ssh":
+            continue
+        value = getattr(spec, spec_field.name)
+        if skip_none and value is None:
+            continue
+        values[spec_field.name] = value
+    return values
+
+
+class SQLServerAdminRepository(Generic[ServerModelT, CreateT, PatchT]):
+    """`ServerAdminRepository` over one `AsyncSession`, for one inventory table.
+
+    `host_field` names the column a moved host is detected on — `base_url` for WHM,
+    `ssh_host` for PMG — and `None` means the table has no SSH block at all, which is
+    Proxmox: an HTTP API and nothing else, so no credentials to apply and no pin to invalidate.
+    """
+
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        model: type[ServerModelT],
+        host_field: str | None = None,
+    ) -> None:
         self._session = session
+        self._model = model
+        self._host_field = host_field
         # Composed, not re-implemented: `ORDER BY name` and the `None`-for-absent contract
         # live in the read repository and are covered by its own live test.
-        self._reads = SQLWHMServerRepository(session)
+        self._reads = SQLServerRepository(session, model=model)
 
-    async def list_servers(self) -> Sequence[WHMServer]:
+    async def list_servers(self) -> Sequence[ServerModelT]:
         return await self._reads.list_servers()
 
-    async def get_by_id(self, server_id: UUID) -> WHMServer | None:
+    async def get_by_id(self, server_id: UUID) -> ServerModelT | None:
         return await self._reads.get_by_id(server_id)
 
     async def name_taken(self, name: str, *, exclude_id: UUID | None = None) -> bool:
-        return await _name_taken(self._session, WHMServer, name=name, exclude_id=exclude_id)
+        return await _name_taken(self._session, self._model, name=name, exclude_id=exclude_id)
 
-    async def create(self, spec: WHMServerCreate) -> WHMServer:
-        server = WHMServer(
-            name=spec.name,
-            base_url=spec.base_url,
-            api_username=spec.api_username,
-            api_token=spec.api_token,
-            verify_ssl=spec.verify_ssl,
-            is_reseller_credential=spec.is_reseller_credential,
-        )
-        apply_ssh_fields(server, spec.ssh)
+    async def create(self, spec: CreateT) -> ServerModelT:
+        server = self._model(**_column_values(spec, skip_none=False))
+        if self._host_field is not None:
+            apply_ssh_fields(server, spec.ssh)  # type: ignore[attr-defined]
         return await _insert(self._session, server)
 
-    async def update(self, server_id: UUID, patch: WHMServerUpdate) -> WHMServer | None:
+    async def update(self, server_id: UUID, patch: PatchT) -> ServerModelT | None:
         server = await self.get_by_id(server_id)
         if server is None:
             return None
 
-        apply_ssh_fields_with_pin_rule(
-            server,
-            host_changed=patch.base_url is not None and patch.base_url != server.base_url,
-            patch=patch.ssh,
-        )
-        if patch.name is not None:
-            server.name = patch.name
-        if patch.base_url is not None:
-            server.base_url = patch.base_url
-        if patch.api_username is not None:
-            server.api_username = patch.api_username
-        if patch.api_token is not None:
-            server.api_token = patch.api_token
-        if patch.verify_ssl is not None:
-            server.verify_ssl = patch.verify_ssl
-        if patch.is_reseller_credential is not None:
-            server.is_reseller_credential = patch.is_reseller_credential
-
-        return await _refresh(self._session, server)
-
-    async def delete(self, server_id: UUID) -> bool:
-        return await _delete(self._session, await self.get_by_id(server_id))
-
-    async def commit(self) -> None:
-        await self._session.commit()
-
-
-# --- Proxmox ---
-
-
-class ProxmoxServerAdminRepository(Protocol):
-    """What `ProxmoxServerAdminService` needs from `proxmox_servers`.
-
-    No `set_host_key_fingerprint`: there is no SSH path to pin, so the validate flow
-    for this system writes nothing at all.
-    """
-
-    async def list_servers(self) -> Sequence[ProxmoxServer]: ...
-
-    async def get_by_id(self, server_id: UUID) -> ProxmoxServer | None: ...
-
-    async def name_taken(self, name: str, *, exclude_id: UUID | None = None) -> bool: ...
-
-    async def create(self, spec: ProxmoxServerCreate) -> ProxmoxServer: ...
-
-    async def update(self, server_id: UUID, patch: ProxmoxServerUpdate) -> ProxmoxServer | None: ...
-
-    async def delete(self, server_id: UUID) -> bool: ...
-
-    async def commit(self) -> None: ...
-
-
-class SQLProxmoxServerAdminRepository:
-    """`ProxmoxServerAdminRepository` over one `AsyncSession`."""
-
-    def __init__(self, session: AsyncSession) -> None:
-        self._session = session
-        self._reads = SQLProxmoxServerRepository(session)
-
-    async def list_servers(self) -> Sequence[ProxmoxServer]:
-        return await self._reads.list_servers()
-
-    async def get_by_id(self, server_id: UUID) -> ProxmoxServer | None:
-        return await self._reads.get_by_id(server_id)
-
-    async def name_taken(self, name: str, *, exclude_id: UUID | None = None) -> bool:
-        return await _name_taken(self._session, ProxmoxServer, name=name, exclude_id=exclude_id)
-
-    async def create(self, spec: ProxmoxServerCreate) -> ProxmoxServer:
-        return await _insert(
-            self._session,
-            ProxmoxServer(
-                name=spec.name,
-                base_url=spec.base_url,
-                api_token_id=spec.api_token_id,
-                api_token_secret=spec.api_token_secret,
-                verify_ssl=spec.verify_ssl,
-            ),
-        )
-
-    async def update(self, server_id: UUID, patch: ProxmoxServerUpdate) -> ProxmoxServer | None:
-        server = await self.get_by_id(server_id)
-        if server is None:
-            return None
-
-        if patch.name is not None:
-            server.name = patch.name
-        if patch.base_url is not None:
-            server.base_url = patch.base_url
-        if patch.api_token_id is not None:
-            server.api_token_id = patch.api_token_id
-        if patch.api_token_secret is not None:
-            server.api_token_secret = patch.api_token_secret
-        if patch.verify_ssl is not None:
-            server.verify_ssl = patch.verify_ssl
-
-        return await _refresh(self._session, server)
-
-    async def delete(self, server_id: UUID) -> bool:
-        return await _delete(self._session, await self.get_by_id(server_id))
-
-    async def commit(self) -> None:
-        await self._session.commit()
-
-
-# --- PMG ---
-
-
-class PMGServerAdminRepository(Protocol):
-    """What `PMGServerAdminService` needs from `pmg_servers`."""
-
-    async def list_servers(self) -> Sequence[PMGServer]: ...
-
-    async def get_by_id(self, server_id: UUID) -> PMGServer | None: ...
-
-    async def name_taken(self, name: str, *, exclude_id: UUID | None = None) -> bool: ...
-
-    async def create(self, spec: PMGServerCreate) -> PMGServer: ...
-
-    async def update(self, server_id: UUID, patch: PMGServerUpdate) -> PMGServer | None: ...
-
-    async def delete(self, server_id: UUID) -> bool: ...
-
-    async def commit(self) -> None: ...
-
-
-class SQLPMGServerAdminRepository:
-    """`PMGServerAdminRepository` over one `AsyncSession`."""
-
-    def __init__(self, session: AsyncSession) -> None:
-        self._session = session
-        self._reads = SQLPMGServerRepository(session)
-
-    async def list_servers(self) -> Sequence[PMGServer]:
-        return await self._reads.list_servers()
-
-    async def get_by_id(self, server_id: UUID) -> PMGServer | None:
-        return await self._reads.get_by_id(server_id)
-
-    async def name_taken(self, name: str, *, exclude_id: UUID | None = None) -> bool:
-        return await _name_taken(self._session, PMGServer, name=name, exclude_id=exclude_id)
-
-    async def create(self, spec: PMGServerCreate) -> PMGServer:
-        server = PMGServer(name=spec.name, ssh_host=spec.ssh_host)
-        apply_ssh_fields(server, spec.ssh)
-        return await _insert(self._session, server)
-
-    async def update(self, server_id: UUID, patch: PMGServerUpdate) -> PMGServer | None:
-        server = await self.get_by_id(server_id)
-        if server is None:
-            return None
-
-        apply_ssh_fields_with_pin_rule(
-            server,
-            host_changed=patch.ssh_host is not None and patch.ssh_host != server.ssh_host,
-            patch=patch.ssh,
-        )
-        if patch.name is not None:
-            server.name = patch.name
-        if patch.ssh_host is not None:
-            server.ssh_host = patch.ssh_host
+        # Before the scalar walk, and reading the row's *pre-patch* host: the pin rule asks
+        # whether this patch moves the `(host, port)` the stored fingerprint belongs to.
+        if self._host_field is not None:
+            new_host = getattr(patch, self._host_field)
+            apply_ssh_fields_with_pin_rule(
+                server,
+                host_changed=new_host is not None and new_host != getattr(server, self._host_field),
+                patch=patch.ssh,  # type: ignore[attr-defined]
+            )
+        for column, value in _column_values(patch, skip_none=True).items():
+            setattr(server, column, value)
 
         return await _refresh(self._session, server)
 
@@ -474,39 +357,22 @@ class SQLPMGServerAdminRepository:
 
 # --- The one column the validate flow may write ---
 #
-# Two more classes rather than two more methods above, and this is the same call
+# A separate class rather than two more methods above, and this is the same call
 # `noa_api.api.deps` makes for `SQLApprovalCardRepository`: a reachability probe must not hold
 # an object that can rewrite a credential or delete a row. What it may do is read the server it
 # was asked about and store the host key that server presented — nothing else. Proxmox has no
 # equivalent because it has no SSH path to pin; its validate reads through the
-# `SELECT`-only `SQLProxmoxServerRepository` and writes nothing at all.
+# `SELECT`-only `SQLServerRepository` and writes nothing at all.
 
 
-class SQLWHMHostKeyPinRepository:
-    """Read one `whm_servers` row; write only `ssh_host_key_fingerprint`."""
+class SQLHostKeyPinRepository(Generic[ServerModelT]):
+    """Read one inventory row; write only `ssh_host_key_fingerprint`."""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, *, model: type[ServerModelT]) -> None:
         self._session = session
-        self._reads = SQLWHMServerRepository(session)
+        self._reads = SQLServerRepository(session, model=model)
 
-    async def get_by_id(self, server_id: UUID) -> WHMServer | None:
-        return await self._reads.get_by_id(server_id)
-
-    async def set_host_key_fingerprint(self, server_id: UUID, fingerprint: str | None) -> bool:
-        return await _set_fingerprint(self._session, await self.get_by_id(server_id), fingerprint)
-
-    async def commit(self) -> None:
-        await self._session.commit()
-
-
-class SQLPMGHostKeyPinRepository:
-    """Read one `pmg_servers` row; write only `ssh_host_key_fingerprint`."""
-
-    def __init__(self, session: AsyncSession) -> None:
-        self._session = session
-        self._reads = SQLPMGServerRepository(session)
-
-    async def get_by_id(self, server_id: UUID) -> PMGServer | None:
+    async def get_by_id(self, server_id: UUID) -> ServerModelT | None:
         return await self._reads.get_by_id(server_id)
 
     async def set_host_key_fingerprint(self, server_id: UUID, fingerprint: str | None) -> bool:

@@ -101,6 +101,7 @@ from support.whm_firewall import (
     imunify_answer,
     is_probe,
     is_query,
+    patch_firewall_ssh_exec,
     preflight_server,
 )
 
@@ -182,8 +183,7 @@ async def test_both_backend_queries_are_in_flight_at_once(monkeypatch) -> None: 
         return box(command)
 
     fixture, _ = firewall_context(monkeypatch)
-    for module in FIREWALL_SSH_MODULES:
-        monkeypatch.setattr(module, "ssh_exec", fake_ssh_exec)
+    patch_firewall_ssh_exec(monkeypatch, fake_ssh_exec)
 
     result = await preflight(fixture)
 

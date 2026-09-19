@@ -310,7 +310,7 @@ erase the distinction the CHANGE tools check.
 ## Server references
 
 Tools take a `server_ref`, not an id, because operators name servers the way they remember
-them. `resolve_whm_server_ref` (`core/servers/whm_ref.py`) tries three forms in a fixed order
+them. `resolve_whm_server_ref` (`core/servers/reference.py`) tries three forms in a fixed order
 and **never guesses**:
 
 1. **UUID** — resolved by direct read. A well-formed id that matches nothing stops at
@@ -776,7 +776,7 @@ exposure. Re-adding any of them is an owner decision.
 - Errors: `core/integrations/whm/errors.py`
 - Shared SSH layer: `core/remote_exec/`
 - Server inventory + reference resolution: `core/servers/whm_repository.py`,
-  `core/servers/whm_ref.py`
+  `core/servers/repository.py`, `core/servers/reference.py`
 - Admin CRUD + validate: `apps/api/src/noa_api/api/routes/admin_servers.py`,
   `core/servers/admin_service.py`, `core/servers/admin_repository.py`,
   `core/servers/validation.py`, `core/servers/naming.py`, `core/servers/errors.py`

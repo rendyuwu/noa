@@ -42,9 +42,8 @@ import json
 from typing import Any
 
 from core.integrations.whm.errors import ImunifyCLIError
-from core.remote_exec.errors import SSHExecutionError
 from core.remote_exec.output import command_output_text
-from core.remote_exec.ssh import ssh_exec
+from core.remote_exec.ssh import run_cli
 from core.remote_exec.sudo import (
     SSH_SUDO_REQUIRED_CODE,
     build_remote_command,
@@ -130,8 +129,6 @@ async def run_imunify_command(config: SSHConnectionConfig, *, args: list[str]) -
     Returns the raw `CommandResult`; `parse_imunify_json_output` is the separate step, so a
     caller that only needs the exit status does not pay for a decode.
     """
-    try:
-        return await ssh_exec(config, command=build_imunify_command(args, config=config))
-    except SSHExecutionError as exc:
-        # Converted, not wrapped: one exception tree out of this module.
-        raise ImunifyCLIError(code=exc.error_code, message=exc.message) from exc
+    return await run_cli(
+        config, build_imunify_command(args, config=config), error_cls=ImunifyCLIError
+    )
