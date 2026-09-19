@@ -64,7 +64,7 @@ import structlog
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.approvals.clock import now_utc
+from core.clock import now_utc
 from core.db.lifecycle import ActionRequestStatus
 from core.db.models import ActionRequest
 from core.db.session import SessionFactory

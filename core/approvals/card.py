@@ -53,7 +53,6 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.approvals.clock import as_utc
 from core.approvals.context import (
     CONTEXT_REQUESTER_KEY,
     arguments_from_context,
@@ -81,6 +80,7 @@ from core.approvals.reads import (
     run_view,
     select_requester_matched,
 )
+from core.clock import as_utc
 from core.db.lifecycle import ActionRequestStatus
 
 

@@ -54,7 +54,6 @@ from uuid import UUID
 from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.approvals.clock import as_utc
 from core.approvals.execution import (
     # The keys the executor's writer puts in `receipt_data`, read here rather than respelled — a
     # misspelt key in JSONB reads as an absent one, and this surface is the third reader those
@@ -67,6 +66,7 @@ from core.approvals.execution import (
 )
 from core.audit.cursor import KeysetCursor, encode_cursor, keyset_predicate
 from core.audit.tool_run_reads import LIKE_ESCAPE, escape_like
+from core.clock import as_utc
 from core.db.lifecycle import ActionRequestStatus
 from core.db.models import ActionReceipt, ActionRequest, User
 

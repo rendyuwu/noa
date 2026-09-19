@@ -321,7 +321,7 @@ async def test_both_populations_are_judged_against_one_moment() -> None:
     """One clock read per pass, handed down — the rule `ActionRequestExpiryService` follows.
 
     Two reads would let a run and a request be judged against cutoffs that disagree, which is
-    the kind of gap `core.approvals.clock` exists to remove.
+    the kind of gap `core.clock` exists to remove.
     """
     repository = FakeStrandedRunRepository()
     moment = datetime(2026, 8, 9, 12, 0, tzinfo=UTC)

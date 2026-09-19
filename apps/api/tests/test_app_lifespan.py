@@ -481,14 +481,14 @@ def test_the_mount_and_the_admin_surface_share_one_session_register(
     """
     runtime = main.build_runtime(pinned_settings)
 
-    assert runtime.tool_list_notifier.registry is runtime.mcp_session_registry
+    assert runtime.tool_list_notifier._registry is runtime.mcp_session_registry
 
 
 def test_building_the_app_registers_no_session(pinned_settings: Settings) -> None:
     """The register is empty until a client connects — it starts nothing and holds nothing."""
     runtime = main.build_runtime(pinned_settings)
 
-    assert runtime.mcp_session_registry.user_ids() == []
+    assert runtime.mcp_session_registry._sessions == {}
 
 
 def test_the_notifier_dependency_resolves_the_published_object(pinned_settings: Settings) -> None:

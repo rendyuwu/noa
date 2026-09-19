@@ -384,8 +384,7 @@ async def test_a_closed_session_is_dropped_and_nothing_propagates(error: Excepti
 
     await notifier.notify([user_id])
 
-    assert registry.session_count(user_id) == 0
-    assert registry.user_ids() == []
+    assert registry.sessions_for([user_id]) == []
 
 
 async def test_a_live_session_beside_a_closed_one_still_gets_told() -> None:
@@ -401,7 +400,7 @@ async def test_a_live_session_beside_a_closed_one_still_gets_told() -> None:
     await notifier.notify([user_id])
 
     assert live.sends == 1
-    assert registry.session_count(user_id) == 1
+    assert len(registry.sessions_for([user_id])) == 1
 
 
 async def test_an_unexpected_send_failure_does_not_escape_the_task_group() -> None:
@@ -448,13 +447,12 @@ async def test_the_register_forgets_a_collected_session() -> None:
     registry = McpSessionRegistry()
     session = FakeServerSession()
     registry.remember(user_id, session)  # type: ignore[arg-type]
-    assert registry.session_count(user_id) == 1
+    assert len(registry.sessions_for([user_id])) == 1
 
     del session
     gc.collect()
 
-    assert registry.session_count(user_id) == 0
-    assert registry.user_ids() == []
+    assert registry.sessions_for([user_id]) == []
 
 
 async def test_remembering_the_same_session_twice_registers_it_once() -> None:
@@ -466,7 +464,7 @@ async def test_remembering_the_same_session_twice_registers_it_once() -> None:
     registry.remember(user_id, session)  # type: ignore[arg-type]
     registry.remember(user_id, session)  # type: ignore[arg-type]
 
-    assert registry.session_count(user_id) == 1
+    assert len(registry.sessions_for([user_id])) == 1
 
 
 async def test_the_middleware_registers_nothing_without_a_request_context() -> None:
@@ -484,7 +482,7 @@ async def test_the_middleware_registers_nothing_without_a_request_context() -> N
     result = await middleware.on_message(_Context(), call_next)  # type: ignore[arg-type]
 
     assert result is sentinel
-    assert registry.user_ids() == []
+    assert registry._sessions == {}
 
 
 # --- 3. The register, over the real mount ---
@@ -502,7 +500,7 @@ def mount(monkeypatch: pytest.MonkeyPatch):
 
     with mounted_app(monkeypatch, repository=identities, tool_context=tools.context) as fixture:
         notifier = getattr(fixture.app.state, STATE_TOOL_LIST_NOTIFIER)
-        yield fixture, identities, tools, notifier.registry
+        yield fixture, identities, tools, notifier._registry
 
 
 def test_the_real_mount_registers_the_callers_session(mount) -> None:
@@ -518,8 +516,8 @@ def test_the_real_mount_registers_the_callers_session(mount) -> None:
 
     open_session(fixture.client, plaintext)
 
-    assert registry.user_ids() == [user.id]
-    assert registry.session_count(user.id) == 1
+    assert list(registry._sessions) == [user.id]
+    assert len(registry.sessions_for([user.id])) == 1
 
 
 def test_a_session_registers_without_ever_calling_a_tool(mount) -> None:
@@ -535,11 +533,11 @@ def test_a_session_registers_without_ever_calling_a_tool(mount) -> None:
     plaintext, _ = identities.add_token(user_id=user.id, librechat_user_id=LIBRECHAT_USER)
 
     session = open_session(fixture.client, plaintext)
-    assert registry.session_count(user.id) == 1
+    assert len(registry.sessions_for([user.id])) == 1
 
     session.tool_names()
 
-    assert registry.session_count(user.id) == 1
+    assert len(registry.sessions_for([user.id])) == 1
 
 
 def test_two_operators_register_under_their_own_ids(mount) -> None:
@@ -553,9 +551,9 @@ def test_two_operators_register_under_their_own_ids(mount) -> None:
     open_session(fixture.client, first_token)
     open_session(fixture.client, second_token, librechat_user="other-librechat")
 
-    assert sorted(registry.user_ids()) == sorted([first.id, second.id])
-    assert registry.session_count(first.id) == 1
-    assert registry.session_count(second.id) == 1
+    assert set(registry._sessions) == {first.id, second.id}
+    assert len(registry.sessions_for([first.id])) == 1
+    assert len(registry.sessions_for([second.id])) == 1
 
 
 def test_the_emit_reaches_a_real_server_session(mount) -> None:
@@ -582,7 +580,7 @@ def test_the_emit_reaches_a_real_server_session(mount) -> None:
 
     assert emitted == 1
     # Still registered: a successful emit is not a reason to forget the session.
-    assert registry.session_count(user.id) == 1
+    assert len(registry.sessions_for([user.id])) == 1
 
 
 def test_notifying_a_real_session_twice_stays_green(mount) -> None:
@@ -601,7 +599,7 @@ def test_notifying_a_real_session_twice_stays_green(mount) -> None:
     fixture.client.portal.call(notifier.notify, [user.id])
     fixture.client.portal.call(notifier.notify, [user.id])
 
-    assert registry.session_count(user.id) == 1
+    assert len(registry.sessions_for([user.id])) == 1
 
 
 def test_an_unauthenticated_request_registers_nothing(mount) -> None:
@@ -615,7 +613,7 @@ def test_an_unauthenticated_request_registers_nothing(mount) -> None:
     )
 
     assert response.status_code == 401
-    assert registry.user_ids() == []
+    assert registry._sessions == {}
 
 
 # --- The execution-time backstop behind a production write ---
