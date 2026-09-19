@@ -64,7 +64,6 @@ import structlog
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.approvals.clock import as_utc, now_utc
 from core.approvals.context import (
     AUDIT_CREDENTIAL_KEY,
     arguments_from_context,
@@ -78,6 +77,7 @@ from core.approvals.errors import (
     ChangeReasonRequiredError,
 )
 from core.audit.tool_runs import SQLToolRunRepository
+from core.clock import as_utc, now_utc
 from core.db.lifecycle import ActionRequestStatus, ToolRisk, ToolRunStatus
 from core.db.models import ActionRequest, ToolRun
 

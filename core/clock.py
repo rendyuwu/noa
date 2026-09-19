@@ -1,11 +1,9 @@
 """The one definition of "now, aware, UTC".
 
-Lived in `core.approvals.clock` until the table surface arrived, when it became a fourth
+Lived in the approvals package until the table surface arrived, when it became a fourth
 reader that compares a stored deadline against the present moment and had no business
-importing the approval gate to do it. Moved rather than copied, for the reason the original
-module gives: a second copy of these three lines is exactly the drift that makes a deadline
-boundary hold at one door and not the next. `core.approvals.clock` re-exports both names,
-so every caller written against it still reads correctly.
+importing the approval gate to do it. Moved rather than copied: a second copy of these three
+lines is exactly the drift that makes a deadline boundary hold at one door and not the next.
 
 Deadlines compared here: `ActionDecisionService` against `decided_at` when an operator
 reaches a stale card, the expiry loop's sweep against every pending row, and the table

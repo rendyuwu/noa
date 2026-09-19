@@ -49,9 +49,9 @@ from uuid import UUID
 from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.approvals.clock import as_utc, now_utc
 from core.approvals.execution import RECEIPT_DELTA_KEY
 from core.approvals.expiry import ActionRequestExpiryService
+from core.clock import as_utc, now_utc
 from core.db.lifecycle import ActionRequestStatus, ToolRunStatus
 from core.db.models import ActionReceipt, ActionRequest, ToolRun
 

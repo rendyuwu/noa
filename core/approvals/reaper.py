@@ -57,7 +57,6 @@ import structlog
 from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.approvals.clock import now_utc
 from core.approvals.context import evidence_from_context
 from core.approvals.execution import (
     RECEIPT_AFTER_KEY,
@@ -68,6 +67,7 @@ from core.approvals.execution import (
 from core.audit.receipts import ActionReceiptRepository, SQLActionReceiptRepository
 from core.audit.summaries import result_summary
 from core.audit.tool_runs import SQLToolRunRepository, ToolRunRepository
+from core.clock import now_utc
 from core.db.lifecycle import ActionRequestStatus, ToolRunStatus
 from core.db.models import ActionRequest, ToolRun
 from core.db.session import SessionFactory
@@ -390,7 +390,7 @@ class StrandedRunReaperService:
 
         One clock read for the whole pass, handed to both predicates, so a run and a request
         are judged against the same moment — the rule `ActionRequestExpiryService.sweep`
-        follows, and the reason `core.approvals.clock` exists.
+        follows, and the reason `core.clock` exists.
 
         **A pass is still one transaction, and the batch is what keeps that affordable**.
         The commit runs after both writes for every row in the batch, not per row: a failure

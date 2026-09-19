@@ -5,7 +5,7 @@ authorization. This rule says "may this run?" is answered from `action_requests.
 every time, never from an LLM claim and never from a tool argument, and that only means
 anything if exactly one layer writes and reads that column. This package is that layer.
 
-Thirteen modules, and the split that matters is **who can reach which writer** — three writers
+The split that matters is **who can reach which writer** — three writers
 of a request's status, one writer of what an approved change *did*, two readers over one shared
 row guard, and the rest holding no statement at all:
 
@@ -66,10 +66,6 @@ row guard, and the rest holding no statement at all:
   one, so the spelling is a constant.
 - `csrf` — the token that makes "the browser sent the cookie" insufficient on its own.
   Shared mechanism, mint and verify in one place, so the card and the endpoint agree.
-- `clock` — the re-export of `core.clock`, one definition of "now, aware, UTC", shared by the
-  doors that compare a row against its deadline so the boundary cannot hold at one and not the
-  other. It moved out of this package at the table surface's launch, when a fourth reader
-  appeared with no business importing the approval gate to read a clock (`core.results.tables`).
 - `errors` — the refusals, as `NoaError` subclasses, in two trees: gate failures (the change
   was never submitted) and decision failures (a real request was refused). `NoaError` so
   `sanitize_tool_errors` hands the model a named code rather than a generic failure,

@@ -65,7 +65,6 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.approvals.clock import as_utc
 from core.approvals.context import arguments_from_context
 from core.approvals.expiry import ActionRequestExpiryService
 from core.approvals.reads import (
@@ -74,6 +73,7 @@ from core.approvals.reads import (
     run_view,
     select_requester_matched_with_change_verification,
 )
+from core.clock import as_utc
 from core.db.lifecycle import ActionRequestStatus
 
 
@@ -236,7 +236,7 @@ class ActionResultService:
 
         One clock read, handed to the expiry so the status this returns and the `decided_at`
         the `UPDATE` stamped are the same moment rather than two that nearly agree
-        (`core.approvals.clock` — the same rule the two decision doors follow).
+        (`core.clock` — the same rule the two decision doors follow).
         """
         view = await self._repository.get_for_requester(
             action_request_id=action_request_id,

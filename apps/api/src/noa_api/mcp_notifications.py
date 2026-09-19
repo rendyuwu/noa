@@ -144,17 +144,6 @@ class McpSessionRegistry:
             if not sessions:
                 del self._sessions[user_id]
 
-    # --- Introspection, for the wiring tests ---
-
-    def session_count(self, user_id: UUID) -> int:
-        """How many live sessions `user_id` holds. For assertions, not for decisions."""
-        sessions = self._sessions.get(user_id)
-        return len(sessions) if sessions is not None else 0
-
-    def user_ids(self) -> list[UUID]:
-        """Every user id with at least one live session."""
-        return [user_id for user_id, sessions in self._sessions.items() if len(sessions) > 0]
-
 
 class McpSessionRegistryMiddleware(Middleware):
     """Register the caller's session on every MCP message.
@@ -221,18 +210,6 @@ class McpToolListChangedNotifier:
 
     def __init__(self, *, registry: McpSessionRegistry) -> None:
         self._registry = registry
-
-    @property
-    def registry(self) -> McpSessionRegistry:
-        """The register this notifier reads.
-
-        Exposed so a test can assert the two ends are the *same* object — the MCP mount writes
-        one and the admin surface reads one, and if they were ever two the emit would reach zero
-        sessions with nothing failing (the notify rule's best-effort delivery makes that
-        silent). Read-only, and the
-        register itself answers only counts and ids: nothing here decides a permission.
-        """
-        return self._registry
 
     async def notify(self, user_ids: Collection[UUID]) -> None:
         """Emit to every live session of `user_ids`. Best-effort, bounded, never raises."""
