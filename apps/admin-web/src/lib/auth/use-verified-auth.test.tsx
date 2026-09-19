@@ -49,15 +49,12 @@ describe('useVerifiedAuth', () => {
   it('revalidates /auth/me and becomes ready for an active user', async () => {
     globalThis.fetch = fetchReturning(200, meBody({ roles: ['admin'] }))
     const { useVerifiedAuth } = await import('./use-verified-auth')
-    const store = await import('./auth-store')
 
     const { result } = renderHook(() => useVerifiedAuth())
 
     await waitFor(() => expect(result.current.status).toBe('ready'))
     expect(result.current.isAdmin).toBe(true)
     expect(result.current.user?.email).toBe('op@biznetgio.com')
-    // Caches verified identity for AppShell presentation.
-    expect(store.getStoredUser()?.roles).toContain('admin')
     // Talks to the same-origin proxy, credentials included.
     expect(globalThis.fetch).toHaveBeenCalledWith(
       '/api/auth/me',
@@ -92,7 +89,7 @@ describe('useVerifiedAuth', () => {
     expect(result.current.user).toBeNull()
   })
 
-  it('clears cached identity and redirects on 401 (no stale local state)', async () => {
+  it('redirects to login on 401 (no protected render on an expired session)', async () => {
     const originalLocation = window.location
     Object.defineProperty(window, 'location', {
       writable: true,
@@ -103,14 +100,25 @@ describe('useVerifiedAuth', () => {
       error_code: 'missing_authentication',
     })
 
-    const store = await import('./auth-store')
-    store.setStoredUser({ id: 'stale', email: 'stale@biznetgio.com', roles: ['admin'] })
     const { useVerifiedAuth } = await import('./use-verified-auth')
 
-    renderHook(() => useVerifiedAuth())
+    const { result } = renderHook(() => useVerifiedAuth())
 
-    await waitFor(() => expect(store.getStoredUser()).toBeNull())
-    expect(window.location.href).toContain('/login')
+    // The cookie clear, NOT `window.location.href`. Every earlier test in this file
+    // imports session.ts under its own `vi.resetModules()` registry, and each of those
+    // instances keeps a live BroadcastChannel listener whose own handler sets
+    // `href = '/login'` on any logout message. MEASURED: with the redirect deleted from
+    // `clearAuth`, an href assertion here still goes green off a stale listener. The
+    // logout POST has no such echo — only the 401 path produces it.
+    await waitFor(() =>
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        '/api/auth/logout',
+        expect.objectContaining({ method: 'POST' }),
+      ),
+    )
+    // Stays 'loading' through the redirect: no protected data renders behind it.
+    expect(result.current.status).toBe('loading')
+    expect(result.current.user).toBeNull()
 
     Object.defineProperty(window, 'location', { writable: true, value: originalLocation })
   })

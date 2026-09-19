@@ -7,7 +7,6 @@ import { looksLikeTokenPlaintext } from '@/lib/admin/tokens/token-plaintext'
 import { mintToken } from '@/lib/admin/tokens/tokens-api'
 import type { MintedToken, TokenScope } from '@/lib/admin/tokens/types'
 import type { MintOutcome } from '@/lib/admin/tokens/use-tokens'
-import { setStoredUser } from '@/lib/auth/auth-store'
 import { ApiError } from '@/lib/auth/fetch-helper'
 
 import { MintTokenDialog } from './mint-token-dialog'
@@ -404,11 +403,12 @@ describe('MintTokenDialog — sink reachability controls', () => {
     expect(nav.push).toHaveBeenCalledWith('/admin/users/member-1/tokens')
   })
 
+  // #10 deleted the app's only localStorage writer, so that claim holds by CONSTRUCTION now.
   it('the storage setter spy sees a real write', () => {
-    setStoredUser({ id: 'me-1', email: 'root@example.com', roles: ['admin'] })
+    window.localStorage.setItem('web-bigsu:spy-control', 'v')
 
     expect(setItem).toHaveBeenCalled()
-    expect(setItem.mock.calls[0]?.[0]).toBe('web-bigsu:auth-user')
+    expect(setItem.mock.calls[0]?.[0]).toBe('web-bigsu:spy-control')
     // …and the same spy, seeing that, saw nothing token-shaped above.
     expect(looksLikeTokenPlaintext(setItem.mock.calls)).toBe(false)
   })
