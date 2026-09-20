@@ -18,13 +18,16 @@
 // rediscover.
 
 // Render a wire timestamp as relative English. Non-strings, blanks and
-// unparseable values all read `Never` — capital N, and the same word for all
-// three, because the table cell means "has this ever happened" and a malformed
-// value is not evidence that it did.
-export function formatRelativeTime(value: unknown): string {
-  if (typeof value !== 'string' || !value) return 'Never'
+// unparseable values all read the same word — the table cell means "has this
+// ever happened", and a malformed value is not evidence that it did. That word
+// defaults to `Never` (capital N) for the Users/Tokens tables; the server
+// verticals pass `'—'`, which is the em dash their columns have always shown.
+// The parameter exists because those two words are both load-bearing: merging
+// them either way would change a rendered cell.
+export function formatRelativeTime(value: unknown, missing = 'Never'): string {
+  if (typeof value !== 'string' || !value) return missing
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Never'
+  if (Number.isNaN(date.getTime())) return missing
 
   const diffMs = Date.now() - date.getTime()
   if (diffMs < 0) return 'Just now'
