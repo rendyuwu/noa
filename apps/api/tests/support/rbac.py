@@ -30,7 +30,6 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from core.audit.admin_events import AdminAuditEvent
@@ -39,20 +38,14 @@ from core.auth.jwt_service import JWTService
 from core.auth.tool_catalog import TOOL_CATALOG
 from core.db.models import ADMIN_ROLE_NAME, INTERNAL_ROLE_PREFIX, is_internal_role
 from noa_api.api.deps import (
-    STATE_JWT_SERVICE,
-    STATE_LDAP_SERVICE,
-    STATE_SESSION_FACTORY,
-    STATE_SETTINGS,
     AdminUserDep,
-    get_auth_service,
 )
-from noa_api.api.errors import install_error_handling
 from support.auth import (
     COOKIE_NAME,
     FakeAuthRepository,
     FakeUserRow,
     build_settings,
-    override_auth_service_factory,
+    session_app,
 )
 
 # Two real catalog names, so a test grant is indistinguishable from a production one.
@@ -388,21 +381,11 @@ def admin_probe_app() -> Iterator[AdminProbeHarness]:
     repository = FakeAuthRepository()
     jwt_service = JWTService(settings)
 
-    app = FastAPI()
-    install_error_handling(app)
+    app = session_app(settings=settings, jwt_service=jwt_service, repository=repository)
 
     @app.get(PROBE_PATH)
     async def probe(admin_user: AdminUserDep) -> dict[str, str]:
         return {"email": admin_user.email}
-
-    setattr(app.state, STATE_SETTINGS, settings)
-    setattr(app.state, STATE_JWT_SERVICE, jwt_service)
-    setattr(app.state, STATE_LDAP_SERVICE, None)
-    setattr(app.state, STATE_SESSION_FACTORY, None)
-
-    app.dependency_overrides[get_auth_service] = override_auth_service_factory(
-        settings=settings, repository=repository, jwt_service=jwt_service
-    )
 
     with TestClient(app) as client:
         yield AdminProbeHarness(client=client, repository=repository, jwt_service=jwt_service)

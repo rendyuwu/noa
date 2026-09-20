@@ -78,12 +78,7 @@ from core.servers.errors import (
 )
 from core.servers.validation import ServerValidationResult
 from noa_api.api.deps import (
-    STATE_JWT_SERVICE,
-    STATE_LDAP_SERVICE,
-    STATE_SESSION_FACTORY,
-    STATE_SETTINGS,
     get_action_request_admin_service,
-    get_auth_service,
     get_authorization_service,
     get_mcp_token_service,
     get_pmg_server_admin_service,
@@ -94,7 +89,6 @@ from noa_api.api.deps import (
     get_whm_server_admin_service,
     get_whm_server_validation_service,
 )
-from noa_api.api.errors import install_error_handling
 from noa_api.api.routes.admin_action_requests import router as admin_action_requests_router
 from noa_api.api.routes.admin_audit import router as admin_audit_router
 from noa_api.api.routes.admin_roles import router as admin_roles_router
@@ -110,7 +104,7 @@ from support.auth import (
     FakeAuthRepository,
     FakeUserRow,
     build_settings,
-    override_auth_service_factory,
+    session_app,
 )
 from support.mcp_tokens import FakeMcpTokenRepository
 from support.rbac import (
@@ -367,26 +361,19 @@ def admin_harness(
     audit_reader = tool_runs or FakeToolRunAuditReader()
     action_request_reader = action_requests or FakeActionRequestAdminReader()
 
-    app = FastAPI()
-    install_error_handling(app)
-    app.include_router(admin_users_router)
-    app.include_router(admin_roles_router)
-    app.include_router(admin_tokens_router)
-    app.include_router(me_tokens_router)
-    app.include_router(admin_whm_servers_router)
-    app.include_router(admin_proxmox_servers_router)
-    app.include_router(admin_pmg_servers_router)
-    app.include_router(admin_audit_router)
-    app.include_router(admin_action_requests_router)
-
-    # The same attributes `noa_api.main.lifespan` writes, minus the engine no test here needs.
-    setattr(app.state, STATE_SETTINGS, resolved_settings)
-    setattr(app.state, STATE_JWT_SERVICE, jwt_service)
-    setattr(app.state, STATE_LDAP_SERVICE, None)
-    setattr(app.state, STATE_SESSION_FACTORY, None)
-
-    app.dependency_overrides[get_auth_service] = override_auth_service_factory(
-        settings=resolved_settings, repository=auth_repository, jwt_service=jwt_service
+    app = session_app(
+        admin_users_router,
+        admin_roles_router,
+        admin_tokens_router,
+        me_tokens_router,
+        admin_whm_servers_router,
+        admin_proxmox_servers_router,
+        admin_pmg_servers_router,
+        admin_audit_router,
+        admin_action_requests_router,
+        settings=resolved_settings,
+        jwt_service=jwt_service,
+        repository=auth_repository,
     )
     app.dependency_overrides[get_authorization_service] = lambda: AuthorizationService(
         repository=repository,
