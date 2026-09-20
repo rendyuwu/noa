@@ -15,8 +15,8 @@ alternative is a tool result carrying a URL to a table that was never stored, wh
 link in a transcript that persists.
 
 `NoaError` subclasses for two reasons: `sanitize_tool_errors` passes a `NoaError`'s own
-`error_code` through to the model instead of collapsing it, and `noa_api.api.errors`
-maps each class to a status, so the route raises rather than building a response.
+`error_code` through to the model instead of collapsing it, and each class carries its own
+`status_code`, so the route raises rather than building a response.
 """
 
 from __future__ import annotations
@@ -29,6 +29,9 @@ class ResultTableError(NoaError):
 
     error_code: str = "result_table_failed"
     message: str = "That table could not be read. Try the tool call again."
+    # Bare `ResultTableError`: still "that table could not be read", so 503 by decision rather
+    # than by falling through. The subclass-tree test covers this tree too.
+    status_code = 503
 
 
 class ResultTableNotFoundError(ResultTableError):
@@ -41,6 +44,11 @@ class ResultTableNotFoundError(ResultTableError):
 
     error_code: str = "result_table_not_found"
     message: str = "That table is not available. It may have expired — run the tool again."
+    # 404 for all four of its causes — unknown token, another operator's, one whose requester
+    # was deleted, and one past its lifetime. The requester-match rule against an existence
+    # oracle, spelled
+    # against another table: a status that varied by cause would say which tokens are real.
+    status_code = 404
 
 
 class ResultTableUnavailableError(ResultTableError):
@@ -53,3 +61,7 @@ class ResultTableUnavailableError(ResultTableError):
 
     error_code: str = "result_table_unavailable"
     message: str = "That result could not be prepared for viewing. Try the tool call again."
+    # 503: the rows could not be parked, so the READ has no surface to point at. Retrying the
+    # tool call is the remedy, and unlike a CHANGE there is nothing a retry could double —
+    # a READ that ran twice changed nothing either time.
+    status_code = 503

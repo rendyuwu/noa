@@ -4,7 +4,8 @@ The refusals the admin CRUD surface raises, and nothing else. Written the way
 `core.auth.authorization_errors` is, for the same three reasons:
 
 1. Every class derives from `core.errors.NoaError`, so it carries an `error_code` and an
-   operator-facing `message`, and `noa_api.api.errors` decides the status once.
+   operator-facing `message` and its own `status_code`, so `noa_api.api.errors` shapes the
+   response without deciding anything.
    `noa-old`'s three admin route files each built their own `ApiHTTPException` per failure —
    ~40 lines an endpoint — which is how one condition ends up as two statuses.
 2. The `error_code` strings are `noa-old`'s verbatim (`api/error_codes.py`):
@@ -12,9 +13,9 @@ The refusals the admin CRUD surface raises, and nothing else. Written the way
    The admin panel branches on them already
    (`apps/admin-web/src/lib/admin/*/[system]-api.ts` surfaces them to the operator), so a
    new spelling would break a client that exists.
-3. One class per code rather than one class with a `system` field. `STATUS_BY_ERROR` maps
-   classes, and its subclass-tree test walks this tree asserting every member is mapped explicitly —
-   a dynamic `error_code` would satisfy that test while making the mapping unreadable.
+3. One class per code rather than one class with a `system` field. The status is a class
+   attribute, and a subclass-tree test walks this tree asserting every member declares one —
+   a dynamic `error_code` would satisfy that test while making the decision unreadable.
 
 **The per-system split is deliberate.** A single
 `ServerNotFoundError` would answer `server_not_found` for all three tables, which reads
@@ -52,6 +53,10 @@ class ServerInventoryError(NoaError):
 
     error_code: str = "server_inventory_failed"
     message: str = "That server change could not be applied."
+    # Bare `ServerInventoryError`: a refusal about one row, so 409 by decision rather than by
+    # falling through to a 503 that would read as "NOA is down". The same subclass-tree test
+    # every taxonomy above has guards this from becoming the default for a later class.
+    status_code = 409
 
 
 # --- WHM (`whm_servers`) ---
@@ -66,6 +71,7 @@ class WHMServerNotFoundError(ServerInventoryError):
 
     error_code: str = "whm_server_not_found"
     message: str = "That WHM server does not exist. Reload the server list and try again."
+    status_code = 404
 
 
 class WHMServerNameExistsError(ServerInventoryError):
@@ -73,6 +79,7 @@ class WHMServerNameExistsError(ServerInventoryError):
 
     error_code: str = "whm_server_name_exists"
     message: str = "A WHM server with that name already exists. Choose a different name."
+    status_code = 409
 
 
 class WHMResellerCredentialNameMismatchError(ServerInventoryError):
@@ -101,6 +108,12 @@ class WHMResellerCredentialNameMismatchError(ServerInventoryError):
         "account change addresses the credential by the account's owner. Set the name and the "
         "API username to the same value, or clear the reseller checkbox."
     )
+    # 409 for the same reading, one field over (the name == `api_username` rule): a reseller
+    # WHM row must be named
+    # after its `api_username`, and on a PATCH both operands may be stored columns — so what
+    # refuses is the state of the resulting row, not a malformed body, and a caller cannot tell
+    # from the schema which combination is legal.
+    status_code = 409
 
 
 # --- Proxmox (`proxmox_servers`) ---
@@ -111,6 +124,7 @@ class ProxmoxServerNotFoundError(ServerInventoryError):
 
     error_code: str = "proxmox_server_not_found"
     message: str = "That Proxmox server does not exist. Reload the server list and try again."
+    status_code = 404
 
 
 class ProxmoxServerNameExistsError(ServerInventoryError):
@@ -118,6 +132,7 @@ class ProxmoxServerNameExistsError(ServerInventoryError):
 
     error_code: str = "proxmox_server_name_exists"
     message: str = "A Proxmox server with that name already exists. Choose a different name."
+    status_code = 409
 
 
 # --- PMG (`pmg_servers`) ---
@@ -128,6 +143,7 @@ class PMGServerNotFoundError(ServerInventoryError):
 
     error_code: str = "pmg_server_not_found"
     message: str = "That PMG server does not exist. Reload the server list and try again."
+    status_code = 404
 
 
 class PMGServerNameExistsError(ServerInventoryError):
@@ -135,3 +151,4 @@ class PMGServerNameExistsError(ServerInventoryError):
 
     error_code: str = "pmg_server_name_exists"
     message: str = "A PMG server with that name already exists. Choose a different name."
+    status_code = 409

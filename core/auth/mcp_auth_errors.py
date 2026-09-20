@@ -26,7 +26,7 @@ outage fails closed *without* concluding anything about the user, and that class
 carries the retry-friendly message and the 503 mapping. Inventing an MCP-flavoured copy
 would be two classes for one condition.
 
-Statuses live in `noa_api.api.errors`. 401 for "this credential does not authenticate you",
+Each class carries its own `status_code`. 401 for "this credential does not authenticate you",
 403 for "it does, and you still may not act" — re-presenting the token changes nothing for
 a disabled operator or one the directory has dropped — and 429 for "stop asking", the one
 answer that is about the caller's rate rather than their credential.
@@ -57,6 +57,9 @@ class McpAuthError(NoaError):
 
     error_code: str = "mcp_auth_failed"
     message: str = "This MCP request could not be authenticated."
+    # Bare `McpAuthError`: a request problem, not "NOA is down". Same subclass-tree test
+    # guards this from becoming the default for a class added later.
+    status_code = 400
 
 
 class McpTokenMissingError(McpAuthError):
@@ -69,6 +72,7 @@ class McpTokenMissingError(McpAuthError):
 
     error_code: str = "mcp_token_missing"
     message: str = "No NOA MCP token was presented. Set `NOA_MCP_TOKEN` in LibreChat."
+    status_code = 401
 
 
 class McpTokenInvalidError(McpAuthError):
@@ -81,6 +85,7 @@ class McpTokenInvalidError(McpAuthError):
 
     error_code: str = "mcp_token_invalid"
     message: str = "That NOA MCP token is not valid. Mint a new one in the NOA admin panel."
+    status_code = 401
 
 
 class McpTokenExpiredError(McpAuthError):
@@ -93,6 +98,7 @@ class McpTokenExpiredError(McpAuthError):
 
     error_code: str = "mcp_token_expired"
     message: str = "That NOA MCP token has expired. Mint a new one in the NOA admin panel."
+    status_code = 401
 
 
 class LibreChatUserHeaderMissingError(McpAuthError):
@@ -107,6 +113,7 @@ class LibreChatUserHeaderMissingError(McpAuthError):
     message: str = (
         "This MCP token may only be used from LibreChat. The identifying header was absent."
     )
+    status_code = 401
 
 
 class LibreChatUserMismatchError(McpAuthError):
@@ -124,6 +131,7 @@ class LibreChatUserMismatchError(McpAuthError):
         "This MCP token is bound to a different LibreChat account. Mint your own in the "
         "NOA admin panel."
     )
+    status_code = 401
 
 
 class McpUserInactiveError(McpAuthError):
@@ -137,6 +145,7 @@ class McpUserInactiveError(McpAuthError):
 
     error_code: str = "mcp_user_inactive"
     message: str = "This NOA account is not active. Ask a NOA admin to enable it."
+    status_code = 403
 
 
 class McpUserNotInDirectoryError(McpAuthError):
@@ -152,6 +161,7 @@ class McpUserNotInDirectoryError(McpAuthError):
         "This account is no longer active in the company directory, so its NOA MCP tokens "
         "were revoked. Contact IT if you believe this is a mistake."
     )
+    status_code = 403
 
 
 class McpAuthRateLimitedError(RetryAfterMixin, McpAuthError):
@@ -174,6 +184,9 @@ class McpAuthRateLimitedError(RetryAfterMixin, McpAuthError):
     message: str = (
         "Too many failed NOA MCP authentication attempts. Wait a few minutes and try again."
     )
+    # Not a verdict about the credential at all: too many failed attempts for this
+    # LibreChat account or this token. Carries `Retry-After` below.
+    status_code = 429
 
     def __init__(self, retry_after_seconds: int, detail: str | None = None) -> None:
         # Floored at 1 for the reason `AuthRateLimitedError` floors it: `Retry-After: 0`

@@ -33,7 +33,7 @@ import pytest
 
 from core.approvals.execution import ChangeExecutionRequest
 from core.integrations.proxmox.cloudinit import crypt_password
-from noa_api.mcp_tools import proxmox_password_runner
+from noa_api.mcp_tools import proxmox_password_runner, proxmox_task
 from noa_api.mcp_tools.proxmox_password import (
     EVIDENCE_NODE,
     EVIDENCE_SERVER_ID,
@@ -306,7 +306,7 @@ def no_polling_delay(monkeypatch: pytest.MonkeyPatch) -> None:
     module constants rather than on `asyncio.sleep`, which is shared by everything else running
     in the loop.
     """
-    monkeypatch.setattr(proxmox_password_runner, "TASK_POLL_DELAY_SECONDS", 0)
+    monkeypatch.setattr(proxmox_task, "TASK_POLL_DELAY_SECONDS", 0)
     monkeypatch.setattr(proxmox_password_runner, "VERIFICATION_POLL_DELAY_SECONDS", 0)
 
 

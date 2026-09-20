@@ -304,11 +304,6 @@ def build_pmg_whitelist_runner(*, context: McpToolContext) -> ChangeRunner:
     return run
 
 
-def build_pmg_whitelist_runners(*, context: McpToolContext) -> dict[str, ChangeRunner]:
-    """Tool name → runner for this module's CHANGE tool."""
-    return {TOOL_PMG_WHITELIST: build_pmg_whitelist_runner(context=context)}
-
-
 # --- Internals ---
 
 

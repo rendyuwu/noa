@@ -33,7 +33,7 @@ import pytest
 
 from core.approvals.execution import ChangeExecutionRequest
 from core.integrations.proxmox.nic import read_nic
-from noa_api.mcp_tools import proxmox_nic_runner
+from noa_api.mcp_tools import proxmox_task
 from noa_api.mcp_tools.proxmox_nic import (
     ACTION_DISABLE,
     EVIDENCE_ACTION,
@@ -308,7 +308,7 @@ def no_polling_delay(monkeypatch: pytest.MonkeyPatch) -> None:
     module constant rather than on `asyncio.sleep`, which is shared by everything else running in
     the loop.
     """
-    monkeypatch.setattr(proxmox_nic_runner, "TASK_POLL_DELAY_SECONDS", 0)
+    monkeypatch.setattr(proxmox_task, "TASK_POLL_DELAY_SECONDS", 0)
 
 
 def payload_text(payload: Any) -> str:

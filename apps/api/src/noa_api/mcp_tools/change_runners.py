@@ -45,21 +45,36 @@ enters that process, and a `before` half carrying the reason cannot be filtered 
 it never arrives. The receipt *row* is read by the approval card and the admin audit surface, both
 of which are the operator's own. A runner's author sent to the wrong field guards the wrong thing.
 
-**Each system contributes its own map**, the way `noa_api.mcp_tools.registry` collects
-registrars: a runner belongs beside the tool that opens the request for it, so the before-state
-and the change that answers it cannot drift into two files.
+**One map, built here**, keyed by the tool names the runners answer to: a runner still lives
+beside the tool that opens the request for it, so the before-state and the change that answers it
+cannot drift into two files, and the keys sit in the one place `registry` checks them against the
+registered CHANGE surface.
 """
 
 from __future__ import annotations
 
 from core.approvals.execution import ChangeRunner
 from noa_api.mcp_tools.context import McpToolContext
-from noa_api.mcp_tools.pmg_whitelist_runner import build_pmg_whitelist_runners
-from noa_api.mcp_tools.proxmox_nic_runner import build_proxmox_nic_runners
-from noa_api.mcp_tools.proxmox_password_runner import build_proxmox_password_runners
-from noa_api.mcp_tools.whm_account_change_runner import build_whm_account_change_runners
-from noa_api.mcp_tools.whm_firewall_allowlist import build_whm_firewall_allowlist_runners
-from noa_api.mcp_tools.whm_firewall_change import build_whm_firewall_change_runners
+from noa_api.mcp_tools.pmg_whitelist import TOOL_PMG_WHITELIST
+from noa_api.mcp_tools.pmg_whitelist_runner import build_pmg_whitelist_runner
+from noa_api.mcp_tools.proxmox_nic import TOOL_PROXMOX_VM_NIC
+from noa_api.mcp_tools.proxmox_nic_runner import build_proxmox_vm_nic_runner
+from noa_api.mcp_tools.proxmox_password import TOOL_PROXMOX_RESET_VM_PASSWORD
+from noa_api.mcp_tools.proxmox_password_runner import build_proxmox_reset_vm_password_runner
+from noa_api.mcp_tools.whm_account_change import (
+    TOOL_WHM_SUSPEND_ACCOUNT,
+    TOOL_WHM_UNSUSPEND_ACCOUNT,
+)
+from noa_api.mcp_tools.whm_account_change_runner import (
+    build_whm_suspend_runner,
+    build_whm_unsuspend_runner,
+)
+from noa_api.mcp_tools.whm_firewall_allowlist import (
+    TOOL_WHM_FIREWALL_ALLOWLIST_REMOVE,
+    build_whm_firewall_allowlist_remove_runner,
+)
+from noa_api.mcp_tools.whm_firewall_change import build_whm_firewall_release_runner
+from noa_api.mcp_tools.whm_firewall_release_outcome import TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW
 
 
 def build_change_runners(*, context: McpToolContext) -> dict[str, ChangeRunner]:
@@ -70,10 +85,13 @@ def build_change_runners(*, context: McpToolContext) -> dict[str, ChangeRunner]:
     never reaches for its own copy of the world.
     """
     return {
-        **build_whm_account_change_runners(context=context),
-        **build_whm_firewall_change_runners(context=context),
-        **build_whm_firewall_allowlist_runners(context=context),
-        **build_proxmox_password_runners(context=context),
-        **build_proxmox_nic_runners(context=context),
-        **build_pmg_whitelist_runners(context=context),
+        TOOL_WHM_SUSPEND_ACCOUNT: build_whm_suspend_runner(context=context),
+        TOOL_WHM_UNSUSPEND_ACCOUNT: build_whm_unsuspend_runner(context=context),
+        TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW: build_whm_firewall_release_runner(context=context),
+        TOOL_WHM_FIREWALL_ALLOWLIST_REMOVE: build_whm_firewall_allowlist_remove_runner(
+            context=context
+        ),
+        TOOL_PROXMOX_RESET_VM_PASSWORD: build_proxmox_reset_vm_password_runner(context=context),
+        TOOL_PROXMOX_VM_NIC: build_proxmox_vm_nic_runner(context=context),
+        TOOL_PMG_WHITELIST: build_pmg_whitelist_runner(context=context),
     }

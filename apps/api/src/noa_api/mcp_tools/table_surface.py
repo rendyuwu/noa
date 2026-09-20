@@ -65,7 +65,7 @@ from mcp.types import TextContent
 from core.results.errors import ResultTableUnavailableError
 from core.results.tables import ParkedTable, TableColumn, park_result_table
 from noa_api.mcp_request_auth import current_mcp_identity
-from noa_api.mcp_tools.context import McpToolContext, build_result_table_writer
+from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.results import ToolPayload, tool_ok
 from noa_api.mcp_tools.ui_resource import build_ui_resource, embed_url
 
@@ -135,7 +135,7 @@ async def park_table_result(
     try:
         async with context.session_factory() as session:
             parked = await park_result_table(
-                build_result_table_writer(context, session),
+                context.result_table_writer_factory(session),
                 tool_name=tool_name,
                 requested_by_user_id=identity.user_id,
                 columns=columns,

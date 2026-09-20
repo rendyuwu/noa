@@ -26,7 +26,7 @@ from core.secrets.errors import (
     YopassNotConfiguredError,
     YopassStoreError,
 )
-from noa_api.api.errors import FALLBACK_STATUS, error_body, status_for
+from noa_api.api.errors import error_body
 from support.auth import build_settings
 
 PLAINTEXT = "ssh-private-key-material"
@@ -146,8 +146,8 @@ def test_secret_errors_have_an_explicit_status_mapping(
     error: NoaError, expected_status: int
 ) -> None:
     """No secret error may take the 503 fallback — that reads as "NOA is down"."""
-    assert status_for(error) != FALLBACK_STATUS
-    assert status_for(error) == expected_status
+    assert error.status_code != NoaError.status_code
+    assert error.status_code == expected_status
 
 
 def test_secret_error_codes_are_the_stable_strings() -> None:

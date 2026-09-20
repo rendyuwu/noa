@@ -287,14 +287,6 @@ def build_whm_unsuspend_runner(*, context: McpToolContext) -> ChangeRunner:
     return run
 
 
-def build_whm_account_change_runners(*, context: McpToolContext) -> dict[str, ChangeRunner]:
-    """Tool name → the thing that performs that change once approved."""
-    return {
-        TOOL_WHM_SUSPEND_ACCOUNT: build_whm_suspend_runner(context=context),
-        TOOL_WHM_UNSUSPEND_ACCOUNT: build_whm_unsuspend_runner(context=context),
-    }
-
-
 # --- Internals ---
 
 

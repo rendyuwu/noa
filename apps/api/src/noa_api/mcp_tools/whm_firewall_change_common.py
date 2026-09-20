@@ -94,6 +94,13 @@ EVIDENCE_FIREWALL = "firewall"
 # — which is what the tolerated steps below actually want from it.
 MESSAGE_CSF_STEP_FAILED = "CSF did not complete this step."
 
+# The MCP tool-schema description both firewall tools publish for their server reference. One
+# string: two copies drifting by a word is two tools that look like they take different arguments.
+SERVER_REF_DESCRIPTION: Final = (
+    "Which WHM server: its id, its name in NOA, or its hostname. Call `whm_list_servers` first "
+    "if the operator has not named one."
+)
+
 logger = structlog.get_logger(__name__)
 
 

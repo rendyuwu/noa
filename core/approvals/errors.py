@@ -27,9 +27,19 @@ that means 503.
 `NoaError` rather than a bare exception for the usual two reasons: `sanitize_tool_errors`
 passes a `NoaError`'s own `error_code` through to the model instead of collapsing it into
 `tool_execution_failed`, so the code that names the fix survives the boundary; and
-`noa_api.api.errors` maps every class here to a status, so the decision endpoints raise rather than
-build responses. All of them are mapped explicitly — a subclass-tree test per tree asserts
+every class here carries its own `status_code`, so the decision endpoints raise rather than
+build responses. All of them declare one explicitly — a subclass-tree test per tree asserts
 none falls through to the 503 default.
+
+**500 for `ChangeReasonForbiddenError` and `ChangeEvidenceRequiredError`.** Neither is
+reachable from anything a client sends: a reason-shaped argument means a CHANGE tool declared
+a parameter the reason rule forbids, and missing evidence means it skipped its own in-process
+preflight. Those are NOA's bugs, and answering 400 would blame the caller for one.
+
+**409 for `ActionRequestAlreadyDecidedError` and `ActionRequestExpiredError`**, the two
+terminal refusals. The caller may decide requests in general; this one is past deciding. Two
+classes rather than one because the remedies differ — reload and read the outcome versus ask
+for the change again.
 
 Messages are operator-safe: they say what NOA declined to do, never which column, key
 or argument was involved. That detail rides in `detail`, which is logs only.
@@ -48,6 +58,10 @@ class ChangeGateError(NoaError):
 
     error_code: str = "change_gate_failed"
     message: str = "This change could not be submitted for approval. Nothing was changed."
+    # Bare `ChangeGateError`: still "the change was not submitted and did not run", so 503
+    # rather than the fallback by accident. A subclass-tree test asserts every member above
+    # is mapped, so reaching this line means a new class arrived without a decision.
+    status_code = 503
 
 
 class ChangeGateUnavailableError(ChangeGateError):
@@ -63,6 +77,9 @@ class ChangeGateUnavailableError(ChangeGateError):
         "NOA could not record this change for approval and will not run it. Try again; "
         "contact an administrator if this continues."
     )
+    # 503: NOA could not record a pending request, so it refused to run the change.
+    # The operator did nothing wrong and retrying is the remedy, which is what 503 says.
+    status_code = 503
 
 
 class ChangeReasonForbiddenError(ChangeGateError):
@@ -80,6 +97,7 @@ class ChangeReasonForbiddenError(ChangeGateError):
         "This change could not be submitted for approval. The reason for a change is typed "
         "by the operator on the approval card and cannot be supplied with the request."
     )
+    status_code = 500
 
 
 class ChangeEvidenceRequiredError(ChangeGateError):
@@ -96,6 +114,7 @@ class ChangeEvidenceRequiredError(ChangeGateError):
         "This change could not be submitted for approval because NOA gathered no "
         "before-state for it. Contact an administrator if this continues."
     )
+    status_code = 500
 
 
 class ChangeGateBranchUnavailableError(ChangeGateError):
@@ -122,6 +141,11 @@ class ChangeGateBranchUnavailableError(ChangeGateError):
         "NOA recorded this change for approval but could not produce the approval card, so "
         "nothing was changed. Contact an administrator."
     )
+    # 500 for the same reason, one step later: the branch that shapes the approval
+    # surface is a module constant, never a tool argument, so a caller cannot have selected an
+    # unbuilt one. Not 503 — the pending row already exists by then, and "try again" would open
+    # a second request for one change.
+    status_code = 500
 
 
 class ActionDecisionError(NoaError):
@@ -134,6 +158,10 @@ class ActionDecisionError(NoaError):
 
     error_code: str = "action_decision_failed"
     message: str = "That decision could not be recorded."
+    # Bare `ActionDecisionError`: a refusal about one request, so 409 rather than the 503
+    # fallback, which would read as "NOA is down" for something NOA decided. The same
+    # subclass-tree test guards this from becoming the default for a class added later.
+    status_code = 409
 
 
 class ActionRequestNotFoundError(ActionDecisionError):
@@ -158,6 +186,11 @@ class ActionRequestNotFoundError(ActionDecisionError):
 
     error_code: str = "action_request_not_found"
     message: str = "That approval request does not exist, or it is not yours to decide."
+    # 404 for absent *and* for another operator's, which is the requester-match rule's whole
+    # point: a 403 would
+    # confirm the request exists. `ActionDecisionError` sits at the end of this group, so
+    # note the pairing — these two answer with different statuses and must not collapse.
+    status_code = 404
 
 
 class ActionReceiptNotFoundError(ActionDecisionError):
@@ -176,6 +209,13 @@ class ActionReceiptNotFoundError(ActionDecisionError):
 
     error_code: str = "action_receipt_not_found"
     message: str = "That approval request has no receipt: no run was started for it."
+    # 404 for a request that is real and carries no receipt (the admin API's contract). Its own
+    # class rather
+    # than the one above, because the two say different things to an administrator: "no such
+    # request" is a dead link, "that decision started no run" is the answer for every deny and
+    # every expiry. Not a 204 — the panel reaches this address from a `hasReceipt` bit that may
+    # have gone stale, and an empty body would render as a blank page rather than as a fact.
+    status_code = 404
 
 
 class ActionRequestAlreadyDecidedError(ActionDecisionError):
@@ -192,6 +232,7 @@ class ActionRequestAlreadyDecidedError(ActionDecisionError):
 
     error_code: str = "action_request_already_decided"
     message: str = "That approval request has already been decided. Reload to see the outcome."
+    status_code = 409
 
 
 class ActionRequestExpiredError(ActionDecisionError):
@@ -205,6 +246,7 @@ class ActionRequestExpiredError(ActionDecisionError):
 
     error_code: str = "action_request_expired"
     message: str = "That approval request expired before it was answered. Ask for the change again."
+    status_code = 409
 
 
 class ChangeReasonRequiredError(ActionDecisionError):
@@ -221,6 +263,10 @@ class ChangeReasonRequiredError(ActionDecisionError):
 
     error_code: str = "change_reason_required"
     message: str = "A reason is required. Type why this change is being made or refused."
+    # 409, and the status is the reason rule's own: a decision without a non-blank reason. Not
+    # a 422 — `reason` is a well-formed string, it is the *decision* that is refused, and the
+    # reason rule names both this code and this status.
+    status_code = 409
 
 
 class ChangeExecutionLimitReachedError(ActionDecisionError):
@@ -246,6 +292,11 @@ class ChangeExecutionLimitReachedError(ActionDecisionError):
     message: str = (
         "You already have a change running. Wait for it to finish, then approve this one again."
     )
+    # 409 for the per-user in-flight cap. Same reading as "already decided": the caller may
+    # approve changes
+    # in general, just not one more right now. Not 429 — nothing is rate-limiting them, and
+    # `Retry-After` would be a number NOA cannot honestly produce.
+    status_code = 409
 
 
 class DecisionCsrfInvalidError(ActionDecisionError):
@@ -262,3 +313,6 @@ class DecisionCsrfInvalidError(ActionDecisionError):
 
     error_code: str = "csrf_token_invalid"
     message: str = "This approval card is no longer valid. Reload it and try again."
+    # 403, not 401: the session authenticated fine and signing in again changes nothing
+    # . The remedy is a freshly minted token, which means reloading the card.
+    status_code = 403

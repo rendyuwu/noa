@@ -13,7 +13,7 @@ raise sites read identically to the source they were hardened in. `code` maps on
 `NoaError`'s `error_code`, which is the field clients and tests branch on.
 
 One class rather than one per failure mode, matching `SSHExecutionError`: a caller that must
-handle "pmgsh did not answer usably" catches one thing, and `STATUS_BY_ERROR` needs one entry.
+handle "pmgsh did not answer usably" catches one thing, and one `status_code` covers the tree.
 Which failure it was stays in `error_code`.
 
 Codes raised by this package, all stable strings tests and tools branch on:
@@ -52,6 +52,12 @@ class PMGSHCLIError(NoaError):
 
     error_code: str = "pmgsh_command_failed"
     message: str = "The PMG command could not be executed."
+    # 502, same reading again: NOA works, `pmgsh`/`pmgconfig` on the PMG node did not answer
+    # usably. One entry for the whole surface — `PMGSHCLIError` carries the specific
+    # `error_code`, including the `SSHExecutionError` codes it converts. The admin validate
+    # route
+    # answers 200 with `ok:false` instead (see above).
+    status_code = 502
 
     def __init__(self, *, code: str, message: str) -> None:
         self.error_code = code

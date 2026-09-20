@@ -15,7 +15,7 @@ raise sites read identically to the source they were hardened in. `code` maps on
 
 One base with two subclasses rather than two unrelated classes: a caller that must handle "the
 firewall CLI did not answer usably" — the preflight tool and the merged release+allow
-tool both do — should catch one thing, and `STATUS_BY_ERROR` needs one entry. Which
+tool both do — should catch one thing, and one `status_code` covers the tree. Which
 backend failed stays in `error_code`.
 
 Codes raised by this package, all stable strings tests and tools branch on:
@@ -53,6 +53,11 @@ class WHMFirewallCLIError(NoaError):
 
     error_code: str = "firewall_command_failed"
     message: str = "The firewall command could not be executed."
+    # 502, same reading as `SSHExecutionError`: NOA works, csf or imunify360-agent on the
+    # remote did not answer usably. One entry for the tree — `CSFCLIError` and
+    # `ImunifyCLIError` inherit this attribute, and which backend failed is already in
+    # `error_code`. The admin validate route answers 200 with `ok:false` instead (see above).
+    status_code = 502
 
     def __init__(self, *, code: str, message: str) -> None:
         self.error_code = code

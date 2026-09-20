@@ -36,6 +36,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from noa_api.api.deps import AdminUserDep, AuthorizationServiceDep
+from noa_api.api.serialization import OkResponse
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -65,12 +66,6 @@ class AdminRoleResponse(BaseModel):
     """
 
     name: str
-
-
-class DeleteRoleResponse(BaseModel):
-    """`{ok: true}`. The role is gone, so there is no row to return."""
-
-    ok: bool
 
 
 class SetRoleToolsRequest(BaseModel):
@@ -139,12 +134,12 @@ async def create_role(
     return AdminRoleResponse(name=created)
 
 
-@router.delete("/roles/{name}", response_model=DeleteRoleResponse)
+@router.delete("/roles/{name}", response_model=OkResponse)
 async def delete_role(
     name: str,
     admin_user: AdminUserDep,
     authorization: AuthorizationServiceDep,
-) -> DeleteRoleResponse:
+) -> OkResponse:
     """Delete a role.
 
     Its grants and its assignments go with it through `ON DELETE CASCADE`, so every operator
@@ -156,7 +151,7 @@ async def delete_role(
     show a stale row disappearing twice and neither disappearance would mean anything.
     """
     await authorization.delete_role(name, actor_email=admin_user.email)
-    return DeleteRoleResponse(ok=True)
+    return OkResponse(ok=True)
 
 
 @router.get("/roles/{name}/tools", response_model=RoleToolsResponse)

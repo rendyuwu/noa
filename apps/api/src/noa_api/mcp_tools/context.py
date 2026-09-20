@@ -248,46 +248,15 @@ def build_authorization_service(
     emits, and there is no write here to emit one. Handing the real notifier in anyway would
     put the emit within reach of the bearer-token side of the app, which is the boundary the
     cookie/CSRF design draws for the decision path and worth respecting here for free.
+
+    The three writer factories on the context — `tool_run_repository_factory`,
+    `action_request_repository_factory`, `result_table_writer_factory` — are called at their use
+    sites rather than wrapped here, for the first reason: each holds the session it was given.
     """
     return AuthorizationService(
         repository=context.authorization_repository_factory(session),
         audit_sink=context.audit_sink,
     )
-
-
-def build_tool_run_repository(context: McpToolContext, session: AsyncSession) -> ToolRunRepository:
-    """The `tool_runs` writer over one session.
-
-    A function rather than a bare factory call so `noa_api.mcp_audit` names one thing for
-    both of its writes, and so this reads the same way as `build_authorization_service`
-    beside it. Constructed per write for the same reason: the repository holds the session,
-    and a long-lived one would pin a connection for the life of the process.
-    """
-    return context.tool_run_repository_factory(session)
-
-
-def build_action_request_repository(
-    context: McpToolContext, session: AsyncSession
-) -> ActionRequestRepository:
-    """The `action_requests` writer over one session.
-
-    Reads the same way as the two functions above it, and is constructed per write for the
-    same reason: the repository holds the session, and a long-lived one would pin a
-    connection for the life of the process.
-    """
-    return context.action_request_repository_factory(session)
-
-
-def build_result_table_writer(
-    context: McpToolContext, session: AsyncSession
-) -> ToolResultTableWriter:
-    """The `tool_result_tables` writer over one session.
-
-    Constructed per write like the three above it, and for the same reason: the repository
-    holds the session, and a long-lived one would pin a connection for the life of the
-    process.
-    """
-    return context.result_table_writer_factory(session)
 
 
 def build_action_result_service(

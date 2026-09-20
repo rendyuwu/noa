@@ -151,6 +151,7 @@ from noa_api.mcp_tools.whm_firewall_change_common import (
     EVIDENCE_SERVER_NAME,
     EVIDENCE_TARGET,
     MESSAGE_EVIDENCE_UNUSABLE,
+    SERVER_REF_DESCRIPTION,
     BackendChange,
     FirewallChangeTarget,
     backend_change_failure,
@@ -223,11 +224,6 @@ DESCRIPTION_WHM_FIREWALL_RELEASE_AND_ALLOW = (
     'convert their answer to whole minutes ("5 min" is 5, "2 hours" is 120, "5 days" is '
     "7200). Read the outcome with `noa_get_action_result`, and never report the address as "
     "released without it."
-)
-
-SERVER_REF_DESCRIPTION: Final = (
-    "Which WHM server: its id, its name in NOA, or its hostname. Call `whm_list_servers` first "
-    "if the operator has not named one."
 )
 
 logger = structlog.get_logger(__name__)
@@ -406,18 +402,6 @@ def build_whm_firewall_release_runner(*, context: McpToolContext) -> ChangeRunne
         )
 
     return run
-
-
-def build_whm_firewall_change_runners(*, context: McpToolContext) -> dict[str, ChangeRunner]:
-    """Tool name → runner for this module's CHANGE tool.
-
-    One entry, and it stays one: the allowlist-remove tool's removal contributes its own map from
-    `whm_firewall_allowlist`, the way each system's registrar does. Collecting it here instead
-    would make this module import the one that imports its shared machinery.
-    """
-    return {
-        TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW: build_whm_firewall_release_runner(context=context),
-    }
 
 
 def register_whm_firewall_change_tools(

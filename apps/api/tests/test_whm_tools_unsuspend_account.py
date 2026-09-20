@@ -59,6 +59,7 @@ from noa_api.mcp_tools.change_gate import (
     UI_RESOURCE_MIME_TYPE,
     UI_RESOURCE_URI_PREFIX,
 )
+from noa_api.mcp_tools.change_runners import build_change_runners
 from noa_api.mcp_tools.registry import register_mcp_tools
 from noa_api.mcp_tools.results import ERROR_TIMEOUT, ERROR_TOOL_EXECUTION_FAILED
 from noa_api.mcp_tools.whm_account_change import (
@@ -73,9 +74,6 @@ from noa_api.mcp_tools.whm_account_change import (
     TOOL_WHM_SUSPEND_ACCOUNT,
     TOOL_WHM_UNSUSPEND_ACCOUNT,
     whm_unsuspend_account,
-)
-from noa_api.mcp_tools.whm_account_change_runner import (
-    build_whm_account_change_runners,
 )
 from support.action_decisions import REASON
 from support.mcp_identity import (
@@ -358,19 +356,19 @@ def test_the_tool_is_catalogued_and_classified_as_a_change() -> None:
     assert registered[TOOL_WHM_UNSUSPEND_ACCOUNT] is ToolRisk.CHANGE
 
 
-def test_both_account_change_runners_come_from_one_builder() -> None:
+def test_both_account_change_runners_are_registered() -> None:
     """Reusable functions over duplication, and DECISIONS section 9's split held at the same time:
-    two names, one module, one builder.
+    two names, one module, two builders reached from one map.
 
     The pair is deliberately *not* merged into a tool with an `action` enum — opposite risk
-    directions — so what stops that from becoming two implementations is that both runners are
-    built here, from one context, by one function.
+    directions — so what stops that from becoming two implementations is that both runners live
+    in one module and are wired from one context.
     """
     context = build_tool_context().context
 
-    runners = build_whm_account_change_runners(context=context)
+    runners = build_change_runners(context=context)
 
-    assert set(runners) == {TOOL_WHM_SUSPEND_ACCOUNT, TOOL_WHM_UNSUSPEND_ACCOUNT}
+    assert {TOOL_WHM_SUSPEND_ACCOUNT, TOOL_WHM_UNSUSPEND_ACCOUNT} <= set(runners)
 
 
 # --------------------------------------------------------------------------------------

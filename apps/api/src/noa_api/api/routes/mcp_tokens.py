@@ -46,7 +46,7 @@ from pydantic import BaseModel
 
 from core.auth.mcp_token_service import McpTokenView
 from noa_api.api.deps import AdminUserDep, McpTokenServiceDep, SessionUserDep
-from noa_api.api.serialization import iso_or_none
+from noa_api.api.serialization import OkResponse, iso_or_none
 
 admin_router = APIRouter(prefix="/admin", tags=["admin"])
 me_router = APIRouter(prefix="/me", tags=["me"])
@@ -107,12 +107,6 @@ class MintedTokenResponse(BaseModel):
 
     token: McpTokenResponse
     plaintext: str
-
-
-class RevokeTokenResponse(BaseModel):
-    """`{ok: true}`. The row is gone, so there is nothing to return (revoke = delete)."""
-
-    ok: bool
 
 
 def _to_token_response(view: McpTokenView) -> McpTokenResponse:
@@ -180,14 +174,14 @@ async def mint_user_token(
     )
 
 
-@admin_router.delete("/users/{user_id}/tokens/{token_id}", response_model=RevokeTokenResponse)
+@admin_router.delete("/users/{user_id}/tokens/{token_id}", response_model=OkResponse)
 async def revoke_user_token(
     user_id: UUID,
     token_id: UUID,
     admin_user: AdminUserDep,
     tokens: McpTokenServiceDep,
-) -> RevokeTokenResponse:
-    """Revoke one token.
+) -> OkResponse:
+    """Revoke one token: the row is deleted, not flagged.
 
     Both ids reach the WHERE clause, so a `token_id` belonging to a different operator is not
     deleted and answers 404 — the same 404 an id that never existed gets. That matters even
@@ -195,7 +189,7 @@ async def revoke_user_token(
     future non-admin caller of the same service would inherit an oracle.
     """
     await tokens.revoke(user_id, token_id, actor_email=admin_user.email)
-    return RevokeTokenResponse(ok=True)
+    return OkResponse(ok=True)
 
 
 # --- Self-service surface: the caller's own tokens ---
@@ -238,12 +232,12 @@ async def mint_own_token(
     )
 
 
-@me_router.delete("/mcp-tokens/{token_id}", response_model=RevokeTokenResponse)
+@me_router.delete("/mcp-tokens/{token_id}", response_model=OkResponse)
 async def revoke_own_token(
     token_id: UUID,
     current_user: SessionUserDep,
     tokens: McpTokenServiceDep,
-) -> RevokeTokenResponse:
+) -> OkResponse:
     """Revoke one of the caller's own tokens.
 
     The only id a caller supplies on this surface, and the user id it is scoped by is the
@@ -251,4 +245,4 @@ async def revoke_own_token(
     fabricated one does. Ownership is a clause in the statement, not a check above it.
     """
     await tokens.revoke(current_user.user_id, token_id, actor_email=current_user.email)
-    return RevokeTokenResponse(ok=True)
+    return OkResponse(ok=True)

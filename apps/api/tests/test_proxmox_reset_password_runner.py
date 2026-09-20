@@ -47,17 +47,19 @@ from core.integrations.proxmox.cloudinit import (
     crypt_password,
 )
 from core.secrets.errors import YopassNotConfiguredError, YopassStoreError
+from noa_api.mcp_tools.change_runners import build_change_runners
 from noa_api.mcp_tools.change_target import STATUS_CHANGED, VERIFICATION_UNAVAILABLE
 from noa_api.mcp_tools.proxmox_password_runner import (
     ERROR_EVIDENCE_UNUSABLE,
     ERROR_POSTFLIGHT_FAILED,
     ERROR_SERVER_UNAVAILABLE,
+    VERIFICATION_POLL_ATTEMPTS,
+    build_proxmox_reset_vm_password_runner,
+)
+from noa_api.mcp_tools.proxmox_task import (
     ERROR_TASK_FAILED,
     ERROR_TASK_TIMEOUT,
     TASK_POLL_ATTEMPTS,
-    VERIFICATION_POLL_ATTEMPTS,
-    build_proxmox_password_runners,
-    build_proxmox_reset_vm_password_runner,
 )
 from support.change_delta import PayloadRunner, payload_runner
 from support.proxmox_password import (
@@ -746,6 +748,6 @@ def test_the_runner_map_names_this_tool() -> None:
     """What `core.approvals.execution` dispatches on, and what the registry demands at startup."""
     fixture, _ = reset_context()
 
-    runners = build_proxmox_password_runners(context=fixture.context)
+    runners = build_change_runners(context=fixture.context)
 
-    assert set(runners) == {"proxmox_reset_vm_password"}
+    assert "proxmox_reset_vm_password" in runners

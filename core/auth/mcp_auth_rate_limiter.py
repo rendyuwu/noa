@@ -88,8 +88,9 @@ def counts_against_limit(error: McpAuthError | LdapUnavailableError) -> bool:
     """Whether `error` is the kind of refusal that moves a counter.
 
     A function rather than a set membership test so subclasses inherit their parent's
-    answer, matching how `noa_api.api.errors.status_for` walks the MRO. `LdapUnavailableError`
-    is not in `COUNTED_DENIALS` and is not an `McpAuthError`, so it answers `False` here by
+    answer, matching how a `status_code` inherited from a parent class resolves.
+    `LdapUnavailableError` is not in `COUNTED_DENIALS` and is not an `McpAuthError`, so it
+    answers `False` here by
     construction rather than by a caller remembering to skip it.
     """
     return isinstance(error, COUNTED_DENIALS)
