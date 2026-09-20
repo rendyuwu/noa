@@ -15,11 +15,7 @@ vi.mock('@/lib/auth/use-verified-auth', () => ({
   },
 }))
 
-vi.mock('@/components/admin/audit/audit-admin-page', () => ({
-  AuditAdminPage: () => <div data-testid="audit-page">tool runs</div>,
-}))
-
-import AdminAuditRoute from './page'
+import AdminLayout from './layout'
 
 const admin = {
   id: 'me-1',
@@ -29,44 +25,47 @@ const admin = {
   roles: ['admin'],
 }
 
+const child = <div data-testid="child">page</div>
+
 beforeEach(() => {
   state.value = { status: 'ready', user: admin, isAdmin: true }
 })
 
-describe('/admin/audit route gate', () => {
+// One gate for every route under /admin. These five cases were asserted once
+// per route page while each page carried its own copy; the pages no longer have
+// a gate to assert, so they are asserted here, over a stand-in child.
+describe('/admin section gate', () => {
   it('re-verifies with requireAdmin so the server decides access', () => {
-    render(<AdminAuditRoute />)
+    render(<AdminLayout>{child}</AdminLayout>)
     expect(state.lastOptions).toEqual({ requireAdmin: true })
   })
 
-  it('renders the audit page for a verified admin', () => {
-    // One view and no props: the tab argument went with the action-requests tab
-    //, so this route has nothing left to choose.
-    render(<AdminAuditRoute />)
-    expect(screen.getByTestId('audit-page')).toBeInTheDocument()
+  it('renders the page for a verified admin', () => {
+    render(<AdminLayout>{child}</AdminLayout>)
+    expect(screen.getByTestId('child')).toBeInTheDocument()
   })
 
   it('shows a loading placeholder while verifying', () => {
     state.value = { status: 'loading', user: null, isAdmin: false }
-    render(<AdminAuditRoute />)
+    render(<AdminLayout>{child}</AdminLayout>)
     expect(screen.getByLabelText('Loading page')).toBeInTheDocument()
-    expect(screen.queryByTestId('audit-page')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('child')).not.toBeInTheDocument()
   })
 
   it('renders nothing on an unexpected auth error', () => {
     state.value = { status: 'error', user: null, isAdmin: false }
-    const { container } = render(<AdminAuditRoute />)
+    const { container } = render(<AdminLayout>{child}</AdminLayout>)
     expect(container).toBeEmptyDOMElement()
   })
 
   it('shows the 403 state to a verified non-admin, never a blank page', () => {
     // Role-denied resolves to a state instead of a redirect: every route in
-    // this app is admin-only, so a redirect would only land on another one.
+    // this section is admin-only, so a redirect would only land on another one.
     // Rendering nothing would leave the operator inside the shell with no
     // explanation for the empty page.
     state.value = { status: 'forbidden', user: { ...admin, roles: [] }, isAdmin: false }
-    render(<AdminAuditRoute />)
+    render(<AdminLayout>{child}</AdminLayout>)
     expect(screen.getByRole('heading', { name: /have access/i })).toBeInTheDocument()
-    expect(screen.queryByTestId('audit-page')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('child')).not.toBeInTheDocument()
   })
 })
