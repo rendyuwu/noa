@@ -26,29 +26,23 @@ type Rule = {
   method: 'GET' | 'POST'
   /** Literal segments; `null` matches exactly one non-empty segment of any value. */
   shape: readonly (string | null)[]
-  /** The rule this entry exists for — read by nothing, kept so a deletion has to argue. */
-  why: string
 }
 
 const ALLOWED: readonly Rule[] = [
   // Identity for the card's header and for the 401 state. Cookie-only (the admin API's contract).
-  { method: 'GET', shape: ['auth', 'me'], why: 'identity, and the 401 state that offers a way out' },
+  // Here for identity, and the 401 state that offers a way out.
+  { method: 'GET', shape: ['auth', 'me'] },
   // The card's detail read. Built API-side for the card page, where the *page* reads it
   // server-side instead; this entry is the one the browser polls through, so the card follows
   // its run to a terminal state without being told the outcome by whoever started it — state in
-  // DB, not the connection (`lib/approvals/poll.ts`).
-  { method: 'GET', shape: ['action-requests', null], why: 'polling the run to a terminal state' },
-  // The decision itself: the only path an approve/deny may travel.
-  {
-    method: 'POST',
-    shape: ['action-requests', null, 'approve'],
-    why: 'cookie POST from a NOA-origin document, never through the LLM',
-  },
-  {
-    method: 'POST',
-    shape: ['action-requests', null, 'deny'],
-    why: 'same door, same guards (a non-blank reason either way)',
-  },
+  // DB, not the connection (`lib/approvals/poll.ts`). Here for polling the run to a terminal
+  // state.
+  { method: 'GET', shape: ['action-requests', null] },
+  // The decision itself: the only path an approve/deny may travel — a cookie POST from a
+  // NOA-origin document, never through the LLM.
+  { method: 'POST', shape: ['action-requests', null, 'approve'] },
+  // Same door, same guards (a non-blank reason either way).
+  { method: 'POST', shape: ['action-requests', null, 'deny'] },
 ]
 
 export type ProxyTarget = { allowed: true; path: string } | { allowed: false }

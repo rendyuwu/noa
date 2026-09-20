@@ -31,9 +31,7 @@ const shouldReportApiFailure = (status: number): boolean => {
 }
 
 // Browser code uses relative same-origin API routes only.
-export const getApiUrl = (): string => {
-  return '/api'
-}
+export const API_BASE = '/api'
 
 export class ApiError extends Error {
   status: number
@@ -76,9 +74,9 @@ export const fetchWithAuth = async (
 
   const normalizedPath = rawPath.startsWith('/') ? rawPath : `/${rawPath}`
   const url =
-    normalizedPath === '/api' || normalizedPath.startsWith('/api/')
+    normalizedPath === API_BASE || normalizedPath.startsWith(`${API_BASE}/`)
       ? normalizedPath
-      : `${getApiUrl()}${normalizedPath}`
+      : `${API_BASE}${normalizedPath}`
 
   let response: Response
 
