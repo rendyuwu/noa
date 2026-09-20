@@ -35,7 +35,6 @@ import pytest
 from fastmcp.tools import ToolResult
 from mcp.types import EmbeddedResource, TextContent
 
-from core.approvals.errors import ChangeReasonForbiddenError
 from core.auth.tool_catalog import TOOL_CATALOG
 from core.db.lifecycle import ActionRequestStatus, ToolRisk
 from core.servers.reference import PROXMOX_NODE_DESCRIPTION, PROXMOX_SERVER_REF_DESCRIPTION
@@ -45,7 +44,6 @@ from noa_api.mcp_tools.change_gate import (
     FORBIDDEN_REASON_KEYS,
     UI_RESOURCE_MIME_TYPE,
     UI_RESOURCE_URI_PREFIX,
-    assert_no_reason_argument,
 )
 from noa_api.mcp_tools.proxmox_nic import TOOL_PROXMOX_VM_NIC
 from noa_api.mcp_tools.proxmox_password import (
@@ -398,17 +396,6 @@ async def test_both_proxmox_tools_publish_the_same_identity_descriptions(tool_na
     # assertions green — one string per parameter, still deduplicated — and ship two strings that
     # contradict each other. Pins a parameter name rather than prose, so a reword cannot false-fail.
     assert "server_ref" not in properties["node"]["description"]
-
-
-async def test_a_reason_shaped_argument_is_refused_at_the_gate() -> None:
-    """The same boundary one layer in, for a caller that reaches `open_change_request` directly.
-
-    Asserted here rather than only in `test_mcp_change_gate.py` because this is the tool whose
-    arguments a future edit is most likely to widen — a "why is this being reset" field reads as
-    helpful right up until it is the LLM writing it.
-    """
-    with pytest.raises(ChangeReasonForbiddenError):
-        assert_no_reason_argument({"server_ref": SERVER_NAME, "reason": "customer asked"})
 
 
 async def test_the_recorded_arguments_are_what_the_model_asked_for() -> None:

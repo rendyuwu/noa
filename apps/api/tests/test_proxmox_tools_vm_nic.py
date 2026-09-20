@@ -35,7 +35,6 @@ import pytest
 from fastmcp.tools import ToolResult
 from mcp.types import EmbeddedResource, TextContent
 
-from core.approvals.errors import ChangeReasonForbiddenError
 from core.auth.tool_catalog import TOOL_CATALOG
 from core.db.lifecycle import ActionRequestStatus, ToolRisk
 from noa_api.mcp_server import build_mcp_server
@@ -44,7 +43,6 @@ from noa_api.mcp_tools.change_gate import (
     FORBIDDEN_REASON_KEYS,
     UI_RESOURCE_MIME_TYPE,
     UI_RESOURCE_URI_PREFIX,
-    assert_no_reason_argument,
 )
 from noa_api.mcp_tools.change_target import STATUS_NO_OP
 from noa_api.mcp_tools.proxmox_nic import (
@@ -223,14 +221,6 @@ async def test_the_tool_schema_carries_no_digest_parameter() -> None:
     ]
 
     assert "digest" not in tool.parameters["properties"]
-
-
-async def test_a_reason_shaped_argument_is_refused_at_the_gate() -> None:
-    """The same boundary one layer in, for a caller that reaches `open_change_request` directly."""
-    with pytest.raises(ChangeReasonForbiddenError):
-        assert_no_reason_argument(
-            {"server_ref": SERVER_NAME, "action": ACTION_DISABLE, "reason": "customer asked"}
-        )
 
 
 async def test_the_tool_is_registered_as_a_change_in_the_catalog() -> None:
