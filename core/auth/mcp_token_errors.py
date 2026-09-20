@@ -9,8 +9,8 @@ Folding them into `authorization_errors` would also have mixed MCP-credential co
 a module whose `error_code` strings are lifted verbatim from `noa-old`'s admin API, where
 the admin panel, ported (not imported) from `noa-old`, already branches on them.
 
-`noa_api.api.errors` maps each class to a status, and a test walks the subclass tree so a
-class added later without a mapping fails there instead of returning 503.
+Each class carries its own `status_code`, and `apps/api/tests/test_error_status_taxonomy.py`
+pins this tree to {400, 404} so a class added later answering 503 fails there.
 
 Statuses and why:
 
@@ -34,10 +34,9 @@ from core.errors import NoaError
 class McpTokenError(NoaError):
     """Base for every MCP token failure.
 
-    Mapped to 400 rather than left to the 503 fallback: an unclassified token failure is a
-    problem with the request, not with NOA's infrastructure. A test asserts every subclass
-    is mapped explicitly, so reaching this entry means a new class arrived without a
-    decision.
+    Decided as 400 rather than left to the 503 fallback: an unclassified token failure is a
+    problem with the request, not with NOA's infrastructure. The tree is pinned to {400, 404},
+    so a class answering anything else is a visible failure.
     """
 
     error_code: str = "mcp_token_error"

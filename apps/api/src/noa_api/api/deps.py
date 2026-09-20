@@ -511,13 +511,14 @@ PMGServerAdminServiceDep = Annotated[
 ]
 
 
-def _server_validation_provider(
-    service_class: Callable[..., Any], model: type[Any], repository_class: type[Any]
-) -> Callable[[Request, SecretCipher], Any]:
-    """One vertical's reachability probe.
+def get_whm_server_validation_service(
+    request: Request,
+    cipher: SecretCipherDep,
+) -> WHMServerValidationService:
+    """WHM's reachability probe.
 
     **Takes the session factory, not this request's session**, unlike the three CRUD services
-    above — and these are the dependencies in this file that deliberately do not use
+    above — and these three are the dependencies in this file that deliberately do not use
     `SessionDep`. A validate opens a socket to somebody else's host, and holding a pooled
     connection across that hop is how a slow server becomes a database outage, the same
     discipline the account search established;
@@ -525,40 +526,48 @@ def _server_validation_provider(
     reads its row in one short session, closes it, does the network work, and opens a second
     session only when there is a host key to store.
 
-    `repository_class` is the narrowest thing each one can be handed. `SQLHostKeyPinRepository`
-    reads one row and writes one column: a reachability probe must not be able to rewrite a
-    credential — the argument `get_approval_card_service` makes about a render path that must not
-    grant an authorization.
-
-    Annotations spelled out on the inner function for the reason `_server_admin_provider` gives.
+    `SQLHostKeyPinRepository` is the narrowest thing this can be handed: it reads one row and
+    writes one column. A reachability probe must not be able to rewrite a credential — the
+    argument `get_approval_card_service` makes about a render path that must not grant an
+    authorization.
     """
-
-    def provider(
-        request: Request,
-        cipher: SecretCipherDep,
-    ) -> Any:
-        return service_class(
-            session_factory=get_session_factory(request),
-            repository_factory=partial(repository_class, model=model),
-            cipher=cipher,
-            audit_sink=StructlogAdminAuditSink(),
-        )
-
-    return provider
+    return WHMServerValidationService(
+        session_factory=get_session_factory(request),
+        repository_factory=partial(SQLHostKeyPinRepository, model=WHMServer),
+        cipher=cipher,
+        audit_sink=StructlogAdminAuditSink(),
+    )
 
 
-get_whm_server_validation_service = _server_validation_provider(
-    WHMServerValidationService, WHMServer, SQLHostKeyPinRepository
-)
-# A strictly weaker repository: `SQLServerRepository` is the `SELECT`-only read repository,
-# because Proxmox has no SSH path and therefore no host key to pin (per the external-system
-# transports). This validate writes nothing at all, and the type says so.
-get_proxmox_server_validation_service = _server_validation_provider(
-    ProxmoxServerValidationService, ProxmoxServer, SQLServerRepository
-)
-get_pmg_server_validation_service = _server_validation_provider(
-    PMGServerValidationService, PMGServer, SQLHostKeyPinRepository
-)
+def get_proxmox_server_validation_service(
+    request: Request,
+    cipher: SecretCipherDep,
+) -> ProxmoxServerValidationService:
+    """Proxmox's reachability probe.
+
+    Same session discipline as WHM's above, and a strictly weaker repository:
+    `SQLServerRepository` is the `SELECT`-only read repository, because Proxmox has no SSH path
+    and therefore no host key to pin. This validate writes nothing at all, and the type says so.
+    """
+    return ProxmoxServerValidationService(
+        session_factory=get_session_factory(request),
+        repository_factory=partial(SQLServerRepository, model=ProxmoxServer),
+        cipher=cipher,
+        audit_sink=StructlogAdminAuditSink(),
+    )
+
+
+def get_pmg_server_validation_service(
+    request: Request,
+    cipher: SecretCipherDep,
+) -> PMGServerValidationService:
+    """PMG's reachability probe. Same shape as WHM's, one table over."""
+    return PMGServerValidationService(
+        session_factory=get_session_factory(request),
+        repository_factory=partial(SQLHostKeyPinRepository, model=PMGServer),
+        cipher=cipher,
+        audit_sink=StructlogAdminAuditSink(),
+    )
 
 
 WHMServerValidationServiceDep = Annotated[

@@ -43,6 +43,7 @@ from core.auth.mcp_auth_rate_limiter import (
     counts_against_limit,
 )
 from support.auth import FakeRateLimitRepository
+from support.errors import error_subclasses
 
 DIGEST = "a" * 64
 OTHER_DIGEST = "b" * 64
@@ -278,13 +279,6 @@ def test_every_mcp_auth_error_class_has_a_counting_verdict() -> None:
     `counts_against_limit` answers for anything, so this asserts the *decision* is written
     down: every concrete subclass appears in one of the two parametrized lists above.
     """
-
-    def subclasses(klass: type[McpAuthError]) -> set[type[McpAuthError]]:
-        found = {klass}
-        for child in klass.__subclasses__():
-            found |= subclasses(child)
-        return found
-
     decided = {
         McpAuthError,
         McpTokenMissingError,
@@ -297,4 +291,4 @@ def test_every_mcp_auth_error_class_has_a_counting_verdict() -> None:
         McpAuthRateLimitedError,
     }
 
-    assert subclasses(McpAuthError) == decided
+    assert error_subclasses(McpAuthError) == decided

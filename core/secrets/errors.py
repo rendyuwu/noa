@@ -75,8 +75,7 @@ class YopassError(NoaError):
     message: str = "The secret could not be delivered. Nothing was changed."
     # 502 for the delivery hop, same reading as `SSHExecutionError`: NOA works, the system it
     # depends on did not answer usably. Server-side generation's deliver-first ordering means
-    # nothing was
-    # changed when this is raised.
+    # nothing was changed when this is raised.
     status_code = 502
 
 
@@ -85,8 +84,8 @@ class YopassNotConfiguredError(YopassError):
 
     error_code: str = "yopass_not_configured"
     message: str = "Secret delivery is not configured. Contact an administrator."
-    # ...except when yopass was never configured. That is NOA's own gap, not the upstream's,
-    # so it takes 500 rather than inheriting 502 from `YopassError`.
+    # 500, not the 502 it would inherit from `YopassError`: a missing configuration is NOA's
+    # own gap, not the upstream's.
     status_code = 500
 
 

@@ -5,8 +5,8 @@ Every `NoaError` subclass carries its own `error_code`, operator-facing `message
 `core.approvals`, `core.secrets`, `core.integrations`, `core.remote_exec`, `core.results`,
 `core.servers`, and — for the one refusal no core service can reach —
 `noa_api.api.admin_errors`), so routes raise and this renders. A subclass with no reading of
-its own inherits its parent's status by ordinary attribute lookup; a taxonomy test per tree
-asserts every member declares one rather than taking `NoaError`'s 503. Routes
+its own inherits its parent's status by ordinary attribute lookup;
+`apps/api/tests/test_error_status_taxonomy.py` pins each tree to a closed set of statuses. Routes
 that build their own `HTTPException` per failure are how two callers end up returning
 different codes for the same condition — `noa-old`'s admin routes did exactly that, in
 ~40 lines per endpoint.

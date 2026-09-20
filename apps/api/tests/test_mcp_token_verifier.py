@@ -45,7 +45,6 @@ from core.auth.mcp_auth_errors import (
 )
 from core.auth.mcp_identity import LIBRECHAT_USER_HEADER
 from core.auth.mcp_token_service import generate_mcp_token, hash_mcp_token
-from core.errors import NoaError
 from noa_api.api.errors import error_body
 from noa_api.mcp_auth import LOG_DENIED, NoaTokenVerifier
 from noa_api.mcp_request_auth import McpAuthContext
@@ -415,13 +414,6 @@ async def test_denial_log_carries_no_token_material() -> None:
 )
 def test_status_for_every_mcp_auth_error(error: McpAuthError, expected_status: int) -> None:
     assert error.status_code == expected_status
-
-
-def test_every_mcp_auth_error_is_mapped_explicitly() -> None:
-    """No denial may inherit the 503 fallback — that answer means "NOA is down"."""
-    for klass in error_subclasses(McpAuthError):
-        assert "status_code" in klass.__dict__, f"{klass.__name__} has no explicit status"
-        assert klass.status_code != NoaError.status_code, f"{klass.__name__} → 503"
 
 
 def test_the_denial_error_codes_are_spelled_as_the_contract_spells_them() -> None:

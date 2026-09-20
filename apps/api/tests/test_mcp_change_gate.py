@@ -43,7 +43,6 @@ from structlog.testing import capture_logs
 
 from core.approvals.errors import (
     ChangeEvidenceRequiredError,
-    ChangeGateError,
     ChangeGateUnavailableError,
     ChangeReasonForbiddenError,
 )
@@ -64,7 +63,6 @@ from noa_api.mcp_tools.change_gate import (
 )
 from support.action_requests import FakeActionRequestRepository
 from support.database import MUTATED_TABLES, migrated_database, truncate
-from support.errors import error_subclasses
 from support.mcp_identity import (
     DISPLAY_NAME,
     EMAIL,
@@ -570,13 +568,6 @@ async def test_the_opened_request_is_logged_without_its_payload() -> None:
     assert entry["action_request_id"] == str(opened.action_request_id)
     assert entry["requested_by_user_id"] == str(user_id)
     assert "acmeco" not in repr(entry)
-
-
-def test_every_change_gate_error_is_mapped_explicitly() -> None:
-    """No gate refusal may inherit the 503 *fallback* — that means "unclassified"."""
-    for klass in error_subclasses(ChangeGateError):
-        assert "status_code" in klass.__dict__, f"{klass.__name__} has no explicit status"
-        assert klass.status_code in {500, 503}
 
 
 # --------------------------------------------------------------------------------------

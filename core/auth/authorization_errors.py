@@ -39,15 +39,14 @@ class AuthorizationError(NoaError):
 
     Separate from `AuthError`: those mean "we do not know who you are", these mean "we
     know, and no". The handler's fallback for an unclassified `AuthError` is 503, which
-    would be wrong for every class below — so a test asserts each of these is mapped
-    explicitly instead of inheriting that fallback.
+    would be wrong for every class below — so `apps/api/tests/test_error_status_taxonomy.py`
+    pins this tree to {400, 403, 404, 409} instead of letting one inherit that fallback.
     """
 
     error_code: str = "authorization_failed"
     message: str = "That action is not allowed."
-    # Bare `AuthorizationError` is still a refusal, so 403 rather than the 503 fallback. A
-    # test asserts every subclass is mapped above, so reaching this line means a new class
-    # arrived without a decision.
+    # Bare `AuthorizationError` is still a refusal, so 403 rather than the 503 fallback.
+    # `apps/api/tests/test_error_status_taxonomy.py` pins this tree to {400, 403, 404, 409}.
     status_code = 403
 
 

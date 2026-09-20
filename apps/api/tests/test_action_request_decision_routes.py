@@ -30,7 +30,6 @@ from httpx import Response
 
 from core.approvals.decisions import ActionDecisionService
 from core.approvals.errors import (
-    ActionDecisionError,
     ActionRequestAlreadyDecidedError,
     ActionRequestExpiredError,
     ActionRequestNotFoundError,
@@ -38,7 +37,6 @@ from core.approvals.errors import (
     DecisionCsrfInvalidError,
 )
 from core.db.lifecycle import ActionRequestStatus
-from core.errors import NoaError
 from noa_api.api import deps
 from noa_api.api.errors import error_body
 from noa_api.api.routes.action_requests import MAX_REASON_LENGTH
@@ -53,7 +51,6 @@ from support.action_decisions import (
     locked_request,
 )
 from support.auth import build_settings
-from support.errors import error_subclasses
 
 OTHER_EMAIL = "second-operator@example.com"
 
@@ -741,13 +738,6 @@ def test_the_cap_comes_from_settings() -> None:
 # --------------------------------------------------------------------------------------
 # Error shape
 # --------------------------------------------------------------------------------------
-
-
-def test_every_decision_error_is_mapped_explicitly() -> None:
-    """No decision refusal may inherit the 503 *fallback* — that means "unclassified"."""
-    for klass in error_subclasses(ActionDecisionError):
-        assert "status_code" in klass.__dict__, f"{klass.__name__} has no explicit status"
-        assert klass.status_code != NoaError.status_code
 
 
 @pytest.mark.parametrize(
