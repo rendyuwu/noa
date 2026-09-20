@@ -29,8 +29,6 @@ import shlex
 import pytest
 from fastapi import status
 
-import core.integrations.whm.csf_cli as csf_cli_mod
-import core.integrations.whm.imunify_cli as imunify_cli_mod
 import core.remote_exec.ssh as ssh_module
 from core.errors import NoaError
 from core.integrations.whm.csf_cli import (
@@ -203,7 +201,7 @@ def test_imunify_unrecoverable_output_reports_a_parse_error() -> None:
 
 
 async def test_run_csf_command_sends_the_composed_command_over_ssh(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    fake = install_fake_ssh_exec(monkeypatch, csf_cli_mod, lambda _cmd: command_result(stdout="ok"))
+    fake = install_fake_ssh_exec(monkeypatch, lambda _cmd: command_result(stdout="ok"))
 
     result = await run_csf_command(ssh_config(username="noa-ops"), args=["-g", "1.2.3.4"])
 
@@ -212,9 +210,7 @@ async def test_run_csf_command_sends_the_composed_command_over_ssh(monkeypatch) 
 
 
 async def test_run_imunify_command_sends_the_composed_command_over_ssh(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    fake = install_fake_ssh_exec(
-        monkeypatch, imunify_cli_mod, lambda _cmd: command_result(stdout="{}")
-    )
+    fake = install_fake_ssh_exec(monkeypatch, lambda _cmd: command_result(stdout="{}"))
 
     await run_imunify_command(ssh_config(), args=["ip-list", "local", "list"])
 

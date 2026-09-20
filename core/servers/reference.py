@@ -1,14 +1,5 @@
 """Operator word → one server of any system, or a structured refusal.
 
-**This module is the answer to a question the server-list tool parked and the whitelist search
-restated.** `noa-old` had one
-`server_ref.py` per system; this repo ported two of them and left a note in the package
-docstring saying the third would show whether a shared resolver was worth having, "or whether
-that difference is two parameters or a third shape". Proxmox arrived with the password-reset
-tool and it is WHM's shape *exactly* — a hostname parsed out of `base_url`, a `choices` entry
-of id/name/base_url — so the answer is two parameters, and a third verbatim copy of ~130 lines
-is what reuse over duplication exists to refuse.
-
 What varies between the three is small enough to name:
 
 - **how a row yields its host string** — `urlsplit(base_url).hostname` for WHM and Proxmox, the
@@ -48,12 +39,11 @@ disagree with the list the tie was judged against. So this is generic in the row
 declaring `ServerRefRepository[WHMServer]` reaches the credentials with no cast and without
 widening the narrow view this module works against.
 
-**The three per-system wrappers are at the bottom of this file**, each a `describe` plus one
-call into `resolve_server_ref`. They were three modules until they held nothing but a docstring
-explaining why they were thin and a re-export block that existed because the module did; both
-die with the file. The per-system *row views* stay where they are — this module imports
-`WHMServerRowLike`, `PMGServerRowLike` and `ProxmoxServerRowLike` and nothing else from them,
-which is what keeps a resolver double from being handed to something that decrypts.
+**The three per-system wrappers are at the bottom of this file**, each a thin binding of the
+policy above. The two *row views* they need live here too — `UrlServerRowLike` for the systems
+whose host is parsed out of `base_url` and `SSHHostServerRowLike` for the one that stores a bare
+`ssh_host`. Both stay narrower than `core.integrations.*`'s `*SecretLike` Protocols on purpose,
+so a double built for a resolver test cannot be handed to something that decrypts.
 """
 
 from __future__ import annotations
@@ -64,10 +54,6 @@ from dataclasses import dataclass, field
 from typing import Final, Generic, Protocol, TypeVar
 from urllib.parse import urlsplit
 from uuid import UUID
-
-from core.servers.pmg_repository import PMGServerRowLike
-from core.servers.proxmox_repository import ProxmoxServerRowLike
-from core.servers.whm_repository import WHMServerRowLike
 
 
 class ServerRowLike(Protocol):
@@ -82,11 +68,28 @@ class ServerRowLike(Protocol):
     name: str
 
 
+class UrlServerRowLike(ServerRowLike, Protocol):
+    """A row whose host is parsed out of `base_url` — WHM and Proxmox, identically."""
+
+    base_url: str
+
+
+class SSHHostServerRowLike(ServerRowLike, Protocol):
+    """A row whose host is the bare `ssh_host` column — PMG, which is SSH-only."""
+
+    ssh_host: str
+
+
 # Invariant: a resolution both holds a row and is constructed with one.
 RowT = TypeVar("RowT", bound=ServerRowLike)
 
 # Covariant: both repository methods return rows and neither accepts one.
 RowT_co = TypeVar("RowT_co", bound=ServerRowLike, covariant=True)
+
+# The same invariant as `RowT`, over the two views the wrappers below need: matching reads the
+# host column as well as `id` and `name`.
+UrlRowT = TypeVar("UrlRowT", bound=UrlServerRowLike)
+SSHHostRowT = TypeVar("SSHHostRowT", bound=SSHHostServerRowLike)
 
 # How many candidates a refusal carries. Verbatim from `noa-old`: enough to recognise the one you
 # meant, few enough that a tie between forty servers does not paste forty rows into the
@@ -101,11 +104,11 @@ ERROR_AMBIGUOUS = "host_ambiguous"
 class ServerRefRepository(Protocol[RowT_co]):
     """The inventory surface resolution needs, parametrised by the row it yields.
 
-    Structurally what `WHMServerReadRepository`, `PMGServerReadRepository` and
-    `ProxmoxServerReadRepository` already are, named here so the shared policy states its own
-    requirement — the per-system repositories keep their own names because each also states
-    which `to_safe_dict` renders it outward, which is a claim about that table and not about
-    resolution.
+    Generic in the row, and that is what keeps the views above narrow: resolution matches on
+    identity and never touches a credential, but a tool that resolves a server then *calls* it
+    needs the credentials off the row it resolved — that row, not a second read by id which
+    could disagree with the list a tie was judged against. A caller declares
+    `ServerRefRepository[WHMServer]` and reaches them with no cast.
     """
 
     async def list_servers(self) -> Sequence[RowT_co]: ...
@@ -130,11 +133,6 @@ class ServerRefResolution(Generic[RowT]):
     message: str = ""
     choices: list[dict[str, str]] = field(default_factory=list)
 
-    @property
-    def server_id(self) -> UUID | None:
-        """The resolved id, or `None`. Derived, so it cannot disagree with `server`."""
-        return None if self.server is None else self.server.id
-
 
 def hostname_of(base_url: str) -> str | None:
     """The host component of a `base_url`, or `None` when it does not parse.
@@ -144,11 +142,6 @@ def hostname_of(base_url: str) -> str | None:
     base URL" is one place for it to be wrong.
     """
     return urlsplit(base_url).hostname
-
-
-def required_message(subject: str) -> str:
-    """The `host_required` sentence for one system."""
-    return f"{subject} server reference is required"
 
 
 async def resolve_server_ref(
@@ -173,7 +166,9 @@ async def resolve_server_ref(
     if not reference:
         # a whitespace-only required string is a bad call, not an empty search.
         return ServerRefResolution(
-            ok=False, error_code=ERROR_REQUIRED, message=required_message(subject)
+            ok=False,
+            error_code=ERROR_REQUIRED,
+            message=f"{subject} server reference is required",
         )
 
     by_id = await _resolve_by_id(reference, repository=repository, subject=subject)
@@ -250,46 +245,53 @@ def _resolve_matches(
     )
 
 
-# --- WHM ---
-
-# Invariant: a resolution both holds a row and is constructed with one.
-WHMRowT = TypeVar("WHMRowT", bound=WHMServerRowLike)
+# --- WHM and Proxmox: the host is parsed out of `base_url` ---
 
 
-def describe_whm(server: WHMServerRowLike) -> dict[str, str]:
+def describe_url_server(server: UrlServerRowLike) -> dict[str, str]:
     """One candidate, as a `choices` entry.
 
     Id, name and `base_url` — the three fields that let an operator recognise a server and then
-    name it unambiguously. No credentials and no SSH fields: this text goes into an LLM
-    transcript.
+    name it unambiguously. No credentials and no SSH fields, and for Proxmox no `api_token_id`
+    either: that one is not a credential on its own, but it names the user NOA authenticates as,
+    and this text goes into an LLM transcript.
     """
     return {"id": str(server.id), "name": server.name, "base_url": server.base_url}
 
 
+async def _resolve_url_server(
+    reference: str, *, repository: ServerRefRepository[UrlRowT], subject: str
+) -> ServerRefResolution[UrlRowT]:
+    """The shared policy with the two parameters both URL systems take.
+
+    One binding rather than one per system, so the accessor and the `choices` shape cannot drift
+    apart — and so Proxmox's cluster retry cannot drift from its own first pass.
+    """
+    return await resolve_server_ref(
+        reference,
+        repository=repository,
+        subject=subject,
+        host_of=lambda server: hostname_of(server.base_url),
+        describe=describe_url_server,
+    )
+
+
 async def resolve_whm_server_ref(
-    server_ref: str, *, repository: ServerRefRepository[WHMRowT]
-) -> ServerRefResolution[WHMRowT]:
+    server_ref: str, *, repository: ServerRefRepository[UrlRowT]
+) -> ServerRefResolution[UrlRowT]:
     """Resolve `server_ref` to one WHM server, or refuse with a named code.
 
     Never raises for a bad reference: every outcome is a resolution the tool layer turns into a
     structured result, because "I could not tell which server" is information the model can act
     on, while an exception is not.
     """
-    return await resolve_server_ref(
-        server_ref,
-        repository=repository,
-        subject="WHM",
-        host_of=lambda server: hostname_of(server.base_url),
-        describe=describe_whm,
-    )
+    return await _resolve_url_server(server_ref, repository=repository, subject="WHM")
 
 
 # --- PMG ---
 
-PMGRowT = TypeVar("PMGRowT", bound=PMGServerRowLike)
 
-
-def describe_pmg(server: PMGServerRowLike) -> dict[str, str]:
+def describe_pmg(server: SSHHostServerRowLike) -> dict[str, str]:
     """One candidate, as a `choices` entry.
 
     Id, name and `ssh_host` — what lets an operator recognise a node and then name it
@@ -299,8 +301,8 @@ def describe_pmg(server: PMGServerRowLike) -> dict[str, str]:
 
 
 async def resolve_pmg_server_ref(
-    server_ref: str, *, repository: ServerRefRepository[PMGRowT]
-) -> ServerRefResolution[PMGRowT]:
+    server_ref: str, *, repository: ServerRefRepository[SSHHostRowT]
+) -> ServerRefResolution[SSHHostRowT]:
     """Resolve `server_ref` to one PMG server, or refuse with a named code.
 
     Never raises for a bad reference: every outcome is a resolution the tool layer turns into a
@@ -323,12 +325,10 @@ async def resolve_pmg_server_ref(
 
 # --- Proxmox ---
 
-ProxmoxRowT = TypeVar("ProxmoxRowT", bound=ProxmoxServerRowLike)
-
 # The two identity parameters both Proxmox tools publish, and the only copies of them.
 #
-# Here rather than in `mcp_tools/` because they are `required_message("Proxmox")`'s question
-# asked in the other direction — one is what NOA says when a reference is missing, the other is
+# Here rather than in `mcp_tools/` because they are the `host_required` sentence's question asked
+# in the other direction — one is what NOA says when a reference is missing, the other is
 # what it asks for before one is sent — and because the password tool and the NIC tool held
 # byte-identical copies of both that a longer rule would have let drift apart.
 #
@@ -355,15 +355,6 @@ PROXMOX_NODE_DESCRIPTION: Final = (
 _NODE_SUFFIX: Final = re.compile(r"[-_.]?pve\d+$", re.IGNORECASE)
 
 
-def describe_proxmox(server: ProxmoxServerRowLike) -> dict[str, str]:
-    """One candidate, as a `choices` entry.
-
-    Id, name and `base_url` — enough for an operator to recognise an endpoint and then name it
-    unambiguously. No `api_token_id` and no secret: this text goes into an LLM transcript.
-    """
-    return {"id": str(server.id), "name": server.name, "base_url": server.base_url}
-
-
 def _cluster_of_node(reference: str) -> str | None:
     """`examplepve09` → `example`, or `None` when there is nothing new to try.
 
@@ -376,22 +367,9 @@ def _cluster_of_node(reference: str) -> str | None:
     return derived if derived and derived != reference else None
 
 
-async def _resolve_proxmox(
-    reference: str, *, repository: ServerRefRepository[ProxmoxRowT]
-) -> ServerRefResolution[ProxmoxRowT]:
-    """The shared policy, with Proxmox's two parameters. Written once so the retry cannot drift."""
-    return await resolve_server_ref(
-        reference,
-        repository=repository,
-        subject="Proxmox",
-        host_of=lambda server: hostname_of(server.base_url),
-        describe=describe_proxmox,
-    )
-
-
 async def resolve_proxmox_server_ref(
-    server_ref: str, *, repository: ServerRefRepository[ProxmoxRowT]
-) -> ServerRefResolution[ProxmoxRowT]:
+    server_ref: str, *, repository: ServerRefRepository[UrlRowT]
+) -> ServerRefResolution[UrlRowT]:
     """Resolve `server_ref` to one Proxmox server, or refuse with a named code.
 
     Never raises for a bad reference: every outcome is a resolution the tool layer turns into a
@@ -405,7 +383,7 @@ async def resolve_proxmox_server_ref(
     exact lookup runs first and wins, and the derived reference goes through the same exact,
     case-insensitive match as a typed one — so this is a second lookup, not a similarity search.
     """
-    resolution = await _resolve_proxmox(server_ref, repository=repository)
+    resolution = await _resolve_url_server(server_ref, repository=repository, subject="Proxmox")
     if resolution.error_code != ERROR_NOT_FOUND:
         return resolution
 
@@ -413,7 +391,7 @@ async def resolve_proxmox_server_ref(
     if cluster is None:
         return resolution
 
-    retry = await _resolve_proxmox(cluster, repository=repository)
+    retry = await _resolve_url_server(cluster, repository=repository, subject="Proxmox")
     # A miss on the derived name is not news — the operator never typed it, so the refusal that
     # goes back names what they did send. A *tie* on it is news: it carries `choices`, and with no
     # Proxmox read tool in the catalog that list is the only thing that unblocks the model.

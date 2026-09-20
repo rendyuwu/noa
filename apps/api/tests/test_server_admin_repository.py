@@ -26,7 +26,7 @@ A scratch database is created, migrated with `alembic upgrade head`, and dropped
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 import sqlalchemy as sa
@@ -537,35 +537,12 @@ async def test_the_name_check_is_case_insensitive_in_sql(
     assert await repository.name_taken("unrelated") is False
 
 
-# --- Reads the write repositories inherit rather than re-implement ---
-
-
-async def test_the_list_order_comes_from_the_database(
-    session: AsyncSession, cipher: SecretCipher
-) -> None:
-    """`ORDER BY name`, through the composed read repository.
-
-    Inserted out of order on purpose: a write repository that re-implemented `list_servers`
-    without the `ORDER BY` would return insertion order and pass a `sorted()`-based double.
-    """
-    service = whm_service(session, cipher)
-    for name in ("zulu", "alpha", "mike"):
-        await service.create(whm_spec(name), actor_email=ACTOR)
-
-    listed = [server.name for server in await service.list_servers()]
-
-    assert listed == ["alpha", "mike", "zulu"]
-
-
-async def test_get_by_id_answers_none_for_an_absent_row(session: AsyncSession) -> None:
-    """`None`, not a raise — the caller's 404 (`scalar_one()` would raise instead)."""
-    whm = SQLServerAdminRepository(session, model=WHMServer, host_field="base_url")
-    proxmox = SQLServerAdminRepository(session, model=ProxmoxServer)
-    pmg = SQLServerAdminRepository(session, model=PMGServer, host_field="ssh_host")
-
-    assert await whm.get_by_id(uuid4()) is None
-    assert await proxmox.get_by_id(uuid4()) is None
-    assert await pmg.get_by_id(uuid4()) is None
+# --- Reads the write repository inherits rather than re-implements ---
+#
+# `ORDER BY name` and the `None`-for-absent contract belong to `SQLServerRepository` and are
+# proved per table in `test_server_repository.py`. `SQLServerAdminRepository` composes it in one
+# line (`self._reads = SQLServerRepository(session, model=model)`), so re-asserting them here
+# would be asserting that one line twice.
 
 
 async def test_a_created_row_carries_its_server_generated_columns(

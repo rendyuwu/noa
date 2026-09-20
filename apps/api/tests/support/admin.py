@@ -121,10 +121,11 @@ from support.rbac import (
 )
 from support.secrets import build_cipher
 from support.server_admin import (
-    FakePMGServerAdminRepository,
-    FakeProxmoxServerAdminRepository,
-    FakeWHMServerAdminRepository,
+    FakeServerAdminRepository,
     RecordingValidationService,
+    pmg_admin_repository,
+    proxmox_admin_repository,
+    whm_admin_repository,
 )
 from support.tool_run_audit import FakeToolRunAuditReader
 
@@ -203,9 +204,9 @@ class AdminHarness:
     notifier: RecordingToolListNotifier
     # The three server-CRUD verticals. The write repositories are what the routes mutate; the
     # validation services are stubs (see `support.server_admin.RecordingValidationService` for why).
-    whm_servers: FakeWHMServerAdminRepository
-    proxmox_servers: FakeProxmoxServerAdminRepository
-    pmg_servers: FakePMGServerAdminRepository
+    whm_servers: FakeServerAdminRepository
+    proxmox_servers: FakeServerAdminRepository
+    pmg_servers: FakeServerAdminRepository
     whm_validation: RecordingValidationService
     proxmox_validation: RecordingValidationService
     pmg_validation: RecordingValidationService
@@ -345,9 +346,9 @@ def admin_harness(
     notifier = RecordingToolListNotifier(calls=repository.calls)
     jwt_service = JWTService(resolved_settings)
 
-    whm_servers = FakeWHMServerAdminRepository(whm_rows or ())
-    proxmox_servers = FakeProxmoxServerAdminRepository(proxmox_rows or ())
-    pmg_servers = FakePMGServerAdminRepository(pmg_rows or ())
+    whm_servers = whm_admin_repository(whm_rows or ())
+    proxmox_servers = proxmox_admin_repository(proxmox_rows or ())
+    pmg_servers = pmg_admin_repository(pmg_rows or ())
     whm_validation = RecordingValidationService(
         result=validation_result or ServerValidationResult(ok=True, message="ok"),
         not_found=WHMServerNotFoundError,

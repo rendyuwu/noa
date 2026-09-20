@@ -492,7 +492,7 @@ async def test_a_failed_park_refuses_the_read_rather_than_a_dead_address() -> No
 
 
 class ExplodingWHMServerRepository:
-    """A `WHMServerReadRepository` that fails the way a real one can."""
+    """A `ServerRefRepository` that fails the way a real one can."""
 
     def __init__(self, error: BaseException) -> None:
         self._error = error

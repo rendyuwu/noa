@@ -28,7 +28,7 @@ inherited rather than invented, and each is what its form sends:
 models carry `has_api_token`, `has_ssh_password`, `has_ssh_private_key` instead, which is what
 drives the panel's "keep or replace" copy. The models are built field by field off
 `to_safe_dict()`, which is the row's one sanctioned outward serialization
-(`core.servers.whm_repository`): the dict cannot contain a credential, and the explicit mapping
+(`core.db.models`): the dict cannot contain a credential, and the explicit mapping
 means a column added later is not published until somebody decides to publish it (the
 token-scope and envelope assertions —
 `routes/admin_users.py::_to_user_response`'s reason).

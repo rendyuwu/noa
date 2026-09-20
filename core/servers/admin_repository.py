@@ -1,8 +1,7 @@
 """SQL behind server-inventory *writes*.
 
-The half `core.servers.whm_repository`, `pmg_repository` and `proxmox_repository` each
-deferred to this task in prose: `create`, `update`, `delete`, and the one-column write the
-validate flow makes when it captures a host key.
+The half `core.servers.repository` defers: `create`, `update`, `delete`, and the one-column
+write the validate flow makes when it captures a host key.
 
 **Separate classes from the read repositories, not extra methods on them.** The MCP tool path
 holds `SQLServerRepository` to resolve a server reference, and it must not hold
@@ -55,7 +54,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.db.models import PMGServer, ProxmoxServer, WHMServer
+from core.db.models import PMGServer, WHMServer
 from core.servers.repository import ServerModelT, SQLServerRepository
 
 # The `SSHCredentialsMixin` columns (`core.db.models`), in one tuple so the value walk and the
@@ -192,47 +191,37 @@ class PMGServerUpdate:
 
 
 def apply_ssh_fields(row: WHMServer | PMGServer, patch: SSHCredentials) -> None:
-    """Write a patch's SSH block onto `row`: clears first, then values.
+    """Write a patch's SSH block onto `row`: a value wins, else a clear nulls, else untouched.
 
     Takes `SSHCredentials` so a create can pass one, and reads the clear flags off the
     subclass when they are there — a create has nothing to clear, and asking for the flags it
     does not carry would be the only reason to have two of this function.
     """
-    if getattr(patch, "clear_ssh_configuration", False):
-        for field_name in SSH_VALUE_FIELDS:
-            setattr(row, field_name, None)
-
-    for field_name in SSH_VALUE_FIELDS:
-        if getattr(patch, f"clear_{field_name}", False):
-            setattr(row, field_name, None)
-
+    clear_all = getattr(patch, "clear_ssh_configuration", False)
     for field_name in SSH_VALUE_FIELDS:
         value = getattr(patch, field_name)
         if value is not None:
             setattr(row, field_name, value)
-
-
-def _pin_invalidated(
-    row: WHMServer | PMGServer, *, host_changed: bool, patch: SSHCredentialsPatch
-) -> bool:
-    """True when this patch moves the `(host, port)` the stored pin belongs to.
-
-    Evaluated against the row **before** the patch is applied, which is why it takes both.
-    `clear_ssh_configuration` counts because it drops the credentials the pin was captured
-    with; a port set to the value it already had does not.
-    """
-    if host_changed:
-        return True
-    if patch.clear_ssh_configuration or patch.clear_ssh_port:
-        return True
-    return patch.ssh_port is not None and patch.ssh_port != row.ssh_port
+        elif clear_all or getattr(patch, f"clear_{field_name}", False):
+            setattr(row, field_name, None)
 
 
 def apply_ssh_fields_with_pin_rule(
     row: WHMServer | PMGServer, *, host_changed: bool, patch: SSHCredentialsPatch
 ) -> None:
-    """`apply_ssh_fields`, plus "a moved host loses its pin unless the patch names a new one"."""
-    invalidated = _pin_invalidated(row, host_changed=host_changed, patch=patch)
+    """`apply_ssh_fields`, plus "a moved host loses its pin unless the patch names a new one".
+
+    The invalidation question is asked against the row **before** the patch is applied, which is
+    why it is one expression here rather than a check after the write. `clear_ssh_configuration`
+    counts because it drops the credentials the pin was captured with; a port set to the value it
+    already had does not.
+    """
+    invalidated = (
+        host_changed
+        or patch.clear_ssh_configuration
+        or patch.clear_ssh_port
+        or (patch.ssh_port is not None and patch.ssh_port != row.ssh_port)
+    )
     apply_ssh_fields(row, patch)
     if invalidated and patch.ssh_host_key_fingerprint is None:
         row.ssh_host_key_fingerprint = None
@@ -272,7 +261,7 @@ class ServerAdminRepository(Protocol[RowT, CreateT, PatchT]):
     async def commit(self) -> None: ...
 
 
-def _column_values(spec: Any, *, skip_none: bool) -> dict[str, Any]:
+def column_values(spec: Any, *, skip_none: bool) -> dict[str, Any]:
     """A create/update dataclass as column keywords. `ssh` is the one field that is not one.
 
     Every other field name on the six spec dataclasses is its column name, which is what lets
@@ -321,13 +310,37 @@ class SQLServerAdminRepository(Generic[ServerModelT, CreateT, PatchT]):
         return await self._reads.get_by_id(server_id)
 
     async def name_taken(self, name: str, *, exclude_id: UUID | None = None) -> bool:
-        return await _name_taken(self._session, self._model, name=name, exclude_id=exclude_id)
+        """Is `name` already held by some other row of this table?
+
+        **Case-insensitive, while the unique index is not**, and that asymmetry is the point.
+        `core.servers.reference` records the consequence of the gap: Postgres uniqueness is
+        case-sensitive, so `Node1` and `node1` can both exist and `NODE1` then matches both —
+        a permanent `host_ambiguous` for a reference an admin will keep typing. The write
+        side is the only place that can stop it, so it refuses here.
+
+        A pre-check rather than only catching the constraint, for the reason
+        `core.auth.mcp_token_service` states about foreign keys: an `IntegrityError` reaches the
+        client as a 500 and reads like a broken server instead of a name already in use. The
+        constraint stays the backstop for the exact-case race between two concurrent creates.
+        """
+        statement = (
+            select(self._model.id).where(func.lower(self._model.name) == name.lower()).limit(1)
+        )
+        if exclude_id is not None:
+            statement = statement.where(self._model.id != exclude_id)
+        return (await self._session.execute(statement)).first() is not None
 
     async def create(self, spec: CreateT) -> ServerModelT:
-        server = self._model(**_column_values(spec, skip_none=False))
+        server = self._model(**column_values(spec, skip_none=False))
         if self._host_field is not None:
             apply_ssh_fields(server, spec.ssh)  # type: ignore[attr-defined]
-        return await _insert(self._session, server)
+        self._session.add(server)
+        await self._session.flush()
+        # `refresh` rather than trusting the instance: `id` is generated by Postgres and
+        # `created_at`/`updated_at` by their column defaults — none of the three is the
+        # caller's — and the response shape carries all three.
+        await self._session.refresh(server)
+        return server
 
     async def update(self, server_id: UUID, patch: PatchT) -> ServerModelT | None:
         server = await self.get_by_id(server_id)
@@ -343,13 +356,21 @@ class SQLServerAdminRepository(Generic[ServerModelT, CreateT, PatchT]):
                 host_changed=new_host is not None and new_host != getattr(server, self._host_field),
                 patch=patch.ssh,  # type: ignore[attr-defined]
             )
-        for column, value in _column_values(patch, skip_none=True).items():
+        for column, value in column_values(patch, skip_none=True).items():
             setattr(server, column, value)
 
-        return await _refresh(self._session, server)
+        # `refresh` after the in-place edit, so `updated_at` is the stored value.
+        await self._session.flush()
+        await self._session.refresh(server)
+        return server
 
     async def delete(self, server_id: UUID) -> bool:
-        return await _delete(self._session, await self.get_by_id(server_id))
+        server = await self.get_by_id(server_id)
+        if server is None:
+            return False  # the caller's 404
+        await self._session.delete(server)
+        await self._session.flush()
+        return True
 
     async def commit(self) -> None:
         await self._session.commit()
@@ -376,85 +397,18 @@ class SQLHostKeyPinRepository(Generic[ServerModelT]):
         return await self._reads.get_by_id(server_id)
 
     async def set_host_key_fingerprint(self, server_id: UUID, fingerprint: str | None) -> bool:
-        return await _set_fingerprint(self._session, await self.get_by_id(server_id), fingerprint)
+        """Write only `ssh_host_key_fingerprint`. The validate flow's one write.
+
+        Narrow on purpose: this is the method the validation service holds, and it is the only
+        column that service may change. Handing it a full `update` would let a reachability
+        probe rewrite a credential.
+        """
+        server = await self.get_by_id(server_id)
+        if server is None:
+            return False
+        server.ssh_host_key_fingerprint = fingerprint
+        await self._session.flush()
+        return True
 
     async def commit(self) -> None:
         await self._session.commit()
-
-
-# --- The five statements all three share ---
-
-
-async def _name_taken(
-    session: AsyncSession,
-    model: type[WHMServer] | type[ProxmoxServer] | type[PMGServer],
-    *,
-    name: str,
-    exclude_id: UUID | None,
-) -> bool:
-    """Is `name` already held by some other row of `model`?
-
-    **Case-insensitive, while the unique index is not**, and that asymmetry is the point.
-    `core.servers.reference` records the consequence of the gap: Postgres uniqueness is
-    case-sensitive, so `Node1` and `node1` can both exist and `NODE1` then matches both —
-    a permanent `host_ambiguous` for a reference an admin will keep typing. The write
-    side is the only place that can stop it, so it refuses here.
-
-    A pre-check rather than only catching the constraint, for the reason
-    `core.auth.mcp_token_service` states about foreign keys: an `IntegrityError` reaches the
-    client as a 500 and reads like a broken server instead of a name already in use. The
-    constraint stays the backstop for the exact-case race between two concurrent creates.
-    """
-    statement = select(model.id).where(func.lower(model.name) == name.lower()).limit(1)
-    if exclude_id is not None:
-        statement = statement.where(model.id != exclude_id)
-    return (await session.execute(statement)).first() is not None
-
-
-async def _insert(session: AsyncSession, server: WHMServer | ProxmoxServer | PMGServer):  # type: ignore[no-untyped-def]
-    """`add` + `flush` + `refresh`, so the caller sees the server-generated columns.
-
-    `refresh` rather than trusting the instance: `id` is generated by Postgres and
-    `created_at`/`updated_at` by their column defaults — none of the three is the caller's —
-    and the response shape carries all three.
-    """
-    session.add(server)
-    await session.flush()
-    await session.refresh(server)
-    return server
-
-
-async def _refresh(session: AsyncSession, server: WHMServer | ProxmoxServer | PMGServer):  # type: ignore[no-untyped-def]
-    """`flush` + `refresh` after an in-place edit, so `updated_at` is the stored value."""
-    await session.flush()
-    await session.refresh(server)
-    return server
-
-
-async def _delete(
-    session: AsyncSession, server: WHMServer | ProxmoxServer | PMGServer | None
-) -> bool:
-    """Delete `server` if it is there. `False` is the caller's 404."""
-    if server is None:
-        return False
-    await session.delete(server)
-    await session.flush()
-    return True
-
-
-async def _set_fingerprint(
-    session: AsyncSession,
-    server: WHMServer | PMGServer | None,
-    fingerprint: str | None,
-) -> bool:
-    """Write only `ssh_host_key_fingerprint`. The validate flow's one write.
-
-    Narrow on purpose: this is the method the validation service holds, and it is the only
-    column that service may change. Handing it a full `update` would let a reachability probe
-    rewrite a credential.
-    """
-    if server is None:
-        return False
-    server.ssh_host_key_fingerprint = fingerprint
-    await session.flush()
-    return True

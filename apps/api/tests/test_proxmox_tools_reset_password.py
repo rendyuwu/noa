@@ -373,7 +373,7 @@ async def test_both_proxmox_tools_publish_the_same_identity_descriptions(tool_na
     **What this does not bind: the promise to the mechanism.** A `server_ref` description reworded
     to *forbid* node names would still carry the word `node` and this test would stay green.
     Nothing here can tell a correct clause from an inverted one. What the resolver actually does
-    with a node name is bound in `test_proxmox_server_ref.py`, by the section covering a node name
+    with a node name is bound in `test_server_reference.py`, by the section covering a node name
     resolving to the server that runs it; this file binds only that the two schemas agree and that
     the word survives. The gap is stated rather than closed on purpose — closing it means pinning
     a sentence, which turns every reword into a false failure.
