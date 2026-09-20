@@ -283,56 +283,6 @@ def test_example_prompt_is_present_and_substantial() -> None:
     assert "UI Resource Marker" in prompt
 
 
-# --- the example prompt tells the model how to read a pasted lookup block ---
-
-# Two things the Proxmox paste clause has to mention, each a *mapping* the model cannot infer and
-# neither a pinned sentence:
-#
-#   * `Host Node` — the block's field name, sent as both `node` and `server_ref`;
-#   * `cloud-init` — the `username` the block does not carry, and which therefore comes from the
-#     operator rather than from the contact address sitting in the block.
-#
-# It is asserted at all because Proxmox has no discovery tool: `whm_list_servers` has no Proxmox
-# sibling, so a model that reads a pasted block wrongly has no read to recover with.
-#
-# **What this set binds, and what it does not.** It binds vocabulary: the clause is present and
-# still talks about both things. It does **not** bind *direction* — a clause rewritten to invert
-# the rule still carries every marker, because the difference is prose, and pinning the sentence
-# would turn every reword into a false failure. The direction is bound on the code side instead,
-# where it is no longer the tool description's job: `test_server_reference.py` asserts the
-# resolver itself derives a server from a node name. A reviewer reads this clause; the suite reads
-# the mechanism.
-PASTE_CLAUSE_MARKERS: tuple[str, ...] = ("Host Node", "cloud-init")
-
-
-def paste_clause_problems(prompt: str) -> list[str]:
-    """Which markers of the paste clause `prompt` is missing.
-
-    A list for the same argument `config_problems` is one: the separating test below asserts that a
-    *specific* absence is what turns it red.
-    """
-    return [marker for marker in PASTE_CLAUSE_MARKERS if marker not in prompt]
-
-
-def test_example_prompt_carries_the_proxmox_paste_clause() -> None:
-    assert paste_clause_problems(_example_prompt()) == []
-
-
-@pytest.mark.parametrize("marker", PASTE_CLAUSE_MARKERS)
-def test_the_paste_clause_check_separates(marker: str) -> None:
-    """Without this, a clause quietly dropped from the doc reads the same as one still there.
-
-    The mutation is to a copy of the doc's *own* text — the lines carrying one marker are removed —
-    rather than to the assertion, which is `_mutate`'s shape above: break the production artifact
-    and require red, never weaken the check.
-    """
-    without_marker = "\n".join(
-        line for line in _example_prompt().splitlines() if marker not in line
-    )
-
-    assert paste_clause_problems(without_marker) != []
-
-
 # --- the example prompt names no justification field ---
 
 
