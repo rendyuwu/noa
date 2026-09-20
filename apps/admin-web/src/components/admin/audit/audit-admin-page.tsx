@@ -1,13 +1,19 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { PageHeader } from '@gio/bigsu-app-shell'
 import { Button, DataTable } from '@gio/bigsu-ui'
 
-import { fetchToolRunDetail } from '@/lib/admin/audit/audit-api'
+import { fetchToolRunDetail, fetchToolRuns } from '@/lib/admin/audit/audit-api'
+import { activeToolFilterCount, buildToolRunQuery } from '@/lib/admin/audit/audit-model'
 import { useAuditDetail } from '@/lib/admin/audit/use-audit-detail'
-import { useAuditToolRuns } from '@/lib/admin/audit/use-audit-tool-runs'
-import type { AuditToolRunDetail, AuditToolRunListItem } from '@/lib/admin/audit/types'
+import { useAuditList } from '@/lib/admin/audit/use-audit-list'
+import {
+  DEFAULT_TOOL_FILTERS,
+  type AuditToolRunDetail,
+  type AuditToolRunListItem,
+  type ToolRunFilters,
+} from '@/lib/admin/audit/types'
 
 import { ToolRunFilterBar } from './audit-filters'
 import { AuditPagination } from './audit-pagination'
@@ -32,7 +38,20 @@ const TOOL_COLUMNS = buildToolRunColumns()
 // are the MCP tool path and the approval executor, so there is no create, edit or
 // delete affordance anywhere on this page.
 export function AuditAdminPage() {
-  const toolRuns = useAuditToolRuns(true)
+  // Bound straight to the tool-runs endpoint and query builder: the generic
+  // controller owns the paging, the race guard and the cursor stack, and the
+  // active-filter count is only read here to pick the empty state's copy.
+  const toolRuns = useAuditList<AuditToolRunListItem, ToolRunFilters>({
+    enabled: true,
+    defaultFilters: DEFAULT_TOOL_FILTERS,
+    errorFallback: 'Unable to load tool runs',
+    buildQuery: buildToolRunQuery,
+    fetchPage: fetchToolRuns,
+  })
+  const filterCount = useMemo(
+    () => activeToolFilterCount(toolRuns.activeFilters),
+    [toolRuns.activeFilters],
+  )
   const toolRunDetail = useAuditDetail<AuditToolRunDetail>(
     fetchToolRunDetail,
     'Unable to load tool run detail',
@@ -81,7 +100,7 @@ export function AuditAdminPage() {
             { label: 'View details', icon: 'externalLink', onSelect: () => openToolRun(row) },
           ]}
           emptyState={
-            toolRuns.filterCount > 0
+            filterCount > 0
               ? {
                   title: 'No matching tool runs',
                   description: 'Adjust the filters to see more results.',
