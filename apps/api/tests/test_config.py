@@ -99,13 +99,19 @@ def tracked_files() -> list[Path]:
 
     `git ls-files` rather than a filesystem walk: it excludes the developer's own `.env`,
     `.venv`, and `node_modules` without an ignore list of its own to drift.
+
+    `--others --exclude-standard` widens it to files that are not staged yet: a cap that only
+    sees `git add`ed files first goes red at commit time, which is after the author has stopped
+    looking. Ignored paths stay out either way. A path that is deleted but still indexed is
+    harmless here — `read_text_or_empty()` below swallows `OSError` and yields `""`, so an
+    unstaged deletion reads as a zero-line file rather than as a failure.
     """
     git = shutil.which("git")
     if git is None:  # pragma: no cover - git is present wherever this repo is checked out
         pytest.skip("git unavailable; cannot enumerate tracked files")
 
     listing = subprocess.run(  # noqa: S603  (fixed argv, no shell)
-        [git, "ls-files", "-z"],
+        [git, "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
@@ -645,6 +651,24 @@ def test_get_settings_is_cached() -> None:
 # tracked file list is the only place that sees all of it at once. Like that scan, it needs `git`
 # and therefore skips where `git` is absent — run it locally before committing.
 FILE_LINE_CAPS = {".py": 900, ".tsx": 450, ".ts": 300}
+
+
+def test_the_cap_scan_sees_every_package_it_bounds() -> None:
+    """An empty list satisfies every cap, so a broken `git ls-files` would read as compliance.
+
+    One marker per package, because this scan replaced two per-package TypeScript sweeps that
+    each ran with their own `cwd`: a wrong `cwd` here drops a whole app silently rather than
+    failing.
+    """
+    scanned = {
+        str(path.relative_to(REPO_ROOT))
+        for path in tracked_files()
+        if path.suffix in FILE_LINE_CAPS
+    }
+
+    assert "apps/api/src/noa_api/main.py" in scanned
+    assert "apps/admin-web/src/app/healthz/route.ts" in scanned
+    assert "apps/web-embed/src/app/healthz/route.ts" in scanned
 
 
 def test_no_tracked_source_file_exceeds_its_line_cap() -> None:
