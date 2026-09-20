@@ -25,11 +25,12 @@ const mocks = vi.hoisted(() => ({
   receiptLoads: [] as string[],
 }))
 
-vi.mock('@/lib/admin/audit/use-audit-action-requests', () => ({
-  useAuditActionRequests: (enabled: boolean) => ({ ...(mocks.requests as object), enabled }),
+vi.mock('@/lib/admin/audit/use-audit-list', () => ({
+  useAuditList: () => mocks.requests,
 }))
 vi.mock('@/lib/admin/audit/audit-api', () => ({
   fetchActionRequestDetail: vi.fn(),
+  fetchActionRequests: vi.fn(),
   fetchActionReceipt: vi.fn(),
 }))
 vi.mock('@/lib/admin/audit/use-audit-detail', async () => {
@@ -102,11 +103,16 @@ const receipt: AuditActionReceipt = {
   delta: { verification: 'verified', changed_fields: [{ field: 'suspended', old: false, new: true }] },
 }
 
+const NO_REQUEST_FILTERS = { fromDate: '', toDate: '', toolName: '', status: '', requestedByEmail: '' }
+
+// `activeFilters` is not decoration here: the page runs the real
+// activeActionRequestFilterCount over it to choose the empty state's copy, so a
+// case that wants "filters are active" says so by naming filters.
 function listController(over: Record<string, unknown> = {}) {
   return {
-    draft: { fromDate: '', toDate: '', toolName: '', status: '', requestedByEmail: '' },
+    draft: { ...NO_REQUEST_FILTERS },
     setDraft: vi.fn(),
-    activeFilters: {},
+    activeFilters: { ...NO_REQUEST_FILTERS },
     items: [requestRow],
     loading: false,
     loadError: null,
@@ -118,7 +124,6 @@ function listController(over: Record<string, unknown> = {}) {
     goPrev: vi.fn(),
     goNext: vi.fn(),
     reload: vi.fn(),
-    filterCount: 0,
     ...over,
   }
 }
@@ -394,11 +399,14 @@ describe('ApprovalsAdminPage filters, pagination and errors', () => {
   })
 
   it('distinguishes an empty trail from an empty filtered result', () => {
-    mocks.requests = listController({ items: [], filterCount: 0 })
+    mocks.requests = listController({ items: [] })
     render(<ApprovalsAdminPage />)
     expect(screen.getByText('No approval requests')).toBeInTheDocument()
 
-    mocks.requests = listController({ items: [], filterCount: 2 })
+    mocks.requests = listController({
+      items: [],
+      activeFilters: { ...NO_REQUEST_FILTERS, toolName: 'whm_suspend_account', status: 'APPROVED' },
+    })
     render(<ApprovalsAdminPage />)
     expect(screen.getByText('No matching approval requests')).toBeInTheDocument()
   })

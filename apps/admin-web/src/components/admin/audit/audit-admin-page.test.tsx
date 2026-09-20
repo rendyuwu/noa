@@ -16,8 +16,8 @@ const mocks = vi.hoisted(() => ({
   detailLoads: [] as string[],
 }))
 
-vi.mock('@/lib/admin/audit/use-audit-tool-runs', () => ({
-  useAuditToolRuns: (enabled: boolean) => ({ ...(mocks.toolRuns as object), enabled }),
+vi.mock('@/lib/admin/audit/use-audit-list', () => ({
+  useAuditList: () => mocks.toolRuns,
 }))
 vi.mock('@/lib/admin/audit/use-audit-detail', () => ({
   useAuditDetail: () => ({
@@ -30,6 +30,7 @@ vi.mock('@/lib/admin/audit/use-audit-detail', () => ({
 }))
 vi.mock('@/lib/admin/audit/audit-api', () => ({
   fetchToolRunDetail: vi.fn(),
+  fetchToolRuns: vi.fn(),
 }))
 
 import { AuditAdminPage } from './audit-admin-page'
@@ -47,19 +48,24 @@ const toolRow: AuditToolRunListItem = {
   durationMs: 1000,
 }
 
+const NO_TOOL_FILTERS = {
+  fromDate: '',
+  toDate: '',
+  toolName: '',
+  status: '',
+  risk: '',
+  conversationRef: '',
+  requestedByEmail: '',
+}
+
+// `activeFilters` is not decoration here: the page runs the real
+// activeToolFilterCount over it to choose the empty state's copy, so a case
+// that wants "filters are active" says so by naming filters.
 function toolController(over: Record<string, unknown> = {}) {
   return {
-    draft: {
-      fromDate: '',
-      toDate: '',
-      toolName: '',
-      status: '',
-      risk: '',
-      conversationRef: '',
-      requestedByEmail: '',
-    },
+    draft: { ...NO_TOOL_FILTERS },
     setDraft: vi.fn(),
-    activeFilters: {},
+    activeFilters: { ...NO_TOOL_FILTERS },
     items: [toolRow],
     loading: false,
     loadError: null,
@@ -71,7 +77,6 @@ function toolController(over: Record<string, unknown> = {}) {
     goPrev: vi.fn(),
     goNext: vi.fn(),
     reload: vi.fn(),
-    filterCount: 0,
     ...over,
   }
 }
@@ -144,7 +149,10 @@ describe('AuditAdminPage filters, pagination, and detail', () => {
   })
 
   it('offers a Clear filters action in the empty state when filters are active', () => {
-    mocks.toolRuns = toolController({ items: [], filterCount: 2 })
+    mocks.toolRuns = toolController({
+      items: [],
+      activeFilters: { ...NO_TOOL_FILTERS, toolName: 'pmg_whitelist_search', risk: 'READ' },
+    })
     render(<AuditAdminPage />)
     expect(screen.getByText('No matching tool runs')).toBeInTheDocument()
     // Two of them: the FilterBar's own, and the one inside the empty state — an
@@ -157,7 +165,7 @@ describe('AuditAdminPage filters, pagination, and detail', () => {
   })
 
   it('distinguishes an empty trail from an empty filtered result', () => {
-    mocks.toolRuns = toolController({ items: [], filterCount: 0 })
+    mocks.toolRuns = toolController({ items: [] })
     render(<AuditAdminPage />)
     expect(screen.getByText('No tool runs')).toBeInTheDocument()
   })

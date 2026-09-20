@@ -1,16 +1,26 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { PageHeader } from '@gio/bigsu-app-shell'
 import { Button, DataTable } from '@gio/bigsu-ui'
 
-import { fetchActionReceipt, fetchActionRequestDetail } from '@/lib/admin/audit/audit-api'
-import { useAuditActionRequests } from '@/lib/admin/audit/use-audit-action-requests'
+import {
+  fetchActionReceipt,
+  fetchActionRequestDetail,
+  fetchActionRequests,
+} from '@/lib/admin/audit/audit-api'
+import {
+  activeActionRequestFilterCount,
+  buildActionRequestQuery,
+} from '@/lib/admin/audit/audit-model'
 import { useAuditDetail } from '@/lib/admin/audit/use-audit-detail'
-import type {
-  AuditActionReceipt,
-  AuditActionRequestDetail,
-  AuditActionRequestListItem,
+import { useAuditList } from '@/lib/admin/audit/use-audit-list'
+import {
+  DEFAULT_ACTION_REQUEST_FILTERS,
+  type ActionRequestFilters,
+  type AuditActionReceipt,
+  type AuditActionRequestDetail,
+  type AuditActionRequestListItem,
 } from '@/lib/admin/audit/types'
 
 import { ActionRequestFilterBar } from './audit-filters'
@@ -39,7 +49,21 @@ const ACTION_REQUEST_COLUMNS = buildActionRequestColumns()
 // for most rows. The receipt is only fetched when the row says it has one, so
 // the common "no run was started" case costs no request and shows no error.
 export function ApprovalsAdminPage() {
-  const requests = useAuditActionRequests(true)
+  // Bound straight to the action-requests endpoint and query builder. Nothing
+  // here is a second copy of the paging, the race guard or the cursor stack:
+  // those are decisions about a server-paged list rather than about which table
+  // is behind it, and the generic controller holds them for both audit surfaces.
+  const requests = useAuditList<AuditActionRequestListItem, ActionRequestFilters>({
+    enabled: true,
+    defaultFilters: DEFAULT_ACTION_REQUEST_FILTERS,
+    errorFallback: 'Unable to load approval requests',
+    buildQuery: buildActionRequestQuery,
+    fetchPage: fetchActionRequests,
+  })
+  const filterCount = useMemo(
+    () => activeActionRequestFilterCount(requests.activeFilters),
+    [requests.activeFilters],
+  )
   const requestDetail = useAuditDetail<AuditActionRequestDetail>(
     fetchActionRequestDetail,
     'Unable to load approval request detail',
@@ -95,7 +119,7 @@ export function ApprovalsAdminPage() {
             { label: 'View details', icon: 'externalLink', onSelect: () => openRequest(row) },
           ]}
           emptyState={
-            requests.filterCount > 0
+            filterCount > 0
               ? {
                   title: 'No matching approval requests',
                   description: 'Adjust the filters to see more results.',
