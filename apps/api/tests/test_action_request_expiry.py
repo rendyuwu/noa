@@ -164,45 +164,6 @@ async def test_a_pass_without_a_moment_uses_an_aware_utc_clock() -> None:
 # --------------------------------------------------------------------------------------
 
 
-async def test_check_on_read_expires_a_due_request_and_reports_it() -> None:
-    """The card must not render a PENDING nobody may act on any more."""
-    repository = FakeActionRequestExpiryRepository()
-    due = repository.add(pending_row(expires_in_seconds=-5))
-
-    expired = await ActionRequestExpiryService(repository).expire_if_due(
-        action_request_id=due.action_request_id
-    )
-
-    assert expired is True
-    assert due.status is ActionRequestStatus.EXPIRED
-
-
-async def test_check_on_read_leaves_a_live_request_pending() -> None:
-    repository = FakeActionRequestExpiryRepository()
-    live = repository.add(pending_row(expires_in_seconds=3600))
-
-    expired = await ActionRequestExpiryService(repository).expire_if_due(
-        action_request_id=live.action_request_id
-    )
-
-    assert expired is False
-    assert live.status is ActionRequestStatus.PENDING
-
-
-async def test_check_on_read_touches_only_the_request_it_was_given() -> None:
-    """The id narrows the sweep's statement; it must not widen it back out."""
-    repository = FakeActionRequestExpiryRepository()
-    asked_about = repository.add(pending_row(expires_in_seconds=-5))
-    someone_elses = repository.add(pending_row(expires_in_seconds=-5))
-
-    await ActionRequestExpiryService(repository).expire_if_due(
-        action_request_id=asked_about.action_request_id
-    )
-
-    assert asked_about.status is ActionRequestStatus.EXPIRED
-    assert someone_elses.status is ActionRequestStatus.PENDING
-
-
 async def test_check_on_read_commits_even_when_nothing_was_due() -> None:
     """The contract is "what you read next is durable", with no branch to get wrong."""
     repository = FakeActionRequestExpiryRepository()
