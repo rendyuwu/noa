@@ -1,30 +1,9 @@
 'use client'
 
-import { ForbiddenView, PageLoadingSkeleton } from '@/components/states'
-import { AuditAdminPage } from '@/components/admin/audit/audit-admin-page'
-import { useVerifiedAuth } from '@/lib/auth/use-verified-auth'
-
-// /admin/audit route. The protected layout already verified an active
-// session and mounted the AppShell; this route adds the admin gate. It re-checks
-// `/auth/me` with requireAdmin, so a verified non-admin gets the 403 state
-// instead of audit data — FastAPI RBAC stays authoritative either way, and both
-// audit routes sit behind `require_admin` there.
+// /admin/audit. The admin gate lives in the section layout; what is left here
+// is the route-to-view binding.
 //
 // The one audit entry point. The ported `/admin/audit/tool-runs` deep link
 // existed to preselect one of two tabs; with the action-requests tab gone
 // it was a second address for the only view, so it went with it.
-export default function AdminAuditRoute() {
-  const { status, user } = useVerifiedAuth({ requireAdmin: true })
-
-  if (status === 'loading') {
-    return <PageLoadingSkeleton />
-  }
-  if (status === 'forbidden') {
-    return <ForbiddenView />
-  }
-  if (status !== 'ready' || !user) {
-    return null
-  }
-
-  return <AuditAdminPage />
-}
+export { AuditAdminPage as default } from '@/components/admin/audit/audit-admin-page'
