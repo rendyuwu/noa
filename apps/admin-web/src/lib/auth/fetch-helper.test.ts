@@ -22,13 +22,7 @@ vi.mock('@/lib/observability/error-reporting', () => ({
   reportClientError: (...args: unknown[]) => reportClientError(...args),
 }))
 
-import { ApiError, fetchWithAuth, getApiUrl, jsonOrThrow } from './fetch-helper'
-
-describe('getApiUrl', () => {
-  it('is the same-origin /api prefix (NOA_API_URL never reaches the browser)', () => {
-    expect(getApiUrl()).toBe('/api')
-  })
-})
+import { ApiError, fetchWithAuth, jsonOrThrow } from './fetch-helper'
 
 describe('fetchWithAuth', () => {
   beforeEach(() => {

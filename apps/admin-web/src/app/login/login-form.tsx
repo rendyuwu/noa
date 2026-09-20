@@ -9,7 +9,7 @@ import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 
 import { loginErrorMessage, type LoginMessage } from '@/app/login/login-messages'
-import { getApiUrl, jsonOrThrow } from '@/lib/auth/fetch-helper'
+import { API_BASE, jsonOrThrow } from '@/lib/auth/fetch-helper'
 import { sanitizeReturnTo } from '@/lib/auth/return-to'
 import { submitOnEnter } from '@/lib/forms/submit-on-enter'
 
@@ -83,7 +83,7 @@ export function LoginForm() {
       // server-only anyway). A plain `fetch`, not `fetchWithAuth`: a 401 here means the credential
       // was refused, not that a session expired, so it must not start the clear-and-redirect flow
       // that would bounce this page back to itself.
-      const response = await fetch(`${getApiUrl()}/auth/login`, {
+      const response = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         credentials: 'include',
