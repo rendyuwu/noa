@@ -34,7 +34,6 @@ from core.auth.authorization_errors import (
     UserNotFoundError,
 )
 from core.db.models import ADMIN_ROLE_NAME
-from core.errors import NoaError
 from noa_api.api.admin_errors import DirectGrantsDisabledError
 from noa_api.api.errors import error_body
 from support.errors import error_subclasses
@@ -156,9 +155,7 @@ def test_every_authorization_error_is_mapped_explicitly() -> None:
     here instead of returning "service unavailable" for a permission problem.
     """
     for klass in error_subclasses(AuthorizationError):
-        status_code = klass.status_code
-        assert status_code != NoaError.status_code, f"{klass.__name__} falls back to 503"
-        assert status_code in {
+        assert klass.status_code in {
             status.HTTP_400_BAD_REQUEST,
             status.HTTP_403_FORBIDDEN,
             status.HTTP_404_NOT_FOUND,

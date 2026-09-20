@@ -52,11 +52,10 @@ class PMGSHCLIError(NoaError):
 
     error_code: str = "pmgsh_command_failed"
     message: str = "The PMG command could not be executed."
-    # 502, same reading again: NOA works, `pmgsh`/`pmgconfig` on the PMG node did not answer
-    # usably. One entry for the whole surface — `PMGSHCLIError` carries the specific
-    # `error_code`, including the `SSHExecutionError` codes it converts. The admin validate
-    # route
-    # answers 200 with `ok:false` instead (see above).
+    # 502: NOA works, `pmgsh`/`pmgconfig` on the PMG node did not answer usably. One status for
+    # the whole surface — `error_code` carries which failure, including the `SSHExecutionError`
+    # codes it converts. The admin validate route answers 200 with `ok:false` instead
+    # (`noa_api.api.routes.admin_servers`).
     status_code = 502
 
     def __init__(self, *, code: str, message: str) -> None:

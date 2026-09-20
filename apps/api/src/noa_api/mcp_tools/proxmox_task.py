@@ -15,11 +15,7 @@ from typing import Final
 from core.integrations.proxmox.client import ProxmoxClient
 from noa_api.mcp_tools.proxmox_password import text_or_none
 
-# The config write's own task did not reach a terminal state in time. The write was accepted, so
-# the change may already have taken — which is why neither caller reports this as a refusal.
 ERROR_TASK_TIMEOUT: Final = "task_timeout"
-
-# The task reached a terminal state and it was a failure — Proxmox saying it did not apply.
 ERROR_TASK_FAILED: Final = "task_failed"
 
 # `noa-old`'s numbers, kept. A VM config write finishes in well under a second in practice.

@@ -95,8 +95,6 @@ STATE_SECRET_CIPHER: Final = "secret_cipher"  # noqa: S105
 DETAIL_NO_SESSION_COOKIE = "no `noa_session` cookie on the request"
 
 T = TypeVar("T")
-# The validation service a `_server_validation_provider` closure builds.
-ServiceT = TypeVar("ServiceT")
 
 
 def _from_state(request: Request, key: str, expected: type[T]) -> T:
@@ -470,10 +468,8 @@ def _server_admin_provider(
     path resolves a server reference and must not hold an object that can delete one, which is
     the split `get_approval_card_service` makes one table over.
 
-    The inner function is written with its annotations spelled out because that is what FastAPI
-    introspects: `functools.partial` has no signature of its own and `functools.wraps` would copy
-    the wrong one. The annotation strings resolve against this module's globals, so the factories
-    stay here.
+    Annotations spelled out on the inner function: FastAPI introspects that signature, and
+    `partial` has none. They resolve against this module's globals, so the factories stay here.
     """
 
     def provider(
@@ -516,8 +512,8 @@ PMGServerAdminServiceDep = Annotated[
 
 
 def _server_validation_provider(
-    service_class: Callable[..., ServiceT], model: type[Any], repository_class: type[Any]
-) -> Callable[[Request, SecretCipher], ServiceT]:
+    service_class: Callable[..., Any], model: type[Any], repository_class: type[Any]
+) -> Callable[[Request, SecretCipher], Any]:
     """One vertical's reachability probe.
 
     **Takes the session factory, not this request's session**, unlike the three CRUD services
@@ -540,7 +536,7 @@ def _server_validation_provider(
     def provider(
         request: Request,
         cipher: SecretCipherDep,
-    ) -> ServiceT:
+    ) -> Any:
         return service_class(
             session_factory=get_session_factory(request),
             repository_factory=partial(repository_class, model=model),

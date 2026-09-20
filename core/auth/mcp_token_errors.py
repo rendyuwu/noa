@@ -42,8 +42,6 @@ class McpTokenError(NoaError):
 
     error_code: str = "mcp_token_error"
     message: str = "That MCP token request could not be completed."
-    # Bare `McpTokenError`: a request problem, not an infrastructure answer. Same
-    # subclass-tree test as above guards this from becoming the default.
     status_code = 400
 
 

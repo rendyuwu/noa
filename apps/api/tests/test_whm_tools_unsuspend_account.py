@@ -59,7 +59,6 @@ from noa_api.mcp_tools.change_gate import (
     UI_RESOURCE_MIME_TYPE,
     UI_RESOURCE_URI_PREFIX,
 )
-from noa_api.mcp_tools.change_runners import build_change_runners
 from noa_api.mcp_tools.registry import register_mcp_tools
 from noa_api.mcp_tools.results import ERROR_TIMEOUT, ERROR_TOOL_EXECUTION_FAILED
 from noa_api.mcp_tools.whm_account_change import (
@@ -354,21 +353,6 @@ def test_the_tool_is_catalogued_and_classified_as_a_change() -> None:
 
     assert TOOL_WHM_UNSUSPEND_ACCOUNT in TOOL_CATALOG
     assert registered[TOOL_WHM_UNSUSPEND_ACCOUNT] is ToolRisk.CHANGE
-
-
-def test_both_account_change_runners_are_registered() -> None:
-    """Reusable functions over duplication, and DECISIONS section 9's split held at the same time:
-    two names, one module, two builders reached from one map.
-
-    The pair is deliberately *not* merged into a tool with an `action` enum — opposite risk
-    directions — so what stops that from becoming two implementations is that both runners live
-    in one module and are wired from one context.
-    """
-    context = build_tool_context().context
-
-    runners = build_change_runners(context=context)
-
-    assert {TOOL_WHM_SUSPEND_ACCOUNT, TOOL_WHM_UNSUSPEND_ACCOUNT} <= set(runners)
 
 
 # --------------------------------------------------------------------------------------

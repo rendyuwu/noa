@@ -36,9 +36,7 @@ class NoaError(Exception):
 
     error_code: str = "internal_error"
     message: str = "Something went wrong. Contact an administrator if this continues."
-    # Bare `AuthError` means "authentication failed and we did not classify why", which is an
-    # infrastructure answer, not a credential one — 401 would send the operator chasing their
-    # own password. Reached only by `NoaError` subclasses that declare no status of their own.
+    # 503 = unclassified. Every taxonomy declares its own; a test per tree asserts it.
     status_code: int = 503
 
     def __init__(self, detail: str | None = None) -> None:

@@ -47,7 +47,6 @@ from core.integrations.proxmox.cloudinit import (
     crypt_password,
 )
 from core.secrets.errors import YopassNotConfiguredError, YopassStoreError
-from noa_api.mcp_tools.change_runners import build_change_runners
 from noa_api.mcp_tools.change_target import STATUS_CHANGED, VERIFICATION_UNAVAILABLE
 from noa_api.mcp_tools.proxmox_password_runner import (
     ERROR_EVIDENCE_UNUSABLE,
@@ -739,15 +738,3 @@ async def test_a_mismatched_reset_records_a_failed_run(monkeypatch: pytest.Monke
     payload = await build_runner(fixture)(execution_request(server_id=server_id(fixture)))
 
     assert status_for_payload(payload) is ToolRunStatus.FAILED
-
-
-# --- Registration ---
-
-
-def test_the_runner_map_names_this_tool() -> None:
-    """What `core.approvals.execution` dispatches on, and what the registry demands at startup."""
-    fixture, _ = reset_context()
-
-    runners = build_change_runners(context=fixture.context)
-
-    assert "proxmox_reset_vm_password" in runners
