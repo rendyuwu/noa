@@ -45,7 +45,7 @@ from support.servers import SECRETS, build_tool_context, whm_server
 
 
 class ExplodingWHMServerRepository:
-    """A `WHMServerReadRepository` that fails the way a real one can."""
+    """A `ServerRefRepository` that fails the way a real one can."""
 
     def __init__(self, error: BaseException) -> None:
         self._error = error

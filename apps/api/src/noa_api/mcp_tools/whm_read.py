@@ -18,8 +18,8 @@ the order of those blocks is part of what the operator is told — and it is why
 `sanitize_tool_errors` widens a return type rather than fixing one.
 
 **What leaves the process for `whm_list_servers` is `describe()`, never the row.** That
-function is `core.servers.reference.describe_whm` and answers id, name and `base_url` only — the
-fields that let a model construct a `server_ref` — and none of `to_safe_dict()`'s admin
+function is `core.servers.reference.describe_url_server` and answers id, name and `base_url`
+only — the fields that let a model construct a `server_ref` — and none of `to_safe_dict()`'s admin
 extras (`api_username`, presence booleans, the SSH fields, two timestamps), which is a
 different render for a different reader. The result lands in a LibreChat transcript
 that persists in their MongoDB, which is the reason the rule is "no credential
@@ -50,7 +50,7 @@ from pydantic import Field
 from core.db.lifecycle import ToolRisk
 from core.integrations.whm.accounts import WHMAccount, account_matches, normalize_whm_account_list
 from core.results.tables import TableColumn
-from core.servers.reference import describe_whm, hostname_of, resolve_whm_server_ref
+from core.servers.reference import describe_url_server, hostname_of, resolve_whm_server_ref
 from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.results import (
     ERROR_UNKNOWN,
@@ -145,11 +145,13 @@ async def whm_list_servers(*, context: McpToolContext) -> ToolPayload:
     async with context.session_factory() as session:
         repository = context.whm_server_repository_factory(session)
         servers = await repository.list_servers()
-        # Serialized inside the session: `describe_whm()` reads mapped attributes, and a
+        # Serialized inside the session: `describe_url_server()` reads mapped attributes, and a
         # detached instance would raise on a lazy refresh once the session closed.
         return tool_ok(
             servers=[
-                describe_whm(server) for server in servers if not server.is_reseller_credential
+                describe_url_server(server)
+                for server in servers
+                if not server.is_reseller_credential
             ]
         )
 

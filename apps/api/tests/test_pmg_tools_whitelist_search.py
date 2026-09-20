@@ -39,7 +39,6 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import core.integrations.pmg.pmgsh_cli as pmgsh_cli_mod
 from core.auth.tool_catalog import TOOL_CATALOG
 from core.integrations.pmg.pmgsh_cli import MYNETWORKS_PATH, PMGSH_BINARY
 from noa_api.mcp_server import build_mcp_server
@@ -455,7 +454,7 @@ async def test_the_database_session_closes_before_the_ssh_hop(monkeypatch) -> No
         events.append("ssh")
         return command_result(stdout=mynetworks_output("1.2.3.4/32"))
 
-    install_fake_ssh_exec(monkeypatch, pmgsh_cli_mod, recording_handler)
+    install_fake_ssh_exec(monkeypatch, recording_handler)
 
     @asynccontextmanager
     async def recording_session_factory():  # type: ignore[no-untyped-def]
@@ -545,7 +544,7 @@ async def test_a_failed_pmgsh_read_keeps_pmg_s_own_code(monkeypatch) -> None:  #
 
 
 class ExplodingPMGServerRepository:
-    """A `PMGServerReadRepository` that fails the way a real one can."""
+    """A `ServerRefRepository` that fails the way a real one can."""
 
     def __init__(self, error: BaseException) -> None:
         self._error = error

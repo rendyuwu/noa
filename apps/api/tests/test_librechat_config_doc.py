@@ -299,7 +299,7 @@ def test_example_prompt_is_present_and_substantial() -> None:
 # still talks about both things. It does **not** bind *direction* — a clause rewritten to invert
 # the rule still carries every marker, because the difference is prose, and pinning the sentence
 # would turn every reword into a false failure. The direction is bound on the code side instead,
-# where it is no longer the tool description's job: `test_proxmox_server_ref.py` asserts the
+# where it is no longer the tool description's job: `test_server_reference.py` asserts the
 # resolver itself derives a server from a node name. A reviewer reads this clause; the suite reads
 # the mechanism.
 PASTE_CLAUSE_MARKERS: tuple[str, ...] = ("Host Node", "cloud-init")

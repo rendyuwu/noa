@@ -78,7 +78,12 @@ from noa_api.mcp_tools.whm_firewall import (
     whm_preflight_firewall_entries,
 )
 from support.mcp_identity import StubSession
-from support.remote_exec import SUDO_DENIED_STDERR, command_result, install_fake_ssh_exec_in
+from support.remote_exec import (
+    SUDO_DENIED_STDERR,
+    command_result,
+    install_fake_ssh_exec,
+    patch_ssh_exec,
+)
 from support.secrets import build_cipher
 from support.servers import SECRETS, ToolFixture, build_tool_context, whm_server
 from support.whm_firewall import (
@@ -86,7 +91,6 @@ from support.whm_firewall import (
     CSF_CLEAN_OUTPUT,
     CSF_DENY_LINE,
     CSF_UNREADABLE_OUTPUT,
-    FIREWALL_SSH_MODULES,
     IMUNIFY_CLEAN,
     IMUNIFY_DROP,
     IMUNIFY_WHITE,
@@ -101,7 +105,6 @@ from support.whm_firewall import (
     imunify_answer,
     is_probe,
     is_query,
-    patch_firewall_ssh_exec,
     preflight_server,
 )
 
@@ -183,7 +186,7 @@ async def test_both_backend_queries_are_in_flight_at_once(monkeypatch) -> None: 
         return box(command)
 
     fixture, _ = firewall_context(monkeypatch)
-    patch_firewall_ssh_exec(monkeypatch, fake_ssh_exec)
+    patch_ssh_exec(monkeypatch, fake_ssh_exec)
 
     result = await preflight(fixture)
 
@@ -610,7 +613,7 @@ async def test_the_database_session_closes_before_the_first_ssh_hop(monkeypatch)
         return box(command)
 
     fixture, _ = firewall_context(monkeypatch)
-    install_fake_ssh_exec_in(monkeypatch, FIREWALL_SSH_MODULES, recording_handler)
+    install_fake_ssh_exec(monkeypatch, recording_handler)
 
     @asynccontextmanager
     async def recording_session_factory():  # type: ignore[no-untyped-def]
@@ -817,7 +820,7 @@ async def test_the_result_carries_no_raw_command_output(monkeypatch) -> None:  #
 
 
 class ExplodingWHMServerRepository:
-    """A `WHMServerReadRepository` that fails the way a real one can."""
+    """A `ServerRefRepository` that fails the way a real one can."""
 
     def __init__(self, error: BaseException) -> None:
         self._error = error

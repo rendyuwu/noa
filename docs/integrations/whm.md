@@ -775,8 +775,8 @@ exposure. Re-adding any of them is an owner decision.
 - Backend availability: `core/integrations/whm/availability.py`
 - Errors: `core/integrations/whm/errors.py`
 - Shared SSH layer: `core/remote_exec/`
-- Server inventory + reference resolution: `core/servers/whm_repository.py`,
-  `core/servers/repository.py`, `core/servers/reference.py`
+- Server inventory + reference resolution: `core/servers/repository.py`,
+  `core/servers/reference.py`
 - Admin CRUD + validate: `apps/api/src/noa_api/api/routes/admin_servers.py`,
   `core/servers/admin_service.py`, `core/servers/admin_repository.py`,
   `core/servers/validation.py`, `core/servers/naming.py`, `core/servers/errors.py`
@@ -793,4 +793,4 @@ exposure. Re-adding any of them is an owner decision.
   `test_whm_firewall_{cli,availability,gate}.py`,
   `test_whm_tools_firewall_{preflight,release_and_allow,allowlist_remove}.py`,
   `test_whm_firewall_{release,allowlist}_runner.py`,
-  `test_whm_{server_ref,server_repository,tools_read}.py`, `test_mcp_tool_rbac.py`
+  `test_server_{reference,repository}.py`, `test_whm_tools_read.py`, `test_mcp_tool_rbac.py`

@@ -369,8 +369,7 @@ internal functions — they are not on the 14-tool exposed list.
 - Command build + execution: `core/integrations/pmg/pmgsh_cli.py`
 - `mynetworks` parsing + normalisation: `core/integrations/pmg/mynetworks.py`
 - Errors: `core/integrations/pmg/errors.py`
-- Inventory + reference resolution: `core/servers/pmg_repository.py`,
-  `core/servers/repository.py`, `core/servers/reference.py`
+- Inventory + reference resolution: `core/servers/repository.py`, `core/servers/reference.py`
 - Admin CRUD + validate: `apps/api/src/noa_api/api/routes/admin_servers.py`,
   `core/servers/admin_service.py`, `core/servers/admin_repository.py`,
   `core/servers/validation.py`
@@ -381,6 +380,6 @@ internal functions — they are not on the 14-tool exposed list.
   `core/results/tables.py`
 - Shared SSH layer: `core/remote_exec/`
 - Tests: `apps/api/tests/test_pmg_ssh_config.py`, `test_pmg_pmgsh_cli.py`,
-  `test_pmg_mynetworks.py`, `test_pmg_server_ref.py`, `test_pmg_server_repository.py`,
+  `test_pmg_mynetworks.py`, `test_server_reference.py`, `test_server_repository.py`,
   `test_pmg_tools_whitelist_search.py`, `test_pmg_tools_whitelist_list.py`,
   `test_pmg_tools_whitelist.py`, `test_pmg_whitelist_runner.py`

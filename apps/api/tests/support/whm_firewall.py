@@ -2,9 +2,8 @@
 
 A firewall tool call crosses three modules (`availability`, `csf_cli`, `imunify_cli`), and the
 double is installed for all three from one recorder — that is what lets a test assert the whole
-command sequence rather than one hop of it. `FIREWALL_SSH_MODULES` is the list, and it is here
-rather than in each test file because a module missing from it means an unreplaced `ssh_exec`
-and a test that tries to open a socket.
+command sequence rather than one hop of it. `support.remote_exec.install_fake_ssh_exec` owns
+which modules those are.
 
 Its own module rather than `support/whm.py`, which owns the server row and nothing else
 (`test_support_layout.py` holds that line), and rather than `support/remote_exec.py`, which is
@@ -30,9 +29,6 @@ from typing import Any
 
 import pytest
 
-import core.integrations.whm.availability as availability_mod
-import core.integrations.whm.csf_cli as csf_cli_mod
-import core.integrations.whm.imunify_cli as imunify_cli_mod
 from core.db.models import WHMServer
 from core.integrations.whm.availability import FIREWALL_PROBE_TARGET
 from core.integrations.whm.csf_cli import CSF_BINARY, build_csf_command
@@ -43,8 +39,7 @@ from support.remote_exec import (
     SUDO_DENIED_STDERR,
     FakeSSH,
     command_result,
-    install_fake_ssh_exec_in,
-    patch_ssh_exec,
+    install_fake_ssh_exec,
     ssh_config,
 )
 from support.secrets import build_cipher
@@ -57,19 +52,6 @@ TARGET = "203.0.113.10"
 # assertion on the config the transport saw proves a decrypt ran rather than a passthrough.
 SSH_PASSWORD_PLAINTEXT = "operator-ssh-password"
 SSH_PRIVATE_KEY_PLAINTEXT = "-----BEGIN OPENSSH PRIVATE KEY-----"
-
-# Every module on a firewall tool's path a fake `ssh_exec` has to reach. `csf_cli` and
-# `imunify_cli` hold no binding of their own — they run through `core.remote_exec.ssh.run_cli`,
-# which `install_fake_ssh_exec_in` patches at the source — and `availability` still imports the
-# name directly. Listing all three keeps the tuple the path's description rather than a fact
-# about today's import style.
-FIREWALL_SSH_MODULES = (availability_mod, csf_cli_mod, imunify_cli_mod)
-
-
-def patch_firewall_ssh_exec(monkeypatch, replacement) -> None:  # type: ignore[no-untyped-def]
-    """`patch_ssh_exec` over `FIREWALL_SSH_MODULES`, for a stand-in that has to await."""
-    patch_ssh_exec(monkeypatch, FIREWALL_SSH_MODULES, replacement)
-
 
 # Real `csf -g` shapes. Verdicts are read from marker strings in human-facing text, so an
 # invented fixture would test nothing.
@@ -367,7 +349,7 @@ def firewall_context(
         else [preflight_server(SERVER_NAME, cipher=resolved_cipher, ssh_username=ssh_username)]
     )
     fixture = build_tool_context(servers=rows, cipher=resolved_cipher)
-    fake = install_fake_ssh_exec_in(monkeypatch, FIREWALL_SSH_MODULES, firewall or both_backends())
+    fake = install_fake_ssh_exec(monkeypatch, firewall or both_backends())
     return fixture, fake
 
 
@@ -385,7 +367,6 @@ __all__ = [
     "CSF_TEMP_ALLOW_REMOVE",
     "CSF_TEMP_RELEASE",
     "CSF_UNREADABLE_OUTPUT",
-    "FIREWALL_SSH_MODULES",
     "IMUNIFY_ADD",
     "IMUNIFY_CLEAN",
     "IMUNIFY_DELETE",
@@ -414,7 +395,6 @@ __all__ = [
     "imunify_step",
     "is_probe",
     "is_query",
-    "patch_firewall_ssh_exec",
     "preflight_server",
     "working_box",
 ]

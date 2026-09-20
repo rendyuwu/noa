@@ -345,7 +345,7 @@ what the missing methods were for.
 - Tests: `apps/api/tests/test_proxmox_client.py` (failure classification, digest, credentials,
   lifecycle), `test_proxmox_client_endpoints.py` (literal request contracts),
   `test_proxmox_cloudinit_crypt.py` (the crypt verdict's three values + the negative control),
-  `test_proxmox_server_ref.py`, `test_proxmox_server_repository.py`,
+  `test_server_reference.py`, `test_server_repository.py`,
   `test_proxmox_tools_reset_password.py` (the tool half),
   `test_proxmox_reset_password_runner.py` (the runner half),
   `test_proxmox_nic_codec.py` (the NIC tool's grammar, no tool context),

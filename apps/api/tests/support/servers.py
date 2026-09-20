@@ -22,7 +22,7 @@ Every row is built **with** an API token and SSH credentials, even where the tes
 care. A row with no secrets cannot fail a "no secrets leaked" assertion, which would make
 that test pass for the wrong reason.
 
-**`SQLServerRepository` is not doubled away entirely** — `test_whm_server_repository.py`
+**`SQLServerRepository` is not doubled away entirely** — `test_server_repository.py`
 runs it against a scratch Postgres. This double covers policy (resolution order, ties,
 the tool's shape); the SQL has its own coverage. Same split as `support.rbac`.
 """
@@ -243,7 +243,7 @@ def proxmox_server(
 
 
 class FakeWHMServerRepository:
-    """In-memory `WHMServerReadRepository`.
+    """In-memory `ServerRefRepository[WHMServer]`.
 
     `list_servers` sorts by name, mirroring the `ORDER BY` in the SQL: the resolver's tie
     handling and the tool's output order are both asserted, and a double that returned
@@ -265,7 +265,7 @@ class FakeWHMServerRepository:
 
 
 class FakePMGServerRepository:
-    """In-memory `PMGServerReadRepository`.
+    """In-memory `ServerRefRepository[PMGServer]`.
 
     Sorted by name for the reason its WHM twin is: the resolver's tie handling is asserted
     against this order, and a double that returned insertion order would let a test pass
@@ -291,7 +291,7 @@ class FakePMGServerRepository:
 
 
 class FakeProxmoxServerRepository:
-    """In-memory `ProxmoxServerReadRepository`.
+    """In-memory `ServerRefRepository[ProxmoxServer]`.
 
     Sorted by name for the reason its two siblings are: the resolver's tie handling is asserted
     against this order, and a double that returned insertion order would let a test pass against

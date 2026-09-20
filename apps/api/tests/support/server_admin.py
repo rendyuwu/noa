@@ -1,8 +1,8 @@
 """Doubles for the server-inventory *write* path.
 
 `support/servers.py` owns the rows and the read repositories the MCP tool path uses. This
-module owns the three write repositories and the two host-key-pin repositories the admin
-routes use, and it is a separate module for the reason the production split exists: a read
+module owns the one write repository and the host-key-pin repository the admin routes use, and
+it is a separate module for the reason the production split exists: a read
 double and a write double are different capabilities, and a test that reaches for the wrong one
 should have to say so at the import.
 
@@ -13,10 +13,10 @@ no-credential-in-a-response assertion is decided by
 `WHMServer.to_safe_dict`. A hand-written row with a hand-written `to_safe_dict` would test the
 hand-written one.
 
-**The doubles apply the production field rules.** `apply_ssh_fields_with_pin_rule` and its sibling
-live in `core.servers.admin_repository` and are imported here rather than re-implemented — the
-clear-flag order and the "a moved host loses its pin" rule are exactly what the service tests
-assert, and a double with its own copy would be asserting the copy.
+**The double applies the production field rules.** `apply_ssh_fields_with_pin_rule`, its sibling
+and `column_values` live in `core.servers.admin_repository` and are imported here rather than
+re-implemented — the clear-flag precedence and the "a moved host loses its pin" rule are exactly
+what the service tests assert, and a double with its own copy would be asserting the copy.
 
 **`commit` is counted, not simulated.** The commit-ordering boundary itself is only observable
 against a live database from a second session (`test_server_admin_repository.py`). What a double
@@ -26,21 +26,21 @@ guards — so `commits` is a counter and `writes` records the order.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterable, Sequence
+from collections.abc import AsyncIterator, Callable, Iterable, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
+from typing import Any
 from uuid import UUID
 
 from core.db.models import PMGServer, ProxmoxServer, WHMServer
 from core.servers.admin_repository import (
+    SSH_VALUE_FIELDS,
     PMGServerCreate,
-    PMGServerUpdate,
     ProxmoxServerCreate,
-    ProxmoxServerUpdate,
     WHMServerCreate,
-    WHMServerUpdate,
     apply_ssh_fields,
     apply_ssh_fields_with_pin_rule,
+    column_values,
 )
 from core.servers.errors import ServerInventoryError
 from core.servers.validation import ServerValidationResult
@@ -66,19 +66,32 @@ class _Journal:
         return self.entries.count("commit")
 
 
-class FakeWHMServerAdminRepository:
-    """In-memory `ServerAdminRepository` for `whm_servers`."""
+class FakeServerAdminRepository:
+    """In-memory `ServerAdminRepository` for one inventory table.
 
-    def __init__(self, servers: Iterable[WHMServer] = ()) -> None:
-        self.servers: list[WHMServer] = list(servers)
+    `create_row` builds the stored row from a create spec, because `support.servers`' factories
+    fill columns a spec does not carry. `host_field` is the column a moved host is detected on —
+    `None` for Proxmox, which has no SSH block — matching `SQLServerAdminRepository`'s parameter.
+    """
+
+    def __init__(
+        self,
+        servers: Iterable[Any] = (),
+        *,
+        create_row: Callable[[Any], Any],
+        host_field: str | None = None,
+    ) -> None:
+        self.servers: list[Any] = list(servers)
         self.journal = _Journal()
+        self._create_row = create_row
+        self._host_field = host_field
 
     # --- Reads ---
 
-    async def list_servers(self) -> Sequence[WHMServer]:
+    async def list_servers(self) -> Sequence[Any]:
         return sorted(self.servers, key=lambda server: server.name)
 
-    async def get_by_id(self, server_id: UUID) -> WHMServer | None:
+    async def get_by_id(self, server_id: UUID) -> Any | None:
         return next((server for server in self.servers if server.id == server_id), None)
 
     async def name_taken(self, name: str, *, exclude_id: UUID | None = None) -> bool:
@@ -90,48 +103,33 @@ class FakeWHMServerAdminRepository:
 
     # --- Writes ---
 
-    async def create(self, spec: WHMServerCreate) -> WHMServer:
+    async def create(self, spec: Any) -> Any:
         self.journal.record("create")
-        server = whm_server(
-            spec.name,
-            base_url=spec.base_url,
-            api_token=spec.api_token,
-            ssh_username=spec.ssh.ssh_username,
-            ssh_password=spec.ssh.ssh_password,
-            ssh_private_key=spec.ssh.ssh_private_key,
-            ssh_host_key_fingerprint=spec.ssh.ssh_host_key_fingerprint,
-            is_reseller_credential=spec.is_reseller_credential,
-        )
-        server.api_username = spec.api_username
-        server.verify_ssl = spec.verify_ssl
-        server.ssh_port = spec.ssh.ssh_port
-        server.ssh_private_key_passphrase = spec.ssh.ssh_private_key_passphrase
+        server = self._create_row(spec)
+        if self._host_field is not None:
+            # The factory fills the SSH block from its own defaults; a create stores the spec's,
+            # so clear first and let the production rule write them.
+            for field_name in SSH_VALUE_FIELDS:
+                setattr(server, field_name, None)
+            apply_ssh_fields(server, spec.ssh)
         self.servers.append(server)
         return server
 
-    async def update(self, server_id: UUID, patch: WHMServerUpdate) -> WHMServer | None:
+    async def update(self, server_id: UUID, patch: Any) -> Any | None:
         server = await self.get_by_id(server_id)
         if server is None:
             return None
         self.journal.record("update")
 
-        apply_ssh_fields_with_pin_rule(
-            server,
-            host_changed=patch.base_url is not None and patch.base_url != server.base_url,
-            patch=patch.ssh,
-        )
-        if patch.name is not None:
-            server.name = patch.name
-        if patch.base_url is not None:
-            server.base_url = patch.base_url
-        if patch.api_username is not None:
-            server.api_username = patch.api_username
-        if patch.api_token is not None:
-            server.api_token = patch.api_token
-        if patch.verify_ssl is not None:
-            server.verify_ssl = patch.verify_ssl
-        if patch.is_reseller_credential is not None:
-            server.is_reseller_credential = patch.is_reseller_credential
+        if self._host_field is not None:
+            new_host = getattr(patch, self._host_field)
+            apply_ssh_fields_with_pin_rule(
+                server,
+                host_changed=new_host is not None and new_host != getattr(server, self._host_field),
+                patch=patch.ssh,
+            )
+        for column, value in column_values(patch, skip_none=True).items():
+            setattr(server, column, value)
         server.updated_at = CREATED_AT
         return server
 
@@ -147,137 +145,47 @@ class FakeWHMServerAdminRepository:
         self.journal.record("commit")
 
 
-class FakeProxmoxServerAdminRepository:
-    """In-memory `ServerAdminRepository` for `proxmox_servers`. No SSH block and no pin (I.ext)."""
-
-    def __init__(self, servers: Iterable[ProxmoxServer] = ()) -> None:
-        self.servers: list[ProxmoxServer] = list(servers)
-        self.journal = _Journal()
-
-    async def list_servers(self) -> Sequence[ProxmoxServer]:
-        return sorted(self.servers, key=lambda server: server.name)
-
-    async def get_by_id(self, server_id: UUID) -> ProxmoxServer | None:
-        return next((server for server in self.servers if server.id == server_id), None)
-
-    async def name_taken(self, name: str, *, exclude_id: UUID | None = None) -> bool:
-        return any(
-            server.name.lower() == name.lower() and server.id != exclude_id
-            for server in self.servers
-        )
-
-    async def create(self, spec: ProxmoxServerCreate) -> ProxmoxServer:
-        self.journal.record("create")
-        server = proxmox_server(
-            spec.name,
-            base_url=spec.base_url,
-            api_token_id=spec.api_token_id,
-            api_token_secret=spec.api_token_secret,
-            verify_ssl=spec.verify_ssl,
-        )
-        self.servers.append(server)
-        return server
-
-    async def update(self, server_id: UUID, patch: ProxmoxServerUpdate) -> ProxmoxServer | None:
-        server = await self.get_by_id(server_id)
-        if server is None:
-            return None
-        self.journal.record("update")
-
-        if patch.name is not None:
-            server.name = patch.name
-        if patch.base_url is not None:
-            server.base_url = patch.base_url
-        if patch.api_token_id is not None:
-            server.api_token_id = patch.api_token_id
-        if patch.api_token_secret is not None:
-            server.api_token_secret = patch.api_token_secret
-        if patch.verify_ssl is not None:
-            server.verify_ssl = patch.verify_ssl
-        server.updated_at = CREATED_AT
-        return server
-
-    async def delete(self, server_id: UUID) -> bool:
-        server = await self.get_by_id(server_id)
-        if server is None:
-            return False
-        self.journal.record("delete")
-        self.servers.remove(server)
-        return True
-
-    async def commit(self) -> None:
-        self.journal.record("commit")
+# The non-SSH columns of one create spec. The SSH block is left to `create`, which applies it
+# through the production rule rather than through each factory's own defaults.
 
 
-class FakePMGServerAdminRepository:
-    """In-memory `ServerAdminRepository` for `pmg_servers`."""
+def _whm_row(spec: WHMServerCreate) -> WHMServer:
+    server = whm_server(
+        spec.name,
+        base_url=spec.base_url,
+        api_token=spec.api_token,
+        api_username=spec.api_username,
+        is_reseller_credential=spec.is_reseller_credential,
+    )
+    server.verify_ssl = spec.verify_ssl
+    return server
 
-    def __init__(self, servers: Iterable[PMGServer] = ()) -> None:
-        self.servers: list[PMGServer] = list(servers)
-        self.journal = _Journal()
 
-    async def list_servers(self) -> Sequence[PMGServer]:
-        return sorted(self.servers, key=lambda server: server.name)
+def _proxmox_row(spec: ProxmoxServerCreate) -> ProxmoxServer:
+    return proxmox_server(
+        spec.name,
+        base_url=spec.base_url,
+        api_token_id=spec.api_token_id,
+        api_token_secret=spec.api_token_secret,
+        verify_ssl=spec.verify_ssl,
+    )
 
-    async def get_by_id(self, server_id: UUID) -> PMGServer | None:
-        return next((server for server in self.servers if server.id == server_id), None)
 
-    async def name_taken(self, name: str, *, exclude_id: UUID | None = None) -> bool:
-        return any(
-            server.name.lower() == name.lower() and server.id != exclude_id
-            for server in self.servers
-        )
+def _pmg_row(spec: PMGServerCreate) -> PMGServer:
+    return pmg_server(spec.name, ssh_host=spec.ssh_host)
 
-    async def create(self, spec: PMGServerCreate) -> PMGServer:
-        self.journal.record("create")
-        server = pmg_server(
-            spec.name,
-            ssh_host=spec.ssh_host,
-            ssh_username=spec.ssh.ssh_username,
-            ssh_password=spec.ssh.ssh_password,
-            ssh_private_key=spec.ssh.ssh_private_key,
-            ssh_host_key_fingerprint=spec.ssh.ssh_host_key_fingerprint,
-        )
-        # The factory fills the SSH block from its own defaults; re-apply the spec's so a
-        # `None` in the request is stored as `None` rather than as the fixture's value.
-        server.ssh_username = None
-        server.ssh_port = None
-        server.ssh_password = None
-        server.ssh_private_key = None
-        server.ssh_private_key_passphrase = None
-        server.ssh_host_key_fingerprint = None
-        apply_ssh_fields(server, spec.ssh)
-        self.servers.append(server)
-        return server
 
-    async def update(self, server_id: UUID, patch: PMGServerUpdate) -> PMGServer | None:
-        server = await self.get_by_id(server_id)
-        if server is None:
-            return None
-        self.journal.record("update")
+def whm_admin_repository(servers: Iterable[WHMServer] = ()) -> FakeServerAdminRepository:
+    return FakeServerAdminRepository(servers, create_row=_whm_row, host_field="base_url")
 
-        apply_ssh_fields_with_pin_rule(
-            server,
-            host_changed=patch.ssh_host is not None and patch.ssh_host != server.ssh_host,
-            patch=patch.ssh,
-        )
-        if patch.name is not None:
-            server.name = patch.name
-        if patch.ssh_host is not None:
-            server.ssh_host = patch.ssh_host
-        server.updated_at = CREATED_AT
-        return server
 
-    async def delete(self, server_id: UUID) -> bool:
-        server = await self.get_by_id(server_id)
-        if server is None:
-            return False
-        self.journal.record("delete")
-        self.servers.remove(server)
-        return True
+def proxmox_admin_repository(servers: Iterable[ProxmoxServer] = ()) -> FakeServerAdminRepository:
+    """No `host_field`: Proxmox is an HTTP API and nothing else, so no SSH block and no pin."""
+    return FakeServerAdminRepository(servers, create_row=_proxmox_row)
 
-    async def commit(self) -> None:
-        self.journal.record("commit")
+
+def pmg_admin_repository(servers: Iterable[PMGServer] = ()) -> FakeServerAdminRepository:
+    return FakeServerAdminRepository(servers, create_row=_pmg_row, host_field="ssh_host")
 
 
 class FakeHostKeyPinRepository:
@@ -370,9 +278,10 @@ class RecordingValidationService:
 
 __all__ = [
     "FakeHostKeyPinRepository",
-    "FakePMGServerAdminRepository",
-    "FakeProxmoxServerAdminRepository",
-    "FakeWHMServerAdminRepository",
+    "FakeServerAdminRepository",
     "RecordingSessionFactory",
     "RecordingValidationService",
+    "pmg_admin_repository",
+    "proxmox_admin_repository",
+    "whm_admin_repository",
 ]

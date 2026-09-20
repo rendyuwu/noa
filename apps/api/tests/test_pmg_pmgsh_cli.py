@@ -316,7 +316,7 @@ async def test_run_pmgsh_command_converts_an_ssh_failure_into_the_pmg_tree(monke
     def refuse(_command: str):  # type: ignore[no-untyped-def]
         raise SSHExecutionError(code="ssh_host_key_mismatch", message="presented key ≠ pin")
 
-    install_fake_ssh_exec(monkeypatch, pmgsh_cli_mod, refuse)
+    install_fake_ssh_exec(monkeypatch, refuse)
 
     with pytest.raises(PMGSHCLIError) as exc:
         await run_pmgsh_command(_pmg_ssh_config(), args=["get", "/version"])
@@ -331,9 +331,7 @@ async def test_run_pmgsh_command_sends_the_composed_command_over_ssh(monkeypatch
     Composing against one config and connecting with another is the failure a boolean
     `escalate` parameter makes possible.
     """
-    fake = install_fake_ssh_exec(
-        monkeypatch, pmgsh_cli_mod, lambda _cmd: command_result(stdout="200 OK")
-    )
+    fake = install_fake_ssh_exec(monkeypatch, lambda _cmd: command_result(stdout="200 OK"))
     config = _pmg_ssh_config(username="noa-ops")
 
     result = await run_pmgsh_command(config, args=["get", "/version"])
@@ -347,7 +345,7 @@ async def test_run_pmgsh_json_checks_success_before_parsing(monkeypatch) -> None
     """Decodable JSON on a failed command is still a failure — parsing it would report a
     successful read of output the command disowned."""
     install_fake_ssh_exec(
-        monkeypatch, pmgsh_cli_mod, lambda _cmd: command_result(exit_code=1, stdout='{"ok": true}')
+        monkeypatch, lambda _cmd: command_result(exit_code=1, stdout='{"ok": true}')
     )
 
     with pytest.raises(PMGSHCLIError) as exc:
@@ -358,7 +356,7 @@ async def test_run_pmgsh_json_checks_success_before_parsing(monkeypatch) -> None
 
 async def test_run_pmg_version_probe_uses_exact_args(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     fake = install_fake_ssh_exec(
-        monkeypatch, pmgsh_cli_mod, lambda _cmd: command_result(stdout='{"version":"8.1"}')
+        monkeypatch, lambda _cmd: command_result(stdout='{"version":"8.1"}')
     )
 
     assert await run_pmg_version_probe(_pmg_ssh_config()) == {"version": "8.1"}
@@ -367,9 +365,7 @@ async def test_run_pmg_version_probe_uses_exact_args(monkeypatch) -> None:  # ty
 
 async def test_run_pmg_mynetworks_probe_returns_the_endpoint_with_its_output(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """A validate receipt should record *what* was probed, not only that something answered."""
-    fake = install_fake_ssh_exec(
-        monkeypatch, pmgsh_cli_mod, lambda _cmd: command_result(stdout="1 10.10.10.0/24")
-    )
+    fake = install_fake_ssh_exec(monkeypatch, lambda _cmd: command_result(stdout="1 10.10.10.0/24"))
 
     evidence = await run_pmg_mynetworks_probe(_pmg_ssh_config())
 
@@ -380,16 +376,14 @@ async def test_run_pmg_mynetworks_probe_returns_the_endpoint_with_its_output(mon
 async def test_run_pmg_mynetworks_list_returns_raw_output_for_the_tool_layer(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """Entry parsing and CIDR normalisation live in `core.integrations.pmg.mynetworks` —
     this returns text."""
-    install_fake_ssh_exec(
-        monkeypatch, pmgsh_cli_mod, lambda _cmd: command_result(stdout="1 10.10.10.0/24")
-    )
+    install_fake_ssh_exec(monkeypatch, lambda _cmd: command_result(stdout="1 10.10.10.0/24"))
 
     assert await run_pmg_mynetworks_list(_pmg_ssh_config()) == "1 10.10.10.0/24"
 
 
 async def test_run_pmg_mynetworks_add_uses_exact_args(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     fake = install_fake_ssh_exec(
-        monkeypatch, pmgsh_cli_mod, lambda _cmd: command_result(exit_code=1, stdout="200 OK")
+        monkeypatch, lambda _cmd: command_result(exit_code=1, stdout="200 OK")
     )
 
     output = await run_pmg_mynetworks_add(_pmg_ssh_config(), cidr=_CIDR)
@@ -400,7 +394,7 @@ async def test_run_pmg_mynetworks_add_uses_exact_args(monkeypatch) -> None:  # t
 
 async def test_run_pmg_mynetworks_delete_uses_exact_args(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     fake = install_fake_ssh_exec(
-        monkeypatch, pmgsh_cli_mod, lambda _cmd: command_result(exit_code=1, stdout="200 OK")
+        monkeypatch, lambda _cmd: command_result(exit_code=1, stdout="200 OK")
     )
 
     await run_pmg_mynetworks_delete(_pmg_ssh_config(), cidr=_CIDR)
@@ -410,9 +404,7 @@ async def test_run_pmg_mynetworks_delete_uses_exact_args(monkeypatch) -> None:  
 
 async def test_run_pmgconfig_sync_restart_uses_exact_args(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """Required after every mutation: without it the change is written and not applied."""
-    fake = install_fake_ssh_exec(
-        monkeypatch, pmgsh_cli_mod, lambda _cmd: command_result(stdout="synced")
-    )
+    fake = install_fake_ssh_exec(monkeypatch, lambda _cmd: command_result(stdout="synced"))
 
     assert await run_pmgconfig_sync_restart(_pmg_ssh_config()) == "synced"
     assert fake.commands == [f"TERM=dumb {PMGCONFIG_BINARY} sync --restart 1"]

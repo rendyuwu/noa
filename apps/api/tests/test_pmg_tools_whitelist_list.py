@@ -50,7 +50,6 @@ from fastmcp.tools import ToolResult
 from mcp.types import EmbeddedResource, TextContent
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import core.integrations.pmg.pmgsh_cli as pmgsh_cli_mod
 from core.auth.tool_catalog import TOOL_CATALOG
 from core.integrations.pmg.mynetworks import parse_mynetworks_entries
 from core.integrations.pmg.pmgsh_cli import MYNETWORKS_PATH, PMGSH_BINARY
@@ -426,7 +425,7 @@ async def test_the_database_session_closes_before_the_ssh_hop(monkeypatch) -> No
         events.append("ssh")
         return command_result(stdout=mynetworks_output("1.2.3.4/32"))
 
-    install_fake_ssh_exec(monkeypatch, pmgsh_cli_mod, recording_handler)
+    install_fake_ssh_exec(monkeypatch, recording_handler)
 
     @asynccontextmanager
     async def recording_session_factory():  # type: ignore[no-untyped-def]
@@ -562,7 +561,7 @@ async def test_a_failed_park_refuses_the_read_rather_than_a_dead_address(monkeyp
 
 
 class ExplodingPMGServerRepository:
-    """A `PMGServerReadRepository` that fails the way a real one can."""
+    """A `ServerRefRepository` that fails the way a real one can."""
 
     def __init__(self, error: BaseException) -> None:
         self._error = error

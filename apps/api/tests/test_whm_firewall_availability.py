@@ -67,7 +67,7 @@ def _present(command: str):  # type: ignore[no-untyped-def]
 
 
 async def test_check_firewall_binaries_probes_both_backends(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    fake = install_fake_ssh_exec(monkeypatch, availability_mod, _present)
+    fake = install_fake_ssh_exec(monkeypatch, _present)
 
     availability = await check_firewall_binaries(ssh_config())
 
@@ -113,7 +113,7 @@ async def test_availability_reports_each_backend_independently(monkeypatch) -> N
             return command_result(command=command, exit_code=1, stderr="not found")
         return command_result(command=command, exit_code=0, stdout=CSF_BINARY)
 
-    install_fake_ssh_exec(monkeypatch, availability_mod, handler)
+    install_fake_ssh_exec(monkeypatch, handler)
 
     availability = await check_firewall_binaries(ssh_config())
 
@@ -127,7 +127,6 @@ async def test_zero_backends_available_is_reported_honestly(monkeypatch) -> None
     never round it up."""
     install_fake_ssh_exec(
         monkeypatch,
-        availability_mod,
         lambda command: command_result(command=command, exit_code=1),
     )
 
@@ -142,7 +141,6 @@ async def test_zero_backends_available_is_reported_honestly(monkeypatch) -> None
 async def test_availability_sets_sudo_required_when_escalation_denied(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     install_fake_ssh_exec(
         monkeypatch,
-        availability_mod,
         lambda command: command_result(command=command, exit_code=1, stderr=SUDO_DENIED_STDERR),
     )
 
@@ -160,7 +158,7 @@ async def test_sudo_required_is_set_when_either_backend_is_denied(monkeypatch) -
             return command_result(command=command, exit_code=0, stdout="csf: v14.16")
         return command_result(command=command, exit_code=1, stderr=SUDO_DENIED_STDERR)
 
-    install_fake_ssh_exec(monkeypatch, availability_mod, handler)
+    install_fake_ssh_exec(monkeypatch, handler)
 
     availability = await check_firewall_binaries(ssh_config(username="noa-ops"))
 
@@ -172,7 +170,6 @@ async def test_sudo_required_is_set_when_either_backend_is_denied(monkeypatch) -
 async def test_missing_binary_under_sudo_is_not_a_sudo_problem(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     install_fake_ssh_exec(
         monkeypatch,
-        availability_mod,
         lambda command: command_result(
             command=command, exit_code=127, stderr="sudo: csf: command not found"
         ),
@@ -187,7 +184,7 @@ async def test_missing_binary_under_sudo_is_not_a_sudo_problem(monkeypatch) -> N
 
 
 async def test_root_probes_presence_with_command_v(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    fake = install_fake_ssh_exec(monkeypatch, availability_mod, _present)
+    fake = install_fake_ssh_exec(monkeypatch, _present)
 
     await check_csf_binary(ssh_config())
 
@@ -204,7 +201,7 @@ async def test_non_root_probes_the_real_binary_under_sudo(monkeypatch) -> None: 
     from `FIREWALL_PROBE_TARGET`: this is the assertion that pins the constant, and one that
     composed itself from the value under test could not move.
     """
-    fake = install_fake_ssh_exec(monkeypatch, availability_mod, _present)
+    fake = install_fake_ssh_exec(monkeypatch, _present)
 
     await check_csf_binary(ssh_config(username="noa-ops"))
     await check_imunify_binary(ssh_config(username="noa-ops"))
@@ -220,7 +217,6 @@ async def test_root_presence_check_requires_non_empty_output(monkeypatch) -> Non
     """Some shells exit 0 from `command -v` with nothing on stdout."""
     install_fake_ssh_exec(
         monkeypatch,
-        availability_mod,
         lambda command: command_result(command=command, exit_code=0, stdout="   "),
     )
 

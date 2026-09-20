@@ -16,15 +16,16 @@ and two copies of the server that proves it are two copies that can stop proving
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Iterable
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from types import ModuleType
-from typing import Any
+from typing import Any, Final
 
 import asyncssh
 
+import core.integrations.whm.availability as availability_mod
 import core.remote_exec.ssh as ssh_module
+import core.servers.validation as validation_mod
 from core.remote_exec.types import CommandResult, SSHConnectionConfig
 
 PINNED_FINGERPRINT = "SHA256:pinned-fingerprint-value"
@@ -92,54 +93,38 @@ class FakeSSH:
         return self.handler(command)
 
 
-def patch_ssh_exec(
-    monkeypatch,  # type: ignore[no-untyped-def]
-    modules: Iterable[ModuleType],
-    replacement: object,
-) -> None:
-    """Bind `replacement` everywhere `modules` can reach `ssh_exec`.
+# Every module that still does `from core.remote_exec.ssh import ssh_exec`, so the name is bound
+# in its own namespace and patching the source module alone would miss it — plus the source
+# module, which is where `run_cli` resolves the name from and therefore what covers `csf_cli`,
+# `imunify_cli` and `pmgsh_cli`. Fixed here rather than passed in per call: a caller that
+# forgot a module got an unreplaced `ssh_exec` and a test that tries to open a socket.
+_SSH_EXEC_BINDERS: Final = (ssh_module, availability_mod, validation_mod)
 
-    `core.remote_exec.ssh` itself first: `csf_cli`, `imunify_cli` and `pmgsh_cli` run their
-    commands through `run_cli`, which resolves `ssh_exec` from that module's own globals, so
-    patching there is what covers them. `availability` still does
-    `from core.remote_exec.ssh import ssh_exec`, and that name was bound at import — hence the
-    per-module pass as well, for whichever of `modules` carries its own binding.
 
-    Separate from `install_fake_ssh_exec_in` because a test whose stand-in has to *await*
-    something cannot express itself as that function's synchronous `handler`, and a second
-    hand-written copy of this two-step is a second thing to forget when a module changes how it
-    reaches the transport.
+def patch_ssh_exec(monkeypatch, replacement: object) -> None:  # type: ignore[no-untyped-def]
+    """Bind `replacement` everywhere `ssh_exec` can be reached from.
+
+    Separate from `install_fake_ssh_exec` because a test whose stand-in has to *await* something
+    cannot express itself as that function's synchronous `handler`, and a second hand-written
+    copy of this walk is a second thing to forget when a module changes how it reaches the
+    transport.
     """
-    monkeypatch.setattr(ssh_module, "ssh_exec", replacement)
-    for module in modules:
-        if hasattr(module, "ssh_exec"):
-            monkeypatch.setattr(module, "ssh_exec", replacement)
+    for module in _SSH_EXEC_BINDERS:
+        monkeypatch.setattr(module, "ssh_exec", replacement)
 
 
-def install_fake_ssh_exec_in(
-    monkeypatch,  # type: ignore[no-untyped-def]
-    modules: Iterable[ModuleType],
-    handler: Callable[[str], CommandResult],
+def install_fake_ssh_exec(  # type: ignore[no-untyped-def]
+    monkeypatch, handler: Callable[[str], CommandResult]
 ) -> FakeSSH:
-    """Replace `ssh_exec` everywhere the named modules can reach it, sharing one recorder.
+    """One shared `FakeSSH` behind every module a tool call crosses.
 
-    Several modules at once because a tool call crosses them: the dual-backend firewall read's
-    preflight probes through
-    `availability` and then queries through `csf_cli` and `imunify_cli`, and one shared `FakeSSH`
-    is what lets a test assert the *whole* command sequence and its order.
+    One recorder rather than one per module, because a tool call crosses several — the
+    dual-backend firewall read probes through `availability`, then queries through `csf_cli` and
+    `imunify_cli` — and that is what lets a test assert the whole command sequence and its order.
     """
     fake = FakeSSH(handler=handler)
-    patch_ssh_exec(monkeypatch, modules, fake)
+    patch_ssh_exec(monkeypatch, fake)
     return fake
-
-
-def install_fake_ssh_exec(
-    monkeypatch,  # type: ignore[no-untyped-def]
-    module: ModuleType,
-    handler: Callable[[str], CommandResult],
-) -> FakeSSH:
-    """`install_fake_ssh_exec_in` for the single-module case, which is most of them."""
-    return install_fake_ssh_exec_in(monkeypatch, [module], handler)
 
 
 # --- A real SSH server on loopback ---
@@ -252,7 +237,6 @@ __all__ = [
     "RecordingSSHServer",
     "command_result",
     "install_fake_ssh_exec",
-    "install_fake_ssh_exec_in",
     "loopback_ssh_config",
     "loopback_ssh_server",
     "patch_ssh_exec",

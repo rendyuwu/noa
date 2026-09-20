@@ -68,10 +68,8 @@ from core.integrations.whm.ssh import WHMClientFactory, build_whm_client
 from core.results.tables import SQLToolResultTableWriter, ToolResultTableWriter
 from core.secrets.crypto import SecretCipher
 from core.secrets.delivery import SecretDelivery
-from core.servers.pmg_repository import PMGServerReadRepository
-from core.servers.proxmox_repository import ProxmoxServerReadRepository
+from core.servers.reference import ServerRefRepository
 from core.servers.repository import SQLServerRepository
-from core.servers.whm_repository import WHMServerReadRepository
 from noa_api.mcp_request_auth import McpSessionFactory
 
 # The three inventory read factories, bound to their table. Named constants rather than
@@ -137,26 +135,26 @@ class McpToolContext:
     authorization_repository_factory: Callable[[AsyncSession], AuthorizationRepository] = (
         SQLAuthorizationRepository
     )
-    # Typed to the concrete row, not to `WHMServerRowLike`: a tool that resolves a server then
+    # Typed to the concrete row, not to `UrlServerRowLike`: a tool that resolves a server then
     # calls it needs the credentials off *that* row, and the repository Protocol is generic
     # precisely so this can say so without widening the narrow view `core.servers.reference`
     # matches against.
-    whm_server_repository_factory: Callable[[AsyncSession], WHMServerReadRepository[WHMServer]] = (
+    whm_server_repository_factory: Callable[[AsyncSession], ServerRefRepository[WHMServer]] = (
         _WHM_SERVER_READS
     )
     # Same construction, one system over. Typed to `PMGServer` rather than to
-    # `PMGServerRowLike` because the whitelist tools resolve a node and then *connect* to it,
+    # `SSHHostServerRowLike` because the whitelist tools resolve a node and then *connect* to it,
     # which needs the SSH columns off the row that won the resolution.
-    pmg_server_repository_factory: Callable[[AsyncSession], PMGServerReadRepository[PMGServer]] = (
+    pmg_server_repository_factory: Callable[[AsyncSession], ServerRefRepository[PMGServer]] = (
         _PMG_SERVER_READS
     )
     # Same construction, third system. Typed to `ProxmoxServer` rather than to
-    # `ProxmoxServerRowLike` for the reason the two above are: `proxmox_reset_vm_password`
+    # `UrlServerRowLike` for the reason the two above are: `proxmox_reset_vm_password`
     # resolves an endpoint and then *calls* it, which needs the API token off the row that won
     # the resolution — not a second read by id that could disagree with the list a tie was
     # judged against.
     proxmox_server_repository_factory: Callable[
-        [AsyncSession], ProxmoxServerReadRepository[ProxmoxServer]
+        [AsyncSession], ServerRefRepository[ProxmoxServer]
     ] = _PROXMOX_SERVER_READS
     tool_run_repository_factory: Callable[[AsyncSession], ToolRunRepository] = SQLToolRunRepository
     # The CHANGE gate's writer. Beside the audit one and not folded into it: they write

@@ -74,7 +74,7 @@ from noa_api.mcp_tools.whm_firewall_change import (
 from support.mcp_identity import LIBRECHAT_USER, FakeMcpIdentityRepository
 from support.mcp_mount import mounted_app, open_session
 from support.rbac import ROLE_SUPPORT, FakeAuthorizationRepository
-from support.remote_exec import install_fake_ssh_exec_in
+from support.remote_exec import install_fake_ssh_exec
 from support.secrets import build_cipher
 from support.servers import EMBED_BASE_URL, SECRETS, build_tool_context
 from support.whm_firewall import (
@@ -82,7 +82,6 @@ from support.whm_firewall import (
     CSF_CLEAN_OUTPUT,
     CSF_DENY_LINE,
     CSF_READ,
-    FIREWALL_SSH_MODULES,
     IMUNIFY_ADD,
     IMUNIFY_CLEAN,
     IMUNIFY_DELETE,
@@ -618,7 +617,7 @@ async def test_the_mounted_call_opens_a_request_and_writes_no_tool_runs_row(
         authorization=authorization,
         cipher=cipher,
     )
-    install_fake_ssh_exec_in(monkeypatch, FIREWALL_SSH_MODULES, working_box())
+    install_fake_ssh_exec(monkeypatch, working_box())
 
     with mounted_app(monkeypatch, repository=identities, tool_context=tools.context) as fixture:
         user = authorization.add_user("operator@example.com", roles=(ROLE_SUPPORT,))

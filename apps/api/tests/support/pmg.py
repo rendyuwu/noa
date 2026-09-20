@@ -38,7 +38,6 @@ from uuid import UUID, uuid4
 
 import pytest
 
-import core.integrations.pmg.pmgsh_cli as pmgsh_cli_mod
 from core.approvals.execution import ChangeExecutionRequest
 from core.db.models import PMGServer
 from core.integrations.pmg.mynetworks import normalize_cidr
@@ -166,7 +165,7 @@ def whitelist_context(
         def handler(_command: str) -> CommandResult:
             return reply
 
-    fake = install_fake_ssh_exec(monkeypatch, pmgsh_cli_mod, handler)
+    fake = install_fake_ssh_exec(monkeypatch, handler)
     return fixture, fake
 
 

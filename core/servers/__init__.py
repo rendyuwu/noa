@@ -14,11 +14,12 @@ parameters or a third shape". Proxmox arrived and is WHM's shape exactly — a h
 parsed out of `base_url`, a candidate described by id/name/`base_url` — so it was two
 parameters: how a row yields its host, and what a `choices` entry carries. The policy moved to
 `core.servers.reference` (id, then name, then host; any tie is `choices`; a well-formed id stops
-rather than falling through) and the three per-system modules shrank to their row's own facts.
-Codes and messages are unchanged, which is what the two existing resolver test files hold.
+rather than falling through), which owns the two row views the three wrappers bind — one for the
+systems whose host is parsed out of `base_url`, one for the system that stores a bare `ssh_host`.
+Codes and messages are unchanged, which is what `apps/api/tests/test_server_reference.py` holds.
 
-**The write half landed with the server admin API**, in three modules kept apart from the three read
-ones on purpose: the MCP tool path holds a read repository to resolve a reference, and it must not
+**The write half landed with the server admin API**, in modules kept apart from `repository` on
+purpose: the MCP tool path holds a read repository to resolve a reference, and it must not
 hold an object that can delete a server (`admin_repository`). `admin_service` owns the rules — the
 case-insensitive name check, the one encryption site, an audit event per mutation, and the commit
 the flush-is-not-persisted rule requires. `validation` owns `POST …/validate`, which is separate

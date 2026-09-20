@@ -1,9 +1,8 @@
 """One `SELECT`-only inventory repository, parametrised by the table.
 
-`whm_repository.py`, `pmg_repository.py` and `proxmox_repository.py` keep the per-system
-Protocols — those differ (`base_url` vs `ssh_host`, `to_safe_dict` or not) and the narrow row
-views are what stop a resolver double being handed to something that decrypts. The SQL did
-not differ, so there is one of it.
+`core.servers.reference` keeps the row views — those differ (`base_url` vs `ssh_host`) and the
+narrow views are what stop a resolver double being handed to something that decrypts. The SQL
+did not differ, so there is one of it.
 
 The session belongs to the caller, as everywhere in `core/`: nothing here commits and both
 methods are `SELECT`s.
@@ -25,7 +24,7 @@ ServerModelT = TypeVar("ServerModelT", WHMServer, ProxmoxServer, PMGServer)
 
 
 class SQLServerRepository(Generic[ServerModelT]):
-    """`{WHM,PMG,Proxmox}ServerReadRepository[Model]` over one `AsyncSession`."""
+    """`ServerRefRepository[Model]` over one `AsyncSession`."""
 
     def __init__(self, session: AsyncSession, *, model: type[ServerModelT]) -> None:
         self._session = session
