@@ -43,14 +43,8 @@ from core.auth.jwt_service import JWTService
 from core.config import Settings
 from core.results.tables import ResultTableService, ResultTableView, TableColumn
 from noa_api.api.deps import (
-    STATE_JWT_SERVICE,
-    STATE_LDAP_SERVICE,
-    STATE_SESSION_FACTORY,
-    STATE_SETTINGS,
-    get_auth_service,
     get_result_table_service,
 )
-from noa_api.api.errors import install_error_handling
 from noa_api.api.routes.result_tables import router as result_tables_router
 from support.auth import (
     COOKIE_NAME,
@@ -58,7 +52,7 @@ from support.auth import (
     FakeAuthRepository,
     FakeUserRow,
     build_settings,
-    override_auth_service_factory,
+    session_app,
 )
 
 
@@ -310,20 +304,11 @@ def table_harness(*, settings: Settings | None = None) -> Iterator[TableHarness]
     auth_repository = FakeAuthRepository()
     operator = auth_repository.add_active_user(OPERATOR_EMAIL)
 
-    app = FastAPI()
-    install_error_handling(app)
-    app.include_router(result_tables_router)
-
-    # The same attributes `noa_api.main.lifespan` writes, minus what no test here needs.
-    setattr(app.state, STATE_SETTINGS, resolved_settings)
-    setattr(app.state, STATE_JWT_SERVICE, jwt_service)
-    setattr(app.state, STATE_LDAP_SERVICE, None)
-    setattr(app.state, STATE_SESSION_FACTORY, None)
-
-    app.dependency_overrides[get_auth_service] = override_auth_service_factory(
+    app = session_app(
+        result_tables_router,
         settings=resolved_settings,
-        repository=auth_repository,
         jwt_service=jwt_service,
+        repository=auth_repository,
     )
     app.dependency_overrides[get_result_table_service] = lambda: ResultTableService(
         repository=repository

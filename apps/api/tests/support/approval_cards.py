@@ -49,14 +49,8 @@ from core.auth.jwt_service import JWTService
 from core.config import Settings
 from core.db.lifecycle import ActionRequestStatus, ToolRunStatus
 from noa_api.api.deps import (
-    STATE_JWT_SERVICE,
-    STATE_LDAP_SERVICE,
-    STATE_SESSION_FACTORY,
-    STATE_SETTINGS,
     get_approval_card_service,
-    get_auth_service,
 )
-from noa_api.api.errors import install_error_handling
 from noa_api.api.routes.action_requests import router as action_requests_router
 from support.action_expiry import FakeActionRequestExpiryRepository, FakeActionRequestRow
 from support.auth import (
@@ -65,7 +59,7 @@ from support.auth import (
     FakeAuthRepository,
     FakeUserRow,
     build_settings,
-    override_auth_service_factory,
+    session_app,
 )
 
 # The first CHANGE tool. Named rather than built: this is about the card.
@@ -360,20 +354,11 @@ def card_harness(*, settings: Settings | None = None) -> Iterator[CardHarness]:
     auth_repository = FakeAuthRepository()
     operator = auth_repository.add_active_user(OPERATOR_EMAIL)
 
-    app = FastAPI()
-    install_error_handling(app)
-    app.include_router(action_requests_router)
-
-    # The same attributes `noa_api.main.lifespan` writes, minus what no test here needs.
-    setattr(app.state, STATE_SETTINGS, resolved_settings)
-    setattr(app.state, STATE_JWT_SERVICE, jwt_service)
-    setattr(app.state, STATE_LDAP_SERVICE, None)
-    setattr(app.state, STATE_SESSION_FACTORY, None)
-
-    app.dependency_overrides[get_auth_service] = override_auth_service_factory(
+    app = session_app(
+        action_requests_router,
         settings=resolved_settings,
-        repository=auth_repository,
         jwt_service=jwt_service,
+        repository=auth_repository,
     )
     app.dependency_overrides[get_approval_card_service] = lambda: ApprovalCardService(
         repository=repository,

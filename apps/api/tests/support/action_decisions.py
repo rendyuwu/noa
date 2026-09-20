@@ -68,14 +68,8 @@ from core.db.lifecycle import ActionRequestStatus, ToolRisk, ToolRunStatus
 from core.db.models import ActionReceipt, ActionRequest, ToolRun, User
 from noa_api.api.deps import (
     STATE_APPROVED_CHANGE_EXECUTOR,
-    STATE_JWT_SERVICE,
-    STATE_LDAP_SERVICE,
-    STATE_SESSION_FACTORY,
-    STATE_SETTINGS,
     get_action_decision_service,
-    get_auth_service,
 )
-from noa_api.api.errors import install_error_handling
 from noa_api.api.routes.action_requests import router as action_requests_router
 from support.auth import (
     COOKIE_NAME,
@@ -83,7 +77,7 @@ from support.auth import (
     FakeAuthRepository,
     FakeUserRow,
     build_settings,
-    override_auth_service_factory,
+    session_app,
 )
 
 # The first CHANGE tool. Named rather than built: these tests are about the decision,
@@ -455,22 +449,13 @@ def decision_harness(
     auth_repository = FakeAuthRepository()
     operator = auth_repository.add_active_user(OPERATOR_EMAIL)
 
-    app = FastAPI()
-    install_error_handling(app)
-    app.include_router(action_requests_router)
-
-    # The same attributes `noa_api.main.lifespan` writes, minus the engine no test here needs.
-    setattr(app.state, STATE_SETTINGS, resolved_settings)
-    setattr(app.state, STATE_JWT_SERVICE, jwt_service)
-    setattr(app.state, STATE_LDAP_SERVICE, None)
-    setattr(app.state, STATE_SESSION_FACTORY, None)
-    setattr(app.state, STATE_APPROVED_CHANGE_EXECUTOR, executor)
-
-    app.dependency_overrides[get_auth_service] = override_auth_service_factory(
+    app = session_app(
+        action_requests_router,
         settings=resolved_settings,
-        repository=auth_repository,
         jwt_service=jwt_service,
+        repository=auth_repository,
     )
+    setattr(app.state, STATE_APPROVED_CHANGE_EXECUTOR, executor)
     # The real `ActionDecisionService` over a fake repository: the ordering, the guards and the
     # error classes are all production code. The per-user in-flight cap comes off *this harness's*
     # settings, the way `get_action_decision_service` reads it off the app's — so a cap test sets it

@@ -30,7 +30,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 from fastapi.testclient import TestClient
 
 from core.auth.auth_service import AuthService
@@ -300,6 +300,41 @@ def override_auth_service_factory(
     return override
 
 
+def session_app(
+    *routers: APIRouter,
+    settings: Settings,
+    jwt_service: JWTService,
+    repository: FakeAuthRepository,
+    directory: FakeDirectory | None = None,
+    rate_limits: FakeRateLimitRepository | None = None,
+) -> FastAPI:
+    """An app wired the way `noa_api.main.lifespan` wires one, minus the engine no harness needs.
+
+    The four `app.state` attributes and the `get_auth_service` override are identical at all six
+    `support/` harnesses; the routers and the per-harness service overrides are not, so those stay
+    at the call site. Returns the app rather than a client: each harness owns its own
+    `with TestClient(app) as client:` because that is what wraps its `yield`.
+    """
+    app = FastAPI()
+    install_error_handling(app)
+    for router in routers:
+        app.include_router(router)
+
+    setattr(app.state, STATE_SETTINGS, settings)
+    setattr(app.state, STATE_JWT_SERVICE, jwt_service)
+    setattr(app.state, STATE_LDAP_SERVICE, None)
+    setattr(app.state, STATE_SESSION_FACTORY, None)
+
+    app.dependency_overrides[get_auth_service] = override_auth_service_factory(
+        settings=settings,
+        repository=repository,
+        jwt_service=jwt_service,
+        directory=directory,
+        rate_limits=rate_limits,
+    )
+    return app
+
+
 # --- App builder ---
 
 
@@ -348,21 +383,11 @@ def auth_harness(
     resolved_rate_limits = rate_limits or FakeRateLimitRepository()
     jwt_service = JWTService(resolved_settings)
 
-    app = FastAPI()
-    install_error_handling(app)
-    app.include_router(auth_router)
-
-    # Set directly rather than through a lifespan: these are the same attributes
-    # `noa_api.main.lifespan` writes, minus the engine no test here needs.
-    setattr(app.state, STATE_SETTINGS, resolved_settings)
-    setattr(app.state, STATE_JWT_SERVICE, jwt_service)
-    setattr(app.state, STATE_LDAP_SERVICE, None)
-    setattr(app.state, STATE_SESSION_FACTORY, None)
-
-    app.dependency_overrides[get_auth_service] = override_auth_service_factory(
+    app = session_app(
+        auth_router,
         settings=resolved_settings,
-        repository=resolved_repository,
         jwt_service=jwt_service,
+        repository=resolved_repository,
         directory=resolved_directory,
         rate_limits=resolved_rate_limits,
     )
