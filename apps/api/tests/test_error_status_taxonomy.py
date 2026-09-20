@@ -12,9 +12,20 @@ what stops a permission problem answering "service unavailable".
 `noa_api.main` is what makes that binding real: `__subclasses__()` only sees classes whose
 module has been imported, and `main` transitively imports every module the API raises from.
 
-The gap this does not close, stated rather than implied: three trees legitimately allow 503
-(`AuthError`, `ChangeGateError`, `ResultTableError`), so a class added to one of those with no
-status of its own inherits the unclassified default and passes here. Nothing catches that.
+The gap this does not close, stated rather than implied: a closed set catches a class answering
+*outside* its tree's set, never one that inherits a status inside the set but wrong for itself.
+Measured — deleting `SelfDeleteError.status_code` leaves it on `AuthorizationError`'s 403, which
+is in the set, and this file stays green. The 503 case is that same hole at its most visible:
+`AuthError`, `ChangeGateError` and `ResultTableError` each legitimately allow 503, so a class
+added to one of those with no status of its own passes here too.
+
+What does catch it is a per-class pin, and only five trees have one:
+`test_rbac_routes.py::test_status_for_every_authorization_error`,
+`test_mcp_token_verifier.py::test_status_for_every_mcp_auth_error`,
+`test_mcp_token_service.py::test_status_for_every_mcp_token_error`,
+`test_auth_routes.py::test_status_for_every_auth_error`, and
+`test_action_request_decision_routes.py::test_each_refusal_takes_the_status_its_remedy_implies`.
+For the other ten trees this table is the only pin. Do not fold those five in here.
 """
 
 from __future__ import annotations
