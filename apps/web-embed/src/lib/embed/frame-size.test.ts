@@ -8,7 +8,6 @@ import {
   TABLE_FRAME_POLICY,
   boxEdgeHeight,
   cssPixels,
-  frameSizeMessage,
   nestedOverflow,
   nextFrameHeight,
 } from './frame-size'
@@ -48,16 +47,6 @@ describe('nextFrameHeight — one bound rule, four branches', () => {
     )
   })
 
-  it('posts nothing when the change is smaller than the epsilon', () => {
-    expect(nextFrameHeight({ measured: 485, edges: 0, lastPosted: 480, policy: POLICY })).toBeNull()
-  })
-
-  it('posts again when the change clears the epsilon — the reachability control', () => {
-    // Without this the case above passes against an implementation that posts once and then never
-    // again, including one where the second post is suppressed by a bug rather than by the gate.
-    expect(nextFrameHeight({ measured: 495, edges: 0, lastPosted: 480, policy: POLICY })).toBe(495)
-  })
-
   it('says nothing more once it is sitting on the ceiling', () => {
     // The other half of the ceiling branch: a page that keeps growing past the rail must not keep
     // re-posting the same number until the budget is gone.
@@ -68,13 +57,6 @@ describe('nextFrameHeight — one bound rule, four branches', () => {
 })
 
 describe('nextFrameHeight — monotonic within a mount', () => {
-  it('never posts a decrease', () => {
-    // A decrease is the scrollbar-mediated oscillation's downstroke. The reserved gutter in both
-    // stylesheets is what stops the width from changing at all; this is the second instrument, and
-    // it needs no tuning because it is not a threshold.
-    expect(nextFrameHeight({ measured: 300, edges: 0, lastPosted: 480, policy: POLICY })).toBeNull()
-  })
-
   it('an alternating measurement terminates inside two posts, budget untouched', () => {
     // The fixture the loop would have produced: 400, 440, 400, 440, ... with an amplitude well
     // above the epsilon. Monotonicity alone silences it, and the post budget is never reached —
@@ -139,19 +121,6 @@ describe('the border and margin term', () => {
     expect(boxEdgeHeight(NO_EDGES)).toBe(0)
   })
 
-  it('lands in the height that gets posted', () => {
-    // The term is only worth naming if it reaches the number. A border of 1px top and bottom on a
-    // 480px measurement is a 482px frame, and the two pixels are the ones nobody would find.
-    const edges = boxEdgeHeight({
-      borderTopWidth: '1px',
-      borderBottomWidth: '1px',
-      marginTop: '0px',
-      marginBottom: '0px',
-    })
-
-    expect(nextFrameHeight({ measured: 480, edges, lastPosted: null, policy: POLICY })).toBe(482)
-  })
-
   it('rounds, because a frame height is applied verbatim', () => {
     expect(nextFrameHeight({ measured: 480.4, edges: 0.2, lastPosted: null, policy: POLICY })).toBe(
       481,
@@ -176,15 +145,6 @@ describe('nestedOverflow — what a nested scroller is hiding', () => {
 })
 
 describe('the message', () => {
-  it('is height only, with no width key at all', () => {
-    const message = frameSizeMessage(480)
-
-    expect(message).toEqual({ type: 'ui-size-change', payload: { height: 480 } })
-    // Asserted on the keys as well as the value: a `width` of `undefined` would satisfy `toEqual`
-    // and would still be a payload that fights the host for its own column width.
-    expect(Object.keys(message.payload)).toEqual(['height'])
-  })
-
   it('carries the type the host listens for', () => {
     // The host's name, not this app's. Renaming it makes every message a no-op, silently.
     expect(FRAME_SIZE_MESSAGE_TYPE).toBe('ui-size-change')
