@@ -61,6 +61,7 @@ from noa_api.mcp_tools.change_gate import (
     build_approval_context,
     open_change_request,
 )
+from noa_api.mcp_tools.registry import register_mcp_tools
 from support.database import MUTATED_TABLES, migrated_database, truncate
 from support.mcp_identity import (
     DISPLAY_NAME,
@@ -296,15 +297,23 @@ async def test_every_registered_change_tool_declares_no_reason_parameter() -> No
     """The no-reason rule on the schema, swept over what the server actually exposes.
 
     Written while every registered tool was still a READ — same reason as the row-cap rule: it
-    has to exist before the second instance, because the second is where nobody re-reads it. It
-    stopped being vacuous at the suspend tool and covers two CHANGE tools since the unsuspend
-    tool — `build_mcp_server` registers them, so the sweep is over the real surface. The case
-    below is what keeps it from passing as a tautology.
+    has to exist before the second instance, because the second is where nobody re-reads it.
+
+    `register_mcp_tools` and `run_middleware=False`, both load-bearing and both measured: without
+    the first `build_mcp_server` exposes an empty server, and with middleware on, `list_tools`
+    filters by the caller's grants and answers `[]` for the unauthenticated context this test
+    holds. Either way the loop body never runs and the sweep passes over nothing — the tautology
+    the case below cannot catch, because that one pins the predicate against a hand-built schema
+    rather than the size of this list. The count assert is what binds the surface.
     """
     tools = build_tool_context()
     server = build_mcp_server(tool_context=tools.context)
+    register_mcp_tools(server, context=tools.context)
 
-    for tool in await server.list_tools():
+    exposed = await server.list_tools(run_middleware=False)
+
+    assert len(exposed) > 1, "the sweep below is vacuous unless the tools are registered"
+    for tool in exposed:
         properties = (tool.parameters or {}).get("properties", {})
         assert_no_reason_argument(dict.fromkeys(properties, None))
 
