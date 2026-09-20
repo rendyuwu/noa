@@ -148,31 +148,16 @@ def test_status_for_every_authorization_error(
     assert error.status_code == expected_status
 
 
-def test_every_authorization_error_is_mapped_explicitly() -> None:
-    """No authorization error may reach the 503 fallback — that is an auth answer.
-
-    Walks the subclass tree, so a class added later with no `status_code` of its own fails
-    here instead of returning "service unavailable" for a permission problem.
-    """
-    for klass in error_subclasses(AuthorizationError):
-        assert klass.status_code in {
-            status.HTTP_400_BAD_REQUEST,
-            status.HTTP_403_FORBIDDEN,
-            status.HTTP_404_NOT_FOUND,
-            status.HTTP_409_CONFLICT,
-        }
-
-
 def test_direct_grants_disabled_is_410_and_is_not_an_authorization_error() -> None:
-    """The 410 on direct grants, and the reason it sits outside the tree above.
+    """The 410 on direct grants, and the reason it sits outside the `AuthorizationError` tree.
 
     Two assertions, and the second is what keeps the first honest. The class must answer 410
-    — a withdrawn capability, not a missing row and not a permission the caller lacks. But the
-    tree test above asserts every `AuthorizationError` maps into {400, 403, 404, 409}, and that
-    closed set is the assertion: it is what stops a permission problem answering "service
-    unavailable". Had this class been added to that tree, the set would have had to open to
-    admit 410 and the guard would have been weakened to fit one error. So it derives from
-    `NoaError` directly, and this test pins that — a later edit that "tidies" it into the
+    — a withdrawn capability, not a missing row and not a permission the caller lacks. But
+    `test_error_status_taxonomy.py` pins every `AuthorizationError` to {400, 403, 404, 409},
+    and that closed set is the assertion: it is what stops a permission problem answering
+    "service unavailable". Had this class been added to that tree, the set would have had to
+    open to admit 410 and the guard would have been weakened to fit one error. So it derives
+    from `NoaError` directly, and this test pins that — a later edit that "tidies" it into the
     taxonomy fails here rather than quietly loosening the tree.
     """
     assert DirectGrantsDisabledError.status_code == status.HTTP_410_GONE

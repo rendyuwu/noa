@@ -28,8 +28,8 @@ that means 503.
 passes a `NoaError`'s own `error_code` through to the model instead of collapsing it into
 `tool_execution_failed`, so the code that names the fix survives the boundary; and
 every class here carries its own `status_code`, so the decision endpoints raise rather than
-build responses. All of them declare one explicitly — a subclass-tree test per tree asserts
-none falls through to the 503 default.
+build responses. Both trees are pinned to a closed set of statuses in
+`apps/api/tests/test_error_status_taxonomy.py`.
 
 **500 for `ChangeReasonForbiddenError` and `ChangeEvidenceRequiredError`.** Neither is
 reachable from anything a client sends: a reason-shaped argument means a CHANGE tool declared
@@ -139,10 +139,10 @@ class ChangeGateBranchUnavailableError(ChangeGateError):
         "NOA recorded this change for approval but could not produce the approval card, so "
         "nothing was changed. Contact an administrator."
     )
-    # 500 for the same reason, one step later: the branch that shapes the approval
-    # surface is a module constant, never a tool argument, so a caller cannot have selected an
-    # unbuilt one. Not 503 — the pending row already exists by then, and "try again" would open
-    # a second request for one change.
+    # 500, like `ChangeReasonForbiddenError` and `ChangeEvidenceRequiredError`: the branch that
+    # shapes the approval surface is a module constant, never a tool argument, so a caller
+    # cannot have selected an unbuilt one. Not 503 — the pending row already exists by then,
+    # and "try again" would open a second request for one change.
     status_code = 500
 
 
@@ -150,15 +150,14 @@ class ActionDecisionError(NoaError):
     """Base: a decision on an existing request was refused.
 
     Sibling of `ChangeGateError`, not a subclass — see the module docstring. Nothing raises
-    this class directly; it exists so `noa_api.api.errors` can map the tree and so a
-    subclass added later takes a refusal status rather than the unclassified 503.
+    this class directly; it exists so a subclass added later takes a refusal status rather
+    than the unclassified 503.
     """
 
     error_code: str = "action_decision_failed"
     message: str = "That decision could not be recorded."
     # Bare `ActionDecisionError`: a refusal about one request, so 409 rather than the 503
-    # fallback, which would read as "NOA is down" for something NOA decided. The same
-    # subclass-tree test guards this from becoming the default for a class added later.
+    # fallback, which would read as "NOA is down" for something NOA decided.
     status_code = 409
 
 
@@ -281,9 +280,8 @@ class ChangeExecutionLimitReachedError(ActionDecisionError):
         "You already have a change running. Wait for it to finish, then approve this one again."
     )
     # 409 for the per-user in-flight cap. Same reading as "already decided": the caller may
-    # approve changes
-    # in general, just not one more right now. Not 429 — nothing is rate-limiting them, and
-    # `Retry-After` would be a number NOA cannot honestly produce.
+    # approve changes in general, just not one more right now. Not 429 — nothing is
+    # rate-limiting them, and `Retry-After` would be a number NOA cannot honestly produce.
     status_code = 409
 
 
@@ -301,6 +299,6 @@ class DecisionCsrfInvalidError(ActionDecisionError):
 
     error_code: str = "csrf_token_invalid"
     message: str = "This approval card is no longer valid. Reload it and try again."
-    # 403, not 401: the session authenticated fine and signing in again changes nothing
-    # . The remedy is a freshly minted token, which means reloading the card.
+    # 403, not 401: the session authenticated fine and signing in again changes nothing. The
+    # remedy is a freshly minted token, which means reloading the card.
     status_code = 403

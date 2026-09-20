@@ -30,7 +30,7 @@ class ResultTableError(NoaError):
     error_code: str = "result_table_failed"
     message: str = "That table could not be read. Try the tool call again."
     # Bare `ResultTableError`: still "that table could not be read", so 503 by decision rather
-    # than by falling through. The subclass-tree test covers this tree too.
+    # than by falling through, which would answer the same number for a different reason.
     status_code = 503
 
 

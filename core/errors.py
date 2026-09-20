@@ -19,9 +19,10 @@ requires one shared handler rather than per-route shaping, and two bases would h
 a lie the moment `request_id` lands in that handler.
 
 Subclass this, not `Exception`, for anything a route may raise. The handler in
-`noa_api.api.errors` reads `status_code` off the class, and a test per taxonomy asserts every
-subclass declares one — so an unclassified subclass is a visible test failure rather than a
-wrong status code in production.
+`noa_api.api.errors` reads `status_code` off the class, and
+`apps/api/tests/test_error_status_taxonomy.py` pins each tree to a closed set of statuses — so a
+subclass answering outside its tree's set is a visible test failure rather than a wrong status
+code in production.
 """
 
 from __future__ import annotations
@@ -36,7 +37,7 @@ class NoaError(Exception):
 
     error_code: str = "internal_error"
     message: str = "Something went wrong. Contact an administrator if this continues."
-    # 503 = unclassified. Every taxonomy declares its own; a test per tree asserts it.
+    # 503 = unclassified. Every tree pins its own set in test_error_status_taxonomy.py.
     status_code: int = 503
 
     def __init__(self, detail: str | None = None) -> None:

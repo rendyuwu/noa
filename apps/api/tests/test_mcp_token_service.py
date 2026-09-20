@@ -362,13 +362,6 @@ def test_status_for_every_mcp_token_error(error: McpTokenError, expected_status:
     assert error.status_code == expected_status
 
 
-def test_every_mcp_token_error_is_mapped_explicitly() -> None:
-    """No token error may inherit the 503 fallback — that answer means "NOA is down"."""
-    for klass in error_subclasses(McpTokenError):
-        assert "status_code" in klass.__dict__, f"{klass.__name__} has no explicit status"
-        assert klass.status_code in {status.HTTP_400_BAD_REQUEST, status.HTTP_404_NOT_FOUND}
-
-
 def test_mcp_token_error_codes_are_unique() -> None:
     """Clients branch on `error_code`, so two classes sharing one string is a bug."""
     codes = [klass.error_code for klass in error_subclasses(McpTokenError)]

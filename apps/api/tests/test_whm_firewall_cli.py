@@ -27,7 +27,6 @@ import json
 import shlex
 
 import pytest
-from fastapi import status
 
 import core.remote_exec.ssh as ssh_module
 from core.errors import NoaError
@@ -50,6 +49,7 @@ from core.integrations.whm.imunify_cli import (
 )
 from core.remote_exec.errors import SSHExecutionError
 from noa_api.api.errors import error_body
+from support.errors import error_subclasses
 from support.remote_exec import (
     SUDO_DENIED_STDERR,
     SUDO_MISSING_BINARY_STDERR,
@@ -249,25 +249,17 @@ async def test_run_converts_an_ssh_failure_into_the_backend_error_tree(
     assert exc.value.error_code == "ssh_host_key_mismatch"
 
 
-# --- One taxonomy, one handler, mapped status ---
+# --- One taxonomy, one handler ---
 
 
-def test_firewall_error_tree_declares_one_status() -> None:
-    """Every subclass, walked — a class added later without its own status fails here rather than
-    silently answering the 503 unclassified fallback."""
-    seen: list[type[WHMFirewallCLIError]] = []
-
-    def walk(klass: type[WHMFirewallCLIError]) -> None:
-        seen.append(klass)
-        for child in klass.__subclasses__():
-            walk(child)
-
-    walk(WHMFirewallCLIError)
-
-    assert set(seen) == {WHMFirewallCLIError, CSFCLIError, ImunifyCLIError}
-    for klass in seen:
-        error = klass(code="probe", message="probe")
-        assert error.status_code == status.HTTP_502_BAD_GATEWAY
+def test_the_firewall_error_tree_is_one_base_and_two_backends() -> None:
+    """One tree so a caller catches one thing; which backend failed stays in `error_code`.
+    The 502 all three answer is pinned in `test_error_status_taxonomy.py`."""
+    assert error_subclasses(WHMFirewallCLIError) == {
+        WHMFirewallCLIError,
+        CSFCLIError,
+        ImunifyCLIError,
+    }
 
 
 def test_firewall_errors_are_noa_errors_and_shape_a_clean_body() -> None:

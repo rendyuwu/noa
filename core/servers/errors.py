@@ -14,8 +14,8 @@ The refusals the admin CRUD surface raises, and nothing else. Written the way
    (`apps/admin-web/src/lib/admin/*/[system]-api.ts` surfaces them to the operator), so a
    new spelling would break a client that exists.
 3. One class per code rather than one class with a `system` field. The status is a class
-   attribute, and a subclass-tree test walks this tree asserting every member declares one —
-   a dynamic `error_code` would satisfy that test while making the decision unreadable.
+   attribute and `apps/api/tests/test_error_status_taxonomy.py` pins this tree to {404, 409} —
+   a dynamic `error_code` would satisfy that while making the decision unreadable.
 
 **The per-system split is deliberate.** A single
 `ServerNotFoundError` would answer `server_not_found` for all three tables, which reads
@@ -45,17 +45,16 @@ from core.errors import NoaError
 class ServerInventoryError(NoaError):
     """Base for every refusal the server-inventory admin surface raises.
 
-    Mapped explicitly (409) rather than left to the handler's 503 fallback, which would read
-    as "NOA is down" for something NOA decided. A test walks this tree and asserts each
-    subclass has its own entry, so a class added later is a visible failure instead of a
-    wrong status in production.
+    Decided (409) rather than left to the handler's 503 fallback, which would read as "NOA is
+    down" for something NOA decided. `apps/api/tests/test_error_status_taxonomy.py` pins this
+    tree to {404, 409}, so a class added later answering anything else is a visible failure
+    instead of a wrong status in production.
     """
 
     error_code: str = "server_inventory_failed"
     message: str = "That server change could not be applied."
     # Bare `ServerInventoryError`: a refusal about one row, so 409 by decision rather than by
-    # falling through to a 503 that would read as "NOA is down". The same subclass-tree test
-    # every taxonomy above has guards this from becoming the default for a later class.
+    # falling through to a 503 that would read as "NOA is down".
     status_code = 409
 
 
@@ -109,10 +108,9 @@ class WHMResellerCredentialNameMismatchError(ServerInventoryError):
         "API username to the same value, or clear the reseller checkbox."
     )
     # 409 for the same reading, one field over (the name == `api_username` rule): a reseller
-    # WHM row must be named
-    # after its `api_username`, and on a PATCH both operands may be stored columns — so what
-    # refuses is the state of the resulting row, not a malformed body, and a caller cannot tell
-    # from the schema which combination is legal.
+    # WHM row must be named after its `api_username`, and on a PATCH both operands may be
+    # stored columns — so what refuses is the state of the resulting row, not a malformed
+    # body, and a caller cannot tell from the schema which combination is legal.
     status_code = 409
 
 

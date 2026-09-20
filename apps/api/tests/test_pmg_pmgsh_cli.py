@@ -40,7 +40,6 @@ from __future__ import annotations
 import shlex
 
 import pytest
-from fastapi import status
 
 import core.integrations.pmg.pmgsh_cli as pmgsh_cli_mod
 from core.errors import NoaError
@@ -66,6 +65,7 @@ from core.integrations.pmg.pmgsh_cli import (
 from core.remote_exec.errors import SSHExecutionError
 from core.remote_exec.output import command_output_text
 from noa_api.api.errors import error_body
+from support.errors import error_subclasses
 from support.remote_exec import (
     SUDO_DENIED_STDERR,
     SUDO_MISSING_BINARY_STDERR,
@@ -419,23 +419,14 @@ def test_command_output_text_is_the_shared_helper() -> None:
     assert pmgsh_cli_mod.command_output_text is command_output_text
 
 
-# --- One taxonomy, one handler, mapped status ---
+# --- One taxonomy, one handler ---
 
 
-def test_pmgsh_error_tree_declares_one_status() -> None:
-    """Every subclass, walked — a class added later without its own status fails here rather than
-    silently answering the 503 unclassified fallback."""
-    seen: list[type[PMGSHCLIError]] = []
-
-    def walk(klass: type[PMGSHCLIError]) -> None:
-        seen.append(klass)
-        for child in klass.__subclasses__():
-            walk(child)
-
-    walk(PMGSHCLIError)
-
-    assert seen == [PMGSHCLIError]
-    assert PMGSHCLIError.status_code == status.HTTP_502_BAD_GATEWAY
+def test_the_pmgsh_error_tree_is_one_class() -> None:
+    """One class rather than one per failure mode, matching `SSHExecutionError`: which
+    failure it was stays in `error_code`. Its 502 is pinned in
+    `test_error_status_taxonomy.py`."""
+    assert error_subclasses(PMGSHCLIError) == {PMGSHCLIError}
 
 
 def test_pmgsh_errors_are_noa_errors_and_shape_a_clean_body() -> None:

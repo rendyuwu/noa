@@ -11,8 +11,8 @@ justifying, because both modules are about `mcp_tokens`:
   request path, one class per distinguishable denial.
 
 Folding them together would put a 404 about a revoke request in the same tree as a 401
-about a stolen credential, and the subclass-tree test in `test_mcp_token_service.py` (which
-asserts every `McpTokenError` maps to 400 or 404) would have to be loosened to allow 401.
+about a stolen credential, and the tree table in `apps/api/tests/test_error_status_taxonomy.py`
+(which pins every `McpTokenError` to 400 or 404) would have to be loosened to allow 401.
 
 The named-401-body rule fixes two of these strings verbatim — `librechat_user_header_missing` and
 `librechat_user_mismatch` — so a client can tell "you forgot the header" from "this token
@@ -51,14 +51,14 @@ class McpAuthError(NoaError):
     """Base for every MCP request-path authentication denial.
 
     Mapped to 400 rather than left to the 503 fallback: an unclassified denial is a problem
-    with the request, not a report that NOA is down. A test asserts every subclass is mapped
-    explicitly, so reaching this entry means a new class arrived without a decision.
+    with the request, not a report that NOA is down.
+    `apps/api/tests/test_error_status_taxonomy.py` pins this tree to {400, 401, 403, 429}.
     """
 
     error_code: str = "mcp_auth_failed"
     message: str = "This MCP request could not be authenticated."
-    # Bare `McpAuthError`: a request problem, not "NOA is down". Same subclass-tree test
-    # guards this from becoming the default for a class added later.
+    # Bare `McpAuthError`: a request problem, not "NOA is down". The tree is pinned to
+    # {400, 401, 403, 429}.
     status_code = 400
 
 

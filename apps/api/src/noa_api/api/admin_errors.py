@@ -7,10 +7,9 @@ condition — there is no user-level grant table, no `set_user_tools` method, an
 validate. The refusal is a property of the HTTP surface: a route that used to exist in
 `noa-old` and answers "gone" here.
 
-There is a second, sharper reason it is not an `AuthorizationError`. That taxonomy's own
-test walks the subclass tree and asserts every member maps to one of 400, 403, 404 or 409
-(`test_rbac_routes.py::test_every_authorization_error_is_mapped_explicitly`). A 410 in that
-tree would either fail the test or force its status set open, and the set is the assertion —
+There is a second, sharper reason it is not an `AuthorizationError`. The taxonomy table in
+`apps/api/tests/test_error_status_taxonomy.py` pins that tree to 400, 403, 404 and 409. A 410
+in it would either fail the test or force the status set open, and the set is the assertion —
 it is what stops a permission problem answering "service unavailable". So this derives from
 `NoaError` directly and declares its own `status_code`.
 """
@@ -44,9 +43,4 @@ class DirectGrantsDisabledError(NoaError):
         "Direct per-user tool grants are no longer supported. Grant the tools to a role and "
         "assign that role to the user."
     )
-    # 410, and it sits outside the authorization group on purpose: `DirectGrantsDisabledError`
-    # is not an `AuthorizationError`, because that tree's own test pins its statuses to
-    # {400, 403, 404, 409} and the pin is the assertion (see `noa_api.api.admin_errors`). 410
-    # rather than 404 or 403: the route existed in `noa-old`, the capability is withdrawn
-    # permanently, and neither "missing" nor "not allowed" says that.
     status_code = 410

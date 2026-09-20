@@ -25,7 +25,6 @@ from uuid import uuid4
 
 import pytest
 
-from core.audit.errors import ToolRunAuditError
 from core.audit.tool_run_reads import MAX_PAGE_SIZE
 from core.db.lifecycle import ToolRisk, ToolRunStatus
 from noa_api.api.request_context import REQUEST_ID_HEADER
@@ -36,7 +35,6 @@ from support.admin import (
     admin_harness,
     registered_routes,
 )
-from support.errors import error_subclasses
 from support.tool_run_audit import RUN_CREATED_AT, FakeToolRunAuditReader, build_list_item
 
 # Every query parameter the list route accepts, with the `ToolRunAuditFilters` field it must reach.
@@ -368,17 +366,3 @@ def test_an_undecodable_cursor_is_refused(harness: AdminHarness) -> None:
         assert response.status_code == 400, f"cursor={cursor!r} → {response.status_code}"
         assert response.json()["error_code"] == "invalid_audit_cursor"
         assert harness.tool_runs.calls == []
-
-
-def test_every_audit_error_subclass_is_mapped(harness: AdminHarness) -> None:
-    """No class in this family inherits `NoaError`'s 503 fallback.
-
-    The shape every error family in this suite carries: reaching the fallback means a subclass
-    arrived without anybody deciding its status, and 503 reads as "NOA is down" for what is a
-    request problem.
-    """
-    del harness
-
-    for klass in error_subclasses(ToolRunAuditError):
-        assert "status_code" in klass.__dict__, f"{klass.__name__} has no explicit status"
-        assert klass.status_code in {400, 404}, klass
