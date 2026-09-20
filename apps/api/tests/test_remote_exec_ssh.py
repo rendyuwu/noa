@@ -33,6 +33,7 @@ import asyncssh
 import pytest
 
 import core.remote_exec.ssh as ssh_mod
+from core.errors import NoaError
 from core.remote_exec.errors import SSHExecutionError
 from core.remote_exec.ssh import (
     command_from_argv,
@@ -40,7 +41,7 @@ from core.remote_exec.ssh import (
     ssh_get_host_fingerprint,
 )
 from core.remote_exec.types import SSHConnectionConfig
-from noa_api.api.errors import FALLBACK_STATUS, error_body, status_for
+from noa_api.api.errors import error_body
 from noa_api.mcp_tools.change_target import NON_ANSWER_ERROR_CODES
 from support.remote_exec import loopback_ssh_config, loopback_ssh_server
 
@@ -491,10 +492,8 @@ def test_command_from_argv_rejects_empty_argv() -> None:
 def test_ssh_execution_error_is_a_noa_error_with_mapped_status() -> None:
     error = SSHExecutionError(code="ssh_timeout", message="SSH connection timed out")
 
-    status = status_for(error)
-
-    assert status == 502
-    assert status != FALLBACK_STATUS
+    assert error.status_code == 502
+    assert error.status_code != NoaError.status_code
     assert error_body(error) == {
         "error_code": "ssh_timeout",
         "message": "SSH connection timed out",

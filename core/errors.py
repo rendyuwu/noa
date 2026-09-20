@@ -1,12 +1,15 @@
 """One error base for the whole API surface.
 
-Every NOA failure that a client should see carries three fields, and the split is what
+Every NOA failure that a client should see carries four fields, and the split is what
 lets a single exception handler shape every response:
 
 - `error_code` — stable machine string. Clients and tests branch on this, never on prose.
 - `message` — what the operator reads. Says what happened and who can fix it, so nobody
   files a ticket for something they could clear themselves. Safe to render: no
   credential, no directory internals, no configuration state.
+- `status_code` — the HTTP status the shared handler answers with. On the class rather than in
+  a table beside the handler, so a subclass inherits its parent's decision by ordinary
+  attribute lookup and a new class with its own reading declares one.
 - `detail` — optional internal cause, for logs only. Defaults to `message`, and
   `str(exc)` yields it, so tracebacks stay useful while response bodies stay clean.
 
@@ -16,8 +19,9 @@ requires one shared handler rather than per-route shaping, and two bases would h
 a lie the moment `request_id` lands in that handler.
 
 Subclass this, not `Exception`, for anything a route may raise. The handler in
-`noa_api.api.errors` maps class → status, so an unmapped subclass is a visible test
-failure rather than a wrong status code in production.
+`noa_api.api.errors` reads `status_code` off the class, and a test per taxonomy asserts every
+subclass declares one — so an unclassified subclass is a visible test failure rather than a
+wrong status code in production.
 """
 
 from __future__ import annotations
@@ -26,12 +30,16 @@ from __future__ import annotations
 class NoaError(Exception):
     """Base for every client-visible NOA failure.
 
-    Subclasses override `error_code` and `message`. Callers pass `detail` when there is
-    internal context worth logging.
+    Subclasses override `error_code`, `message` and `status_code`. Callers pass `detail` when
+    there is internal context worth logging.
     """
 
     error_code: str = "internal_error"
     message: str = "Something went wrong. Contact an administrator if this continues."
+    # Bare `AuthError` means "authentication failed and we did not classify why", which is an
+    # infrastructure answer, not a credential one — 401 would send the operator chasing their
+    # own password. Reached only by `NoaError` subclasses that declare no status of their own.
+    status_code: int = 503
 
     def __init__(self, detail: str | None = None) -> None:
         self.detail = detail or self.message

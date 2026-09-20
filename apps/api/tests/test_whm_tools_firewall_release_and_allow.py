@@ -51,6 +51,7 @@ from noa_api.mcp_tools.change_gate import (
     UI_RESOURCE_MIME_TYPE,
     UI_RESOURCE_URI_PREFIX,
 )
+from noa_api.mcp_tools.change_runners import build_change_runners
 from noa_api.mcp_tools.registry import register_mcp_tools
 from noa_api.mcp_tools.results import ERROR_TIMEOUT
 from noa_api.mcp_tools.whm_firewall import (
@@ -69,7 +70,6 @@ from noa_api.mcp_tools.whm_firewall_change import (
     MAX_DURATION_MINUTES,
     MIN_DURATION_MINUTES,
     TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW,
-    build_whm_firewall_change_runners,
 )
 from support.mcp_identity import LIBRECHAT_USER, FakeMcpIdentityRepository
 from support.mcp_mount import mounted_app, open_session
@@ -385,9 +385,7 @@ def test_the_tool_is_catalogued_and_classified_as_a_change() -> None:
 
     assert TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW in TOOL_CATALOG
     assert registered[TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW] is ToolRisk.CHANGE
-    assert set(build_whm_firewall_change_runners(context=context)) == {
-        TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW
-    }
+    assert TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW in build_change_runners(context=context)
 
 
 # --------------------------------------------------------------------------------------

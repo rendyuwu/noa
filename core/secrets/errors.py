@@ -37,6 +37,10 @@ class SecretCryptoError(NoaError):
 
     error_code: str = "secret_crypto_failed"
     message: str = "A stored secret could not be processed. Contact an administrator."
+    # 500: NOA cannot read or write its own ciphertext. The operator's request was fine and
+    # retrying changes nothing — the key is absent, wrong, or the row was never encrypted.
+    # Which of those it is stays in `detail`. Subclasses inherit this attribute.
+    status_code = 500
 
 
 class SecretKeyUnavailableError(SecretCryptoError):
@@ -69,6 +73,11 @@ class YopassError(NoaError):
 
     error_code: str = "yopass_store_failed"
     message: str = "The secret could not be delivered. Nothing was changed."
+    # 502 for the delivery hop, same reading as `SSHExecutionError`: NOA works, the system it
+    # depends on did not answer usably. Server-side generation's deliver-first ordering means
+    # nothing was
+    # changed when this is raised.
+    status_code = 502
 
 
 class YopassNotConfiguredError(YopassError):
@@ -76,6 +85,9 @@ class YopassNotConfiguredError(YopassError):
 
     error_code: str = "yopass_not_configured"
     message: str = "Secret delivery is not configured. Contact an administrator."
+    # ...except when yopass was never configured. That is NOA's own gap, not the upstream's,
+    # so it takes 500 rather than inheriting 502 from `YopassError`.
+    status_code = 500
 
 
 class YopassStoreError(YopassError):

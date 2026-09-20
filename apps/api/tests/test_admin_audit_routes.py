@@ -28,7 +28,7 @@ import pytest
 from core.audit.errors import ToolRunAuditError
 from core.audit.tool_run_reads import MAX_PAGE_SIZE
 from core.db.lifecycle import ToolRisk, ToolRunStatus
-from noa_api.api.errors import FALLBACK_STATUS, STATUS_BY_ERROR, status_for
+from core.errors import NoaError
 from noa_api.api.request_context import REQUEST_ID_HEADER
 from noa_api.api.routes.admin_audit import router as admin_audit_router
 from support.admin import (
@@ -37,6 +37,7 @@ from support.admin import (
     admin_harness,
     registered_routes,
 )
+from support.errors import error_subclasses
 from support.tool_run_audit import RUN_CREATED_AT, FakeToolRunAuditReader, build_list_item
 
 # Every query parameter the list route accepts, with the `ToolRunAuditFilters` field it must reach.
@@ -371,7 +372,7 @@ def test_an_undecodable_cursor_is_refused(harness: AdminHarness) -> None:
 
 
 def test_every_audit_error_subclass_is_mapped(harness: AdminHarness) -> None:
-    """No class in this family falls to `FALLBACK_STATUS` (503).
+    """No class in this family inherits `NoaError`'s 503 fallback.
 
     The shape every error family in this suite carries: reaching the fallback means a subclass
     arrived without anybody deciding its status, and 503 reads as "NOA is down" for what is a
@@ -379,12 +380,7 @@ def test_every_audit_error_subclass_is_mapped(harness: AdminHarness) -> None:
     """
     del harness
 
-    def subclasses(klass: type[ToolRunAuditError]) -> set[type[ToolRunAuditError]]:
-        found = {klass}
-        for child in klass.__subclasses__():
-            found |= subclasses(child)
-        return found
-
-    for klass in subclasses(ToolRunAuditError):
-        assert klass in STATUS_BY_ERROR or status_for(klass("x")) != FALLBACK_STATUS, klass
-        assert status_for(klass("x")) in {400, 404}, klass
+    for klass in error_subclasses(ToolRunAuditError):
+        assert "status_code" in klass.__dict__, f"{klass.__name__} has no explicit status"
+        assert klass.status_code != NoaError.status_code, klass
+        assert klass.status_code in {400, 404}, klass

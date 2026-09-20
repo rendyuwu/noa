@@ -38,7 +38,7 @@ from core.auth.jwt_service import (
 )
 from core.auth.login_rate_limiter import SCOPE_EMAIL, SCOPE_IP
 from core.db.models import ADMIN_ROLE_NAME
-from noa_api.api.errors import FALLBACK_STATUS, error_body, status_for
+from noa_api.api.errors import error_body
 from support.auth import (
     ADMIN_EMAIL,
     COOKIE_NAME,
@@ -257,7 +257,9 @@ def test_bootstrap_admin_reactivated_after_being_disabled() -> None:
         (AuthAccountDisabledError("directory disabled the account"), 403),
         (LdapUnavailableError("directory unreachable"), 503),
         (AuthConfigurationError("bad LDAP_BIND_DN"), 500),
-        (AuthError("unclassified"), FALLBACK_STATUS),
+        # The 503 an unclassified `AuthError` inherits from `NoaError`, pinned as a literal:
+        # comparing against `NoaError.status_code` would move with the value it is meant to hold.
+        (AuthError("unclassified"), 503),
     ],
 )
 def test_directory_failures_map_to_their_status(
@@ -729,20 +731,21 @@ def test_session_survives_logout_until_exp() -> None:
         (AuthRateLimitedError(30), 429),
         (AuthConfigurationError(), 500),
         (LdapUnavailableError(), 503),
-        (AuthError(), FALLBACK_STATUS),
+        (AuthError(), 503),  # inherited from `NoaError`, pinned as a literal (see above)
     ],
 )
 def test_status_for_every_auth_error(error: AuthError, expected_status: int) -> None:
-    assert status_for(error) == expected_status
+    assert error.status_code == expected_status
 
 
 def test_status_for_unmapped_subclass_inherits_its_parent() -> None:
-    """An unmapped subclass never silently becomes a 503."""
+    """A subclass that declares no status of its own never silently becomes a 503."""
 
     class TokenLooksTamperedError(AuthSessionInvalidError):
         pass
 
-    assert status_for(TokenLooksTamperedError()) == 401
+    assert "status_code" not in TokenLooksTamperedError.__dict__
+    assert TokenLooksTamperedError().status_code == 401
 
 
 def test_error_body_omits_internal_detail() -> None:

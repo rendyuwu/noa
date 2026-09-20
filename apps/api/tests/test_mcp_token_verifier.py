@@ -45,9 +45,11 @@ from core.auth.mcp_auth_errors import (
 )
 from core.auth.mcp_identity import LIBRECHAT_USER_HEADER
 from core.auth.mcp_token_service import generate_mcp_token, hash_mcp_token
-from noa_api.api.errors import FALLBACK_STATUS, STATUS_BY_ERROR, error_body, status_for
+from core.errors import NoaError
+from noa_api.api.errors import error_body
 from noa_api.mcp_auth import LOG_DENIED, NoaTokenVerifier
 from noa_api.mcp_request_auth import McpAuthContext
+from support.errors import error_subclasses
 from support.mcp_identity import (
     EMAIL,
     LIBRECHAT_USER,
@@ -412,20 +414,14 @@ async def test_denial_log_carries_no_token_material() -> None:
     ],
 )
 def test_status_for_every_mcp_auth_error(error: McpAuthError, expected_status: int) -> None:
-    assert status_for(error) == expected_status
+    assert error.status_code == expected_status
 
 
 def test_every_mcp_auth_error_is_mapped_explicitly() -> None:
-    """No denial may reach the 503 fallback — that answer means "NOA is down"."""
-
-    def subclasses(klass: type[McpAuthError]) -> set[type[McpAuthError]]:
-        found = {klass}
-        for child in klass.__subclasses__():
-            found |= subclasses(child)
-        return found
-
-    for klass in subclasses(McpAuthError):
-        assert status_for(klass.__new__(klass)) != FALLBACK_STATUS, f"{klass.__name__} → 503"
+    """No denial may inherit the 503 fallback — that answer means "NOA is down"."""
+    for klass in error_subclasses(McpAuthError):
+        assert "status_code" in klass.__dict__, f"{klass.__name__} has no explicit status"
+        assert klass.status_code != NoaError.status_code, f"{klass.__name__} → 503"
 
 
 def test_the_denial_error_codes_are_spelled_as_the_contract_spells_them() -> None:
@@ -436,7 +432,7 @@ def test_the_denial_error_codes_are_spelled_as_the_contract_spells_them() -> Non
 
 def test_mcp_auth_error_codes_are_unique() -> None:
     """Clients branch on `error_code`, so two classes sharing one string is a bug."""
-    codes = [klass.error_code for klass in STATUS_BY_ERROR if issubclass(klass, McpAuthError)]
+    codes = [klass.error_code for klass in error_subclasses(McpAuthError)]
     assert len(codes) == len(set(codes))
 
 

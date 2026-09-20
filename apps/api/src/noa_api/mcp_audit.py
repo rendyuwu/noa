@@ -111,7 +111,7 @@ from noa_api.api.request_context import (
     sanitize_header_label,
 )
 from noa_api.mcp_request_auth import current_mcp_identity
-from noa_api.mcp_tools.context import McpToolContext, build_tool_run_repository
+from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.results import tool_failure
 
 # Custom headers come back lowercased from `get_http_headers()` and are not on its default
@@ -281,7 +281,7 @@ class ToolRunAuditMiddleware(Middleware):
         """
         try:
             async with self._context.session_factory() as session:
-                repository = build_tool_run_repository(self._context, session)
+                repository = self._context.tool_run_repository_factory(session)
                 tool_run_id = await repository.start_run(
                     tool_name=tool_name,
                     requested_by_user_id=user_id,
@@ -315,7 +315,7 @@ class ToolRunAuditMiddleware(Middleware):
         """
         try:
             async with self._context.session_factory() as session:
-                repository = build_tool_run_repository(self._context, session)
+                repository = self._context.tool_run_repository_factory(session)
                 await repository.finish_run(
                     tool_run_id=tool_run_id, status=status, result_summary=summary
                 )

@@ -51,7 +51,6 @@ from core.approvals.repository import ActionRequestRepository, SQLActionRequestR
 from core.db.lifecycle import ActionRequestStatus
 from core.db.models import ActionRequest, User
 from core.secrets.redaction import REDACTED
-from noa_api.api.errors import FALLBACK_STATUS, status_for
 from noa_api.mcp_audit import CONVERSATION_REF_HEADER
 from noa_api.mcp_server import build_mcp_server
 from noa_api.mcp_tools.change_gate import (
@@ -65,6 +64,7 @@ from noa_api.mcp_tools.change_gate import (
 )
 from support.action_requests import FakeActionRequestRepository
 from support.database import MUTATED_TABLES, migrated_database, truncate
+from support.errors import error_subclasses
 from support.mcp_identity import (
     DISPLAY_NAME,
     EMAIL,
@@ -573,24 +573,10 @@ async def test_the_opened_request_is_logged_without_its_payload() -> None:
 
 
 def test_every_change_gate_error_is_mapped_explicitly() -> None:
-    """No gate refusal may reach the 503 *fallback* — that means "unclassified"."""
-
-    def subclasses(klass: type[ChangeGateError]) -> set[type[ChangeGateError]]:
-        found = {klass}
-        for child in klass.__subclasses__():
-            found |= subclasses(child)
-        return found
-
-    for klass in subclasses(ChangeGateError):
-        assert klass in _mapped_error_classes(), f"{klass.__name__} has no explicit status"
-        assert status_for(klass.__new__(klass)) in {500, FALLBACK_STATUS}
-
-
-def _mapped_error_classes() -> set[type[Exception]]:
-    """The classes `noa_api.api.errors` maps by name, read rather than retyped."""
-    from noa_api.api.errors import STATUS_BY_ERROR
-
-    return set(STATUS_BY_ERROR)
+    """No gate refusal may inherit the 503 *fallback* — that means "unclassified"."""
+    for klass in error_subclasses(ChangeGateError):
+        assert "status_code" in klass.__dict__, f"{klass.__name__} has no explicit status"
+        assert klass.status_code in {500, 503}
 
 
 # --------------------------------------------------------------------------------------

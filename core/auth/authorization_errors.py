@@ -45,6 +45,10 @@ class AuthorizationError(NoaError):
 
     error_code: str = "authorization_failed"
     message: str = "That action is not allowed."
+    # Bare `AuthorizationError` is still a refusal, so 403 rather than the 503 fallback. A
+    # test asserts every subclass is mapped above, so reaching this line means a new class
+    # arrived without a decision.
+    status_code = 403
 
 
 class AdminAccessRequiredError(AuthorizationError):
@@ -56,6 +60,7 @@ class AdminAccessRequiredError(AuthorizationError):
 
     error_code: str = "admin_access_required"
     message: str = "This area is for NOA administrators. Ask an admin if you need access."
+    status_code = 403
 
 
 class UserNotFoundError(AuthorizationError):
@@ -63,6 +68,7 @@ class UserNotFoundError(AuthorizationError):
 
     error_code: str = "admin_user_not_found"
     message: str = "That user no longer exists."
+    status_code = 404
 
 
 class RoleNotFoundError(AuthorizationError):
@@ -70,6 +76,7 @@ class RoleNotFoundError(AuthorizationError):
 
     error_code: str = "admin_role_not_found"
     message: str = "That role no longer exists."
+    status_code = 404
 
 
 class InvalidRoleNameError(AuthorizationError):
@@ -84,6 +91,7 @@ class InvalidRoleNameError(AuthorizationError):
     message: str = (
         "Role names may use letters, numbers, hyphens and underscores only, up to 100 characters."
     )
+    status_code = 400
 
 
 class ReservedRoleError(AuthorizationError):
@@ -96,6 +104,7 @@ class ReservedRoleError(AuthorizationError):
 
     error_code: str = "reserved_role"
     message: str = "The admin role is built in and cannot be edited or deleted."
+    status_code = 403
 
 
 class InternalRoleError(AuthorizationError):
@@ -107,6 +116,7 @@ class InternalRoleError(AuthorizationError):
 
     error_code: str = "internal_role_forbidden"
     message: str = "Internal roles are managed by NOA and cannot be assigned."
+    status_code = 400
 
 
 class UnknownToolError(AuthorizationError):
@@ -118,6 +128,7 @@ class UnknownToolError(AuthorizationError):
 
     error_code: str = "unknown_tools"
     message: str = "One or more of those tools does not exist."
+    status_code = 400
 
     def __init__(self, unknown_tools: list[str], detail: str | None = None) -> None:
         self.unknown_tools = sorted({name.strip() for name in unknown_tools if name.strip()})
@@ -133,6 +144,7 @@ class UnknownRoleError(AuthorizationError):
 
     error_code: str = "unknown_roles"
     message: str = "One or more of those roles does not exist."
+    status_code = 400
 
     def __init__(self, unknown_roles: list[str], detail: str | None = None) -> None:
         self.unknown_roles = sorted({name.strip() for name in unknown_roles if name.strip()})
@@ -151,6 +163,7 @@ class LastActiveAdminError(AuthorizationError):
     message: str = (
         "This is the last active admin. Give another user the admin role first, then retry."
     )
+    status_code = 409
 
 
 class SelfDeactivateAdminError(AuthorizationError):
@@ -158,6 +171,7 @@ class SelfDeactivateAdminError(AuthorizationError):
 
     error_code: str = "self_deactivate_admin"
     message: str = "You cannot disable your own admin account. Ask another admin."
+    status_code = 409
 
 
 class SelfDeleteError(AuthorizationError):
@@ -170,6 +184,8 @@ class SelfDeleteError(AuthorizationError):
 
     error_code: str = "self_delete"
     message: str = "You cannot delete your own account. Ask another admin."
+    # `SelfDeleteAdminError` inherits this 409 rather than declaring its own.
+    status_code = 409
 
 
 class SelfDeleteAdminError(SelfDeleteError):
@@ -193,3 +209,4 @@ class SelfRemoveAdminRoleError(AuthorizationError):
 
     error_code: str = "self_remove_admin_role"
     message: str = "You cannot remove your own admin role. Ask another admin."
+    status_code = 409

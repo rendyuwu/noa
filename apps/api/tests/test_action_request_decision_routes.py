@@ -38,8 +38,9 @@ from core.approvals.errors import (
     DecisionCsrfInvalidError,
 )
 from core.db.lifecycle import ActionRequestStatus
+from core.errors import NoaError
 from noa_api.api import deps
-from noa_api.api.errors import FALLBACK_STATUS, STATUS_BY_ERROR, error_body, status_for
+from noa_api.api.errors import error_body
 from noa_api.api.routes.action_requests import MAX_REASON_LENGTH
 from support.action_decisions import (
     APPROVAL_CONTEXT,
@@ -52,6 +53,7 @@ from support.action_decisions import (
     locked_request,
 )
 from support.auth import build_settings
+from support.errors import error_subclasses
 
 OTHER_EMAIL = "second-operator@example.com"
 
@@ -742,17 +744,10 @@ def test_the_cap_comes_from_settings() -> None:
 
 
 def test_every_decision_error_is_mapped_explicitly() -> None:
-    """No decision refusal may reach the 503 *fallback* — that means "unclassified"."""
-
-    def subclasses(klass: type[ActionDecisionError]) -> set[type[ActionDecisionError]]:
-        found = {klass}
-        for child in klass.__subclasses__():
-            found |= subclasses(child)
-        return found
-
-    for klass in subclasses(ActionDecisionError):
-        assert klass in set(STATUS_BY_ERROR), f"{klass.__name__} has no explicit status"
-        assert status_for(klass.__new__(klass)) != FALLBACK_STATUS
+    """No decision refusal may inherit the 503 *fallback* — that means "unclassified"."""
+    for klass in error_subclasses(ActionDecisionError):
+        assert "status_code" in klass.__dict__, f"{klass.__name__} has no explicit status"
+        assert klass.status_code != NoaError.status_code
 
 
 @pytest.mark.parametrize(
@@ -769,7 +764,7 @@ def test_each_refusal_takes_the_status_its_remedy_implies(error, expected: int) 
     """404 hides existence; 409 says "not this one, not now"; 403 says re-auth changes nothing.
     Pinned per class, because these are the statuses the embed branches on.
     """
-    assert status_for(error("diagnostic")) == expected
+    assert error("diagnostic").status_code == expected
 
 
 def test_a_refusal_body_carries_no_diagnostic(harness: DecisionHarness) -> None:

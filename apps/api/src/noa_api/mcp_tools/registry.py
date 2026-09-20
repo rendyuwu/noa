@@ -108,7 +108,7 @@ def assert_change_runners_cover(
     Written before its first instance existed, on the argument that a rule discovered by its
     first instance is a rule that shipped late (the row-cap discipline, the gate's vacuous
     registry sweep). The suspend tool is that first instance: `whm_suspend_account` is registered
-    CHANGE and covered by `build_whm_account_change_runners`. The probe test that registers a
+    CHANGE and covered by `build_change_runners`. The probe test that registers a
     CHANGE tool with no runner stays, because a predicate that now happens to be satisfied still
     has to separate.
     """

@@ -73,7 +73,7 @@ from core.db.lifecycle import ActionRequestStatus
 from core.secrets.redaction import redact_sensitive_data
 from noa_api.mcp_audit import read_conversation_ref
 from noa_api.mcp_request_auth import current_mcp_identity
-from noa_api.mcp_tools.context import McpToolContext, build_action_request_repository
+from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.ui_resource import (
     # The three fields that make an iframe render at all, and the join onto the embed base. Hoisted
     # when the table surface became the second result carrying a NOA-origin document:
@@ -494,7 +494,7 @@ async def _write_pending(
     """
     try:
         async with context.session_factory() as session:
-            repository = build_action_request_repository(context, session)
+            repository = context.action_request_repository_factory(session)
             action_request_id = await repository.create_pending(
                 tool_name=tool_name,
                 requested_by_user_id=requested_by_user_id,

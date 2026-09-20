@@ -32,9 +32,9 @@ from uuid import UUID, uuid4
 import pytest
 
 from core.db.models import ADMIN_ROLE_NAME
+from core.errors import NoaError
 from core.secrets.crypto import ENCRYPTED_PREFIX
 from core.servers.validation import ServerValidationResult
-from noa_api.api.errors import FALLBACK_STATUS, STATUS_BY_ERROR, status_for
 from noa_api.api.request_context import REQUEST_ID_HEADER
 from support.admin import (
     PMG_SERVERS_PATH,
@@ -43,6 +43,7 @@ from support.admin import (
     AdminHarness,
     admin_harness,
 )
+from support.errors import error_subclasses
 from support.servers import pmg_server, proxmox_server, whm_server
 
 # Every credential a request body may carry, so one assertion can hunt all of them.
@@ -485,18 +486,12 @@ def test_a_create_that_omits_the_reseller_flag_stores_a_root_row(harness: AdminH
 
 
 def test_every_server_inventory_error_is_mapped_explicitly() -> None:
-    """No inventory refusal may reach the 503 *fallback*, which means "unclassified"."""
+    """No inventory refusal may inherit the 503 *fallback*, which means "unclassified"."""
     from core.servers.errors import ServerInventoryError
 
-    def subclasses(klass: type[ServerInventoryError]) -> set[type[ServerInventoryError]]:
-        found = {klass}
-        for child in klass.__subclasses__():
-            found |= subclasses(child)
-        return found
-
-    for klass in subclasses(ServerInventoryError):
-        assert klass in set(STATUS_BY_ERROR), f"{klass.__name__} has no explicit status"
-        assert status_for(klass.__new__(klass)) != FALLBACK_STATUS
+    for klass in error_subclasses(ServerInventoryError):
+        assert "status_code" in klass.__dict__, f"{klass.__name__} has no explicit status"
+        assert klass.status_code != NoaError.status_code
 
 
 # --- The partial-update contract ---

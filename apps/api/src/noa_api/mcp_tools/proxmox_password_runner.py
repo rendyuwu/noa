@@ -96,6 +96,10 @@ from noa_api.mcp_tools.proxmox_password import (
     TOOL_PROXMOX_RESET_VM_PASSWORD,
     text_or_none,
 )
+from noa_api.mcp_tools.proxmox_task import (
+    ERROR_TASK_FAILED,
+    wait_for_terminal_task,
+)
 from noa_api.mcp_tools.results import (
     ERROR_UNKNOWN,
     ToolPayload,
@@ -114,12 +118,6 @@ MESSAGE_EVIDENCE_UNUSABLE: Final = (
 
 # The write was accepted and the confirming read says the password on the VM is a different one.
 ERROR_POSTFLIGHT_FAILED: Final = "postflight_failed"
-
-# The config write's own task did not reach a terminal state in time.
-ERROR_TASK_TIMEOUT: Final = "task_timeout"
-
-# The task reached a terminal state and it was a failure.
-ERROR_TASK_FAILED: Final = "task_failed"
 
 # The one "do this next" sentence that survives on an operator's card, and it survives because it
 # states NOA's own permission boundary rather than giving advice: no tool here starts, stops or
@@ -152,11 +150,8 @@ _LINK_LIFETIME_UNITS: Final[tuple[tuple[int, str], ...]] = (
 LOG_RESET_DELIVERY_FAILED: Final = "proxmox_reset_vm_password_delivery_failed"
 LOG_RESET_UNVERIFIED: Final = "proxmox_reset_vm_password_unverified"
 
-# `noa-old`'s numbers, kept. The config write answers with a UPID that finishes in
-# well under a second in practice; the verification window exists because the rendered user-data
-# lags the write by a moment.
-TASK_POLL_ATTEMPTS: Final = 30
-TASK_POLL_DELAY_SECONDS: Final = 0.5
+# `noa-old`'s numbers, kept. The verification window exists because the rendered user-data lags
+# the write by a moment; the config write's own task is polled by `proxmox_task`.
 VERIFICATION_POLL_ATTEMPTS: Final = 20
 VERIFICATION_POLL_DELAY_SECONDS: Final = 0.5
 
@@ -358,13 +353,6 @@ def build_proxmox_reset_vm_password_runner(
     return run
 
 
-def build_proxmox_password_runners(*, context: McpToolContext) -> dict[str, ChangeRunner]:
-    """Tool name → runner for this module's CHANGE tool."""
-    return {
-        TOOL_PROXMOX_RESET_VM_PASSWORD: build_proxmox_reset_vm_password_runner(context=context),
-    }
-
-
 # --- Internals ---
 
 
@@ -505,43 +493,26 @@ async def _apply_password(target: ProxmoxChangeTarget, *, password: str) -> Step
 
 
 async def _wait_for_terminal_task(target: ProxmoxChangeTarget, *, upid: str) -> StepFailure | None:
-    """Poll one UPID to a terminal state. `None` when it finished successfully.
+    """`proxmox_task.wait_for_terminal_task`, said in this runner's failure type.
 
-    Terminality is `status == "stopped"`, or an exit status present while the task is no longer
-    running — `client.get_task_status` normalises both to `None` when absent, so an empty string
-    cannot read as present.
-
-    A poll that cannot *read* the status is treated as a timeout rather than as a task failure:
-    not knowing what a task did is not evidence that it failed, and the write it belongs to has
-    already been accepted.
+    `password_may_be_live` follows from the code alone: a terminal non-`OK` task is Proxmox
+    saying it did not apply the write, while a timeout is NOA having stopped waiting on a write
+    Proxmox accepted.
     """
-    task_status: str | None = None
-    task_exit_status: str | None = None
-
-    for attempt in range(TASK_POLL_ATTEMPTS):
-        status_result = await target.client.get_task_status(target.node, upid)
-        if status_result.get("ok") is not True:
-            break
-
-        task_status = text_or_none(status_result.get("task_status"))
-        task_exit_status = text_or_none(status_result.get("task_exit_status"))
-        if task_status == "stopped" or (task_exit_status is not None and task_status != "running"):
-            if task_exit_status in (None, "OK"):
-                return None
-            return StepFailure(
-                error_code=ERROR_TASK_FAILED,
-                # Proxmox's answer rather than NOA's reading of it: the exit status is the whole
-                # of what the task said, and it is what an operator quotes into a ticket.
-                message=f"Its task finished with exit status '{task_exit_status}'.",
-                # A terminal non-OK task is Proxmox saying it did not apply the write.
-                password_may_be_live=False,
-            )
-
-        if attempt < TASK_POLL_ATTEMPTS - 1:
-            await asyncio.sleep(TASK_POLL_DELAY_SECONDS)
-
+    outcome = await wait_for_terminal_task(target.client, node=target.node, upid=upid)
+    if outcome is None:
+        return None
+    code, exit_status = outcome
+    if code == ERROR_TASK_FAILED:
+        return StepFailure(
+            error_code=code,
+            # Proxmox's answer rather than NOA's reading of it: the exit status is the whole
+            # of what the task said, and it is what an operator quotes into a ticket.
+            message=f"Its task finished with exit status '{exit_status}'.",
+            password_may_be_live=False,
+        )
     return StepFailure(
-        error_code=ERROR_TASK_TIMEOUT,
+        error_code=code,
         # No words: Proxmox never answered, and a sentence here would be NOA's account of the
         # silence rather than the remote's of itself. The branches that report this one compose
         # from `did not answer`, which is what the silence means.

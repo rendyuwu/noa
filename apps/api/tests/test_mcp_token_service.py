@@ -31,7 +31,9 @@ from core.auth.mcp_token_service import (
     generate_mcp_token,
     hash_mcp_token,
 )
-from noa_api.api.errors import FALLBACK_STATUS, STATUS_BY_ERROR, error_body, status_for
+from core.errors import NoaError
+from noa_api.api.errors import error_body
+from support.errors import error_subclasses
 from support.mcp_tokens import LABEL, NOW, OTHER_LABEL, build_token_service
 
 ACTOR = "admin@example.com"
@@ -358,27 +360,20 @@ async def test_a_refused_mint_records_nothing() -> None:
     ],
 )
 def test_status_for_every_mcp_token_error(error: McpTokenError, expected_status: int) -> None:
-    assert status_for(error) == expected_status
+    assert error.status_code == expected_status
 
 
 def test_every_mcp_token_error_is_mapped_explicitly() -> None:
-    """No token error may reach the 503 fallback — that answer means "NOA is down"."""
-
-    def subclasses(klass: type[McpTokenError]) -> set[type[McpTokenError]]:
-        found = {klass}
-        for child in klass.__subclasses__():
-            found |= subclasses(child)
-        return found
-
-    for klass in subclasses(McpTokenError):
-        status_code = status_for(klass.__new__(klass))
-        assert status_code != FALLBACK_STATUS, f"{klass.__name__} falls back to 503"
-        assert status_code in {status.HTTP_400_BAD_REQUEST, status.HTTP_404_NOT_FOUND}
+    """No token error may inherit the 503 fallback — that answer means "NOA is down"."""
+    for klass in error_subclasses(McpTokenError):
+        assert "status_code" in klass.__dict__, f"{klass.__name__} has no explicit status"
+        assert klass.status_code != NoaError.status_code, f"{klass.__name__} falls back to 503"
+        assert klass.status_code in {status.HTTP_400_BAD_REQUEST, status.HTTP_404_NOT_FOUND}
 
 
 def test_mcp_token_error_codes_are_unique() -> None:
     """Clients branch on `error_code`, so two classes sharing one string is a bug."""
-    codes = [klass.error_code for klass in STATUS_BY_ERROR if issubclass(klass, McpTokenError)]
+    codes = [klass.error_code for klass in error_subclasses(McpTokenError)]
     assert len(codes) == len(set(codes))
 
 

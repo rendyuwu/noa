@@ -53,7 +53,7 @@ from core.auth.authorization_types import AuthorizedUser
 from core.db.models import is_internal_role
 from noa_api.api.admin_errors import DirectGrantsDisabledError
 from noa_api.api.deps import AdminUserDep, AuthorizationServiceDep
-from noa_api.api.serialization import iso_or_none
+from noa_api.api.serialization import OkResponse, iso_or_none
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -110,12 +110,6 @@ class UpdateUserResponse(BaseModel):
     optimistically guessing what the write did."""
 
     user: AdminUserResponse
-
-
-class DeleteUserResponse(BaseModel):
-    """`{ok: true}`. The deleted user is gone, so there is no row to return."""
-
-    ok: bool
 
 
 def _to_user_response(user: AuthorizedUser) -> AdminUserResponse:
@@ -183,12 +177,12 @@ async def update_user_active(
     return UpdateUserResponse(user=_to_user_response(user))
 
 
-@router.delete("/users/{user_id}", response_model=DeleteUserResponse)
+@router.delete("/users/{user_id}", response_model=OkResponse)
 async def delete_user(
     user_id: UUID,
     admin_user: AdminUserDep,
     authorization: AuthorizationServiceDep,
-) -> DeleteUserResponse:
+) -> OkResponse:
     """Delete one user.
 
     Role assignments and MCP tokens go with the row through `ON DELETE CASCADE`; the session
@@ -204,7 +198,7 @@ async def delete_user(
         actor_email=admin_user.email,
         actor_user_id=admin_user.user_id,
     )
-    return DeleteUserResponse(ok=True)
+    return OkResponse(ok=True)
 
 
 @router.put("/users/{user_id}/roles", response_model=UpdateUserResponse)

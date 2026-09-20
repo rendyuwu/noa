@@ -119,6 +119,7 @@ from noa_api.mcp_tools.whm_firewall_change_common import (
     EVIDENCE_SERVER_ID,
     EVIDENCE_SERVER_NAME,
     EVIDENCE_TARGET,
+    SERVER_REF_DESCRIPTION,
     STATUS_CHANGED,
     STATUS_NO_OP,
     VERIFICATION_UNAVAILABLE,
@@ -175,11 +176,6 @@ DESCRIPTION_WHM_FIREWALL_ALLOWLIST_REMOVE = (
     "`whm_preflight_firewall_entries` first and report what it found. If the address is on no "
     "allow list, this answers `no_op` and opens nothing. Read the outcome with "
     "`noa_get_action_result`, and never report the address as removed without it."
-)
-
-SERVER_REF_DESCRIPTION: Final = (
-    "Which WHM server: its id, its name in NOA, or its hostname. Call `whm_list_servers` first "
-    "if the operator has not named one."
 )
 
 logger = structlog.get_logger(__name__)
@@ -344,15 +340,6 @@ def build_whm_firewall_allowlist_remove_runner(*, context: McpToolContext) -> Ch
         return _removal_outcome(target, request=request, changes=changes, lookups=lookups)
 
     return run
-
-
-def build_whm_firewall_allowlist_runners(*, context: McpToolContext) -> dict[str, ChangeRunner]:
-    """Tool name → runner for this module's CHANGE tool."""
-    return {
-        TOOL_WHM_FIREWALL_ALLOWLIST_REMOVE: build_whm_firewall_allowlist_remove_runner(
-            context=context
-        ),
-    }
 
 
 def register_whm_firewall_allowlist_tools(

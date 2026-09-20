@@ -50,6 +50,7 @@ from noa_api.mcp_tools.change_gate import (
     UI_RESOURCE_MIME_TYPE,
     UI_RESOURCE_URI_PREFIX,
 )
+from noa_api.mcp_tools.change_runners import build_change_runners
 from noa_api.mcp_tools.registry import register_mcp_tools
 from noa_api.mcp_tools.results import ERROR_TIMEOUT
 from noa_api.mcp_tools.whm_firewall import ERROR_INVALID_TARGET, ERROR_TARGET_REQUIRED
@@ -60,7 +61,6 @@ from noa_api.mcp_tools.whm_firewall_allowlist import (
     EVIDENCE_TARGET,
     STATUS_NO_OP,
     TOOL_WHM_FIREWALL_ALLOWLIST_REMOVE,
-    build_whm_firewall_allowlist_runners,
 )
 from support.action_decisions import REASON
 from support.mcp_identity import LIBRECHAT_USER, FakeMcpIdentityRepository
@@ -424,9 +424,7 @@ def test_the_tool_is_catalogued_and_classified_as_a_change() -> None:
 
     assert TOOL_WHM_FIREWALL_ALLOWLIST_REMOVE in TOOL_CATALOG
     assert registered[TOOL_WHM_FIREWALL_ALLOWLIST_REMOVE] is ToolRisk.CHANGE
-    assert set(build_whm_firewall_allowlist_runners(context=context)) == {
-        TOOL_WHM_FIREWALL_ALLOWLIST_REMOVE
-    }
+    assert TOOL_WHM_FIREWALL_ALLOWLIST_REMOVE in build_change_runners(context=context)
 
 
 # --------------------------------------------------------------------------------------

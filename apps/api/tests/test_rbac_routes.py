@@ -4,7 +4,7 @@ The RBAC engine ships no `/admin` routes (the user/role/token routes own those),
 cited invariants are HTTP properties: "non-admin users → 403 on admin endpoints" and "admin
 self-delete →
 409". Both are decided by `noa_api.api.deps.require_admin` and
-`noa_api.api.errors.STATUS_BY_ERROR`, so they are tested at that level rather than deferred
+each class's own `status_code`, so they are tested at that level rather than deferred
 to the first route that happens to use them.
 
 `support.rbac.admin_probe_app` mounts one throwaway route behind `require_admin`. Everything
@@ -34,8 +34,10 @@ from core.auth.authorization_errors import (
     UserNotFoundError,
 )
 from core.db.models import ADMIN_ROLE_NAME
+from core.errors import NoaError
 from noa_api.api.admin_errors import DirectGrantsDisabledError
-from noa_api.api.errors import FALLBACK_STATUS, STATUS_BY_ERROR, error_body, status_for
+from noa_api.api.errors import error_body
+from support.errors import error_subclasses
 from support.rbac import PROBE_PATH, ROLE_SUPPORT, admin_probe_app
 
 ADMIN_EMAIL = "admin@example.com"
@@ -134,8 +136,8 @@ def test_admin_role_lost_between_requests_stops_working() -> None:
         (LastActiveAdminError(), status.HTTP_409_CONFLICT),
         (SelfDeactivateAdminError(), status.HTTP_409_CONFLICT),
         (SelfDeleteError(), status.HTTP_409_CONFLICT),
-        # The last-admin guards name this one explicitly: admin self-delete → 409, inherited through
-        # the MRO.
+        # The last-admin guards name this one explicitly: admin self-delete → 409, inherited from
+        # `SelfDeleteError` rather than declared.
         (SelfDeleteAdminError(), status.HTTP_409_CONFLICT),
         (SelfRemoveAdminRoleError(), status.HTTP_409_CONFLICT),
         (AuthorizationError(), status.HTTP_403_FORBIDDEN),
@@ -144,25 +146,18 @@ def test_admin_role_lost_between_requests_stops_working() -> None:
 def test_status_for_every_authorization_error(
     error: AuthorizationError, expected_status: int
 ) -> None:
-    assert status_for(error) == expected_status
+    assert error.status_code == expected_status
 
 
 def test_every_authorization_error_is_mapped_explicitly() -> None:
     """No authorization error may reach the 503 fallback — that is an auth answer.
 
-    Walks the subclass tree, so a class added later without a `STATUS_BY_ERROR` entry fails
+    Walks the subclass tree, so a class added later with no `status_code` of its own fails
     here instead of returning "service unavailable" for a permission problem.
     """
-
-    def subclasses(klass: type[AuthorizationError]) -> set[type[AuthorizationError]]:
-        found = {klass}
-        for child in klass.__subclasses__():
-            found |= subclasses(child)
-        return found
-
-    for klass in subclasses(AuthorizationError):
-        status_code = status_for(klass.__new__(klass))
-        assert status_code != FALLBACK_STATUS, f"{klass.__name__} falls back to 503"
+    for klass in error_subclasses(AuthorizationError):
+        status_code = klass.status_code
+        assert status_code != NoaError.status_code, f"{klass.__name__} falls back to 503"
         assert status_code in {
             status.HTTP_400_BAD_REQUEST,
             status.HTTP_403_FORBIDDEN,
@@ -174,7 +169,7 @@ def test_every_authorization_error_is_mapped_explicitly() -> None:
 def test_direct_grants_disabled_is_410_and_is_not_an_authorization_error() -> None:
     """The 410 on direct grants, and the reason it sits outside the tree above.
 
-    Two assertions, and the second is what keeps the first honest. `status_for` must answer 410
+    Two assertions, and the second is what keeps the first honest. The class must answer 410
     — a withdrawn capability, not a missing row and not a permission the caller lacks. But the
     tree test above asserts every `AuthorizationError` maps into {400, 403, 404, 409}, and that
     closed set is the assertion: it is what stops a permission problem answering "service
@@ -183,12 +178,10 @@ def test_direct_grants_disabled_is_410_and_is_not_an_authorization_error() -> No
     `NoaError` directly, and this test pins that — a later edit that "tidies" it into the
     taxonomy fails here rather than quietly loosening the tree.
     """
-    assert status_for(DirectGrantsDisabledError()) == status.HTTP_410_GONE
+    assert DirectGrantsDisabledError.status_code == status.HTTP_410_GONE
     assert not issubclass(DirectGrantsDisabledError, AuthorizationError)
     assert status.HTTP_410_GONE not in {
-        status_for(klass.__new__(klass))
-        for klass in STATUS_BY_ERROR
-        if issubclass(klass, AuthorizationError)
+        klass.status_code for klass in error_subclasses(AuthorizationError)
     }
 
 
@@ -196,8 +189,8 @@ def test_authorization_error_codes_are_unique() -> None:
     """Clients branch on `error_code`, so two classes sharing one string is a bug."""
     codes = [
         klass.error_code
-        for klass in STATUS_BY_ERROR
-        if issubclass(klass, AuthorizationError) and klass is not AuthorizationError
+        for klass in error_subclasses(AuthorizationError)
+        if klass is not AuthorizationError
     ]
     assert len(codes) == len(set(codes))
 

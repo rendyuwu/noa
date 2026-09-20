@@ -83,7 +83,7 @@ from noa_api.api.deps import (
     WHMServerAdminServiceDep,
     WHMServerValidationServiceDep,
 )
-from noa_api.api.serialization import iso_or_none
+from noa_api.api.serialization import OkResponse, iso_or_none
 
 whm_router = APIRouter(prefix="/admin/whm/servers", tags=["admin"])
 proxmox_router = APIRouter(prefix="/admin/proxmox/servers", tags=["admin"])
@@ -138,54 +138,36 @@ def _optional_whm_api_username(value: str | None) -> str | None:
     return None if value is None else _whm_api_username(value)
 
 
-WHMName = Annotated[
-    str, BeforeValidator(_stripped), AfterValidator(_required(validate_server_name, "WHM"))
-]
-WHMNameOpt = Annotated[
-    str | None, BeforeValidator(_stripped), AfterValidator(_optional(validate_server_name, "WHM"))
-]
-WHMBaseUrl = Annotated[
-    str, BeforeValidator(_stripped), AfterValidator(_required(normalize_https_base_url, "WHM"))
-]
-WHMBaseUrlOpt = Annotated[
-    str | None,
-    BeforeValidator(_stripped),
-    AfterValidator(_optional(normalize_https_base_url, "WHM")),
-]
+def _alias(check: Callable[..., str], label: str) -> Any:
+    """One system's required field: trimmed, then `check` bound to its label."""
+    return Annotated[str, BeforeValidator(_stripped), AfterValidator(_required(check, label))]
+
+
+def _alias_opt(check: Callable[..., str], label: str) -> Any:
+    """`_alias`, but `None` passes through — the patch case."""
+    return Annotated[
+        str | None, BeforeValidator(_stripped), AfterValidator(_optional(check, label))
+    ]
+
+
+WHMName = _alias(validate_server_name, "WHM")
+WHMNameOpt = _alias_opt(validate_server_name, "WHM")
+WHMBaseUrl = _alias(normalize_https_base_url, "WHM")
+WHMBaseUrlOpt = _alias_opt(normalize_https_base_url, "WHM")
 WHMApiUsername = Annotated[str, BeforeValidator(_stripped), AfterValidator(_whm_api_username)]
 WHMApiUsernameOpt = Annotated[
     str | None, BeforeValidator(_stripped), AfterValidator(_optional_whm_api_username)
 ]
 
-ProxmoxName = Annotated[
-    str, BeforeValidator(_stripped), AfterValidator(_required(validate_server_name, "Proxmox"))
-]
-ProxmoxNameOpt = Annotated[
-    str | None,
-    BeforeValidator(_stripped),
-    AfterValidator(_optional(validate_server_name, "Proxmox")),
-]
-ProxmoxBaseUrl = Annotated[
-    str, BeforeValidator(_stripped), AfterValidator(_required(normalize_https_base_url, "Proxmox"))
-]
-ProxmoxBaseUrlOpt = Annotated[
-    str | None,
-    BeforeValidator(_stripped),
-    AfterValidator(_optional(normalize_https_base_url, "Proxmox")),
-]
+ProxmoxName = _alias(validate_server_name, "Proxmox")
+ProxmoxNameOpt = _alias_opt(validate_server_name, "Proxmox")
+ProxmoxBaseUrl = _alias(normalize_https_base_url, "Proxmox")
+ProxmoxBaseUrlOpt = _alias_opt(normalize_https_base_url, "Proxmox")
 
-PMGName = Annotated[
-    str, BeforeValidator(_stripped), AfterValidator(_required(validate_server_name, "PMG"))
-]
-PMGNameOpt = Annotated[
-    str | None, BeforeValidator(_stripped), AfterValidator(_optional(validate_server_name, "PMG"))
-]
-PMGSshHost = Annotated[
-    str, BeforeValidator(_stripped), AfterValidator(_required(normalize_ssh_host, "PMG"))
-]
-PMGSshHostOpt = Annotated[
-    str | None, BeforeValidator(_stripped), AfterValidator(_optional(normalize_ssh_host, "PMG"))
-]
+PMGName = _alias(validate_server_name, "PMG")
+PMGNameOpt = _alias_opt(validate_server_name, "PMG")
+PMGSshHost = _alias(normalize_ssh_host, "PMG")
+PMGSshHostOpt = _alias_opt(normalize_ssh_host, "PMG")
 
 # Free-text fields that only need trimming: secrets, the SSH username, the fingerprint. A
 # secret is not normalised beyond that — a password may legitimately contain anything.
@@ -211,12 +193,6 @@ class ValidateServerResponse(BaseModel):
     ok: bool
     message: str
     error_code: str | None = None
-
-
-class DeleteServerResponse(BaseModel):
-    """`{ok: true}`. The row is gone, so there is nothing to return."""
-
-    ok: bool
 
 
 def _validation_response(result: ServerValidationResult) -> ValidateServerResponse:
@@ -466,12 +442,12 @@ async def update_whm_server(
     return WHMServerDetailResponse(server=_to_whm_response(server))
 
 
-@whm_router.delete("/{server_id}", response_model=DeleteServerResponse)
+@whm_router.delete("/{server_id}", response_model=OkResponse)
 async def delete_whm_server(
     server_id: UUID,
     admin_user: AdminUserDep,
     servers: WHMServerAdminServiceDep,
-) -> DeleteServerResponse:
+) -> OkResponse:
     """Remove a WHM server.
 
     Tool grants are untouched: a grant names a tool, never a host, so deleting a server narrows
@@ -479,7 +455,7 @@ async def delete_whm_server(
     afterwards answers `host_not_found`.
     """
     await servers.delete(server_id, actor_email=admin_user.email)
-    return DeleteServerResponse(ok=True)
+    return OkResponse(ok=True)
 
 
 @whm_router.post("/{server_id}/validate", response_model=ValidateServerResponse)
@@ -618,15 +594,15 @@ async def update_proxmox_server(
     return ProxmoxServerDetailResponse(server=_to_proxmox_response(server))
 
 
-@proxmox_router.delete("/{server_id}", response_model=DeleteServerResponse)
+@proxmox_router.delete("/{server_id}", response_model=OkResponse)
 async def delete_proxmox_server(
     server_id: UUID,
     admin_user: AdminUserDep,
     servers: ProxmoxServerAdminServiceDep,
-) -> DeleteServerResponse:
+) -> OkResponse:
     """Remove a Proxmox server."""
     await servers.delete(server_id, actor_email=admin_user.email)
-    return DeleteServerResponse(ok=True)
+    return OkResponse(ok=True)
 
 
 @proxmox_router.post("/{server_id}/validate", response_model=ValidateServerResponse)
@@ -773,15 +749,15 @@ async def update_pmg_server(
     return PMGServerDetailResponse(server=_to_pmg_response(server))
 
 
-@pmg_router.delete("/{server_id}", response_model=DeleteServerResponse)
+@pmg_router.delete("/{server_id}", response_model=OkResponse)
 async def delete_pmg_server(
     server_id: UUID,
     admin_user: AdminUserDep,
     servers: PMGServerAdminServiceDep,
-) -> DeleteServerResponse:
+) -> OkResponse:
     """Remove a PMG node."""
     await servers.delete(server_id, actor_email=admin_user.email)
-    return DeleteServerResponse(ok=True)
+    return OkResponse(ok=True)
 
 
 @pmg_router.post("/{server_id}/validate", response_model=ValidateServerResponse)

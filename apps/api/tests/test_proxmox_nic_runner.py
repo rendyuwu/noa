@@ -38,6 +38,7 @@ import pytest
 from core.approvals.execution import build_receipt
 from core.audit.summaries import result_summary, status_for_payload
 from core.db.lifecycle import ToolRunStatus
+from noa_api.mcp_tools.change_runners import build_change_runners
 from noa_api.mcp_tools.change_target import (
     ERROR_EVIDENCE_UNUSABLE,
     STATUS_CHANGED,
@@ -53,14 +54,15 @@ from noa_api.mcp_tools.proxmox_nic import (
 )
 from noa_api.mcp_tools.proxmox_nic_runner import (
     ERROR_POSTFLIGHT_FAILED,
-    ERROR_TASK_FAILED,
-    ERROR_TASK_TIMEOUT,
     MESSAGE_NO_BEFORE_READING,
-    TASK_POLL_ATTEMPTS,
-    build_proxmox_nic_runners,
     build_proxmox_vm_nic_runner,
 )
 from noa_api.mcp_tools.proxmox_password import ERROR_SERVER_UNAVAILABLE
+from noa_api.mcp_tools.proxmox_task import (
+    ERROR_TASK_FAILED,
+    ERROR_TASK_TIMEOUT,
+    TASK_POLL_ATTEMPTS,
+)
 from support.action_decisions import REASON
 from support.change_delta import PayloadRunner, payload_runner
 from support.proxmox_nic import (
@@ -669,11 +671,11 @@ async def test_the_executor_can_classify_every_outcome_this_runner_produces(
     assert status_for_payload(payload) is expected
 
 
-async def test_the_runner_map_covers_this_tool_and_nothing_else() -> None:
+async def test_the_runner_map_names_this_tool() -> None:
     """What `registry.assert_change_runners_cover` and `noa_api.main` both read."""
     context = nic_context()[0].context
 
-    assert set(build_proxmox_nic_runners(context=context)) == {TOOL_PROXMOX_VM_NIC}
+    assert TOOL_PROXMOX_VM_NIC in build_change_runners(context=context)
 
 
 async def test_the_reason_is_on_the_request_and_the_runner_simply_does_not_read_it() -> None:

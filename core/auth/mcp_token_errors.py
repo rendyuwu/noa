@@ -42,6 +42,9 @@ class McpTokenError(NoaError):
 
     error_code: str = "mcp_token_error"
     message: str = "That MCP token request could not be completed."
+    # Bare `McpTokenError`: a request problem, not an infrastructure answer. Same
+    # subclass-tree test as above guards this from becoming the default.
+    status_code = 400
 
 
 class McpTokenNotFoundError(McpTokenError):
@@ -53,6 +56,10 @@ class McpTokenNotFoundError(McpTokenError):
 
     error_code: str = "mcp_token_not_found"
     message: str = "That MCP token no longer exists."
+    # 404 for a token that is absent *or* another user's: the lookup is scoped by user id,
+    # so the two cases answer identically and the response is not an enumeration oracle
+    # (the token-scope assertion, and the requester-match principle).
+    status_code = 404
 
 
 class InvalidTokenLabelError(McpTokenError):
@@ -65,3 +72,5 @@ class InvalidTokenLabelError(McpTokenError):
 
     error_code: str = "invalid_token_label"
     message: str = "A token label may be at most 255 characters."
+    # The label is longer than the column holds — a malformed request, not a server fault.
+    status_code = 400

@@ -12,7 +12,7 @@ test walks the subclass tree and asserts every member maps to one of 400, 403, 4
 (`test_rbac_routes.py::test_every_authorization_error_is_mapped_explicitly`). A 410 in that
 tree would either fail the test or force its status set open, and the set is the assertion —
 it is what stops a permission problem answering "service unavailable". So this derives from
-`NoaError` directly and takes its own entry in `STATUS_BY_ERROR`.
+`NoaError` directly and declares its own `status_code`.
 """
 
 from __future__ import annotations
@@ -44,3 +44,9 @@ class DirectGrantsDisabledError(NoaError):
         "Direct per-user tool grants are no longer supported. Grant the tools to a role and "
         "assign that role to the user."
     )
+    # 410, and it sits outside the authorization group on purpose: `DirectGrantsDisabledError`
+    # is not an `AuthorizationError`, because that tree's own test pins its statuses to
+    # {400, 403, 404, 409} and the pin is the assertion (see `noa_api.api.admin_errors`). 410
+    # rather than 404 or 403: the route existed in `noa-old`, the capability is withdrawn
+    # permanently, and neither "missing" nor "not allowed" says that.
+    status_code = 410

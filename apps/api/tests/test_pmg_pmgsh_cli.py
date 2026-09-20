@@ -65,7 +65,7 @@ from core.integrations.pmg.pmgsh_cli import (
 )
 from core.remote_exec.errors import SSHExecutionError
 from core.remote_exec.output import command_output_text
-from noa_api.api.errors import FALLBACK_STATUS, STATUS_BY_ERROR, error_body, status_for
+from noa_api.api.errors import error_body
 from support.remote_exec import (
     SUDO_DENIED_STDERR,
     SUDO_MISSING_BINARY_STDERR,
@@ -436,9 +436,9 @@ def test_pmgsh_error_tree_is_mapped_in_status_by_error() -> None:
 
     assert seen == [PMGSHCLIError]
     error = PMGSHCLIError(code="probe", message="probe")
-    assert status_for(error) == status.HTTP_502_BAD_GATEWAY
-    assert status_for(error) != FALLBACK_STATUS
-    assert STATUS_BY_ERROR[PMGSHCLIError] == status.HTTP_502_BAD_GATEWAY
+    assert error.status_code == status.HTTP_502_BAD_GATEWAY
+    assert error.status_code != NoaError.status_code
+    assert PMGSHCLIError.status_code == status.HTTP_502_BAD_GATEWAY
 
 
 def test_pmgsh_errors_are_noa_errors_and_shape_a_clean_body() -> None:

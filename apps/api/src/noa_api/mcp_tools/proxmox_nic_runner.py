@@ -50,7 +50,6 @@ situation, one system over.
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Final
@@ -106,6 +105,10 @@ from noa_api.mcp_tools.proxmox_password import (
     text_or_none,
     upstream_failure,
 )
+from noa_api.mcp_tools.proxmox_task import (
+    ERROR_TASK_FAILED,
+    wait_for_terminal_task,
+)
 from noa_api.mcp_tools.results import (
     ERROR_UNKNOWN,
     ToolPayload,
@@ -122,16 +125,13 @@ MESSAGE_NET_GONE: Final = (
     "against an interface it has."
 )
 
-# The config write's own task did not reach a terminal state in time. The write was accepted, so
-# the link may already have moved — which is why this is not reported as a refusal.
-ERROR_TASK_TIMEOUT: Final = "task_timeout"
+# The config write's own task did not reach a terminal state in time (`proxmox_task` polls it).
+# The write was accepted, so the link may already have moved — which is why this is not reported
+# as a refusal.
 MESSAGE_TASK_TIMEOUT: Final = (
     "Proxmox accepted the change but its task had not finished when NOA stopped waiting. Check "
     "the VM's network interface before relying on it."
 )
-
-# The task reached a terminal state and it was a failure — Proxmox saying it did not apply.
-ERROR_TASK_FAILED: Final = "task_failed"
 
 # The write was accepted, the postflight read answered, and the link is not where it was asked to
 # be. Distinct from the unavailable case above it: this is a measurement.
@@ -147,10 +147,6 @@ MESSAGE_NO_BEFORE_READING: Final = "NOA has no reading of what it was before."
 # — and never `request.reason`, which this runner does not read at all.
 LOG_NIC_RUN_NO_OP: Final = "proxmox_vm_nic_no_op"
 LOG_NIC_RUN_UNVERIFIED: Final = "proxmox_vm_nic_unverified"
-
-# `noa-old`'s numbers, kept. A `netN` write finishes in well under a second in practice.
-TASK_POLL_ATTEMPTS: Final = 30
-TASK_POLL_DELAY_SECONDS: Final = 0.5
 
 logger = structlog.get_logger(__name__)
 
@@ -307,11 +303,6 @@ def build_proxmox_vm_nic_runner(*, context: McpToolContext) -> ChangeRunner:
             return await _verify_link_state(target, request=request, write_failure=failure)
 
     return run
-
-
-def build_proxmox_nic_runners(*, context: McpToolContext) -> dict[str, ChangeRunner]:
-    """Tool name → runner for this module's CHANGE tool."""
-    return {TOOL_PROXMOX_VM_NIC: build_proxmox_vm_nic_runner(context=context)}
 
 
 # --- Internals ---
@@ -481,46 +472,18 @@ async def _write_link_state(target: NICChangeTarget, *, fresh: FreshNIC) -> Writ
     upid = text_or_none(write_result.get("upid"))
     if upid is None:
         return None
-    return await _wait_for_terminal_task(target, upid=upid)
-
-
-async def _wait_for_terminal_task(target: NICChangeTarget, *, upid: str) -> WriteFailure | None:
-    """Poll one UPID to a terminal state. `None` when it finished successfully.
-
-    Terminality is `status == "stopped"`, or an exit status present while the task is no longer
-    running — `client.get_task_status` normalises both to `None` when absent, so an empty string
-    cannot read as present.
-
-    A poll that cannot *read* the status is treated as a timeout rather than as a task failure:
-    not knowing what a task did is not evidence that it failed, and the write it belongs to has
-    already been accepted.
-
-    The two failures keep separate codes, and the postflight reads them apart: a terminal non-`OK`
-    task is Proxmox saying it did not apply the write, while `task_timeout` is NOA having stopped
-    waiting on a write Proxmox accepted. Only the first makes a disagreeing read conclusive.
-    """
-    for attempt in range(TASK_POLL_ATTEMPTS):
-        status_result = await target.client.get_task_status(target.node, upid)
-        if status_result.get("ok") is not True:
-            break
-
-        task_status = text_or_none(status_result.get("task_status"))
-        task_exit_status = text_or_none(status_result.get("task_exit_status"))
-        if task_status == "stopped" or (task_exit_status is not None and task_status != "running"):
-            if task_exit_status in (None, "OK"):
-                return None
-            return WriteFailure(
-                code=ERROR_TASK_FAILED,
-                message=(
-                    f"Proxmox rejected the change: its task finished with exit status "
-                    f"'{task_exit_status}'."
-                ),
-            )
-
-        if attempt < TASK_POLL_ATTEMPTS - 1:
-            await asyncio.sleep(TASK_POLL_DELAY_SECONDS)
-
-    return WriteFailure(code=ERROR_TASK_TIMEOUT, message=MESSAGE_TASK_TIMEOUT)
+    outcome = await wait_for_terminal_task(target.client, node=target.node, upid=upid)
+    if outcome is None:
+        return None
+    code, exit_status = outcome
+    if code == ERROR_TASK_FAILED:
+        return WriteFailure(
+            code=code,
+            message=(
+                f"Proxmox rejected the change: its task finished with exit status '{exit_status}'."
+            ),
+        )
+    return WriteFailure(code=code, message=MESSAGE_TASK_TIMEOUT)
 
 
 async def _verify_link_state(

@@ -47,10 +47,18 @@ Session-cookie denials, distinct from login denials above:
 Both exist because `noa-old` reused `AuthInvalidCredentialsError` for a stale
 cookie, which told operators their password was wrong when it was not.
 
-`AuthError` derives from `core.errors.NoaError`, which owns the three-field
+`AuthError` derives from `core.errors.NoaError`, which owns the shared field
 shape. Authentication keeps its own base so the handler can treat an unclassified
 *authentication* failure as an infrastructure answer (503) while an unclassified
 authorization failure is a different question entirely.
+
+Each class carries its own `status_code`. 401 for credentials rejected or a session that no
+longer verifies — the remedy is the same (sign in), and distinguishing them by status would
+leak which. 403 once the caller is authenticated but not permitted to be here, never 401:
+re-authenticating changes nothing, so a login redirect would loop. 429 for the rate limiter.
+500 and 503 for `AuthConfigurationError` and `LdapUnavailableError`, which are NOA's own fault
+and the operator's credentials are fine — the specific misconfiguration stays in `detail`,
+out of the body.
 """
 
 from __future__ import annotations
@@ -78,6 +86,7 @@ class AuthInvalidCredentialsError(AuthError):
 
     error_code: str = "invalid_credentials"
     message: str = "Email or password is incorrect."
+    status_code = 401
 
 
 class AuthAccountDisabledError(AuthError):
@@ -91,6 +100,7 @@ class AuthAccountDisabledError(AuthError):
         "This account is disabled in the company directory. Contact IT if you believe "
         "this is a mistake."
     )
+    status_code = 403
 
 
 class AuthPendingApprovalError(AuthError):
@@ -105,6 +115,7 @@ class AuthPendingApprovalError(AuthError):
         "Your sign-in worked, but this account is waiting for administrator approval. "
         "Ask a NOA admin to enable it."
     )
+    status_code = 403
 
 
 class AuthSessionExpiredError(AuthError):
@@ -116,6 +127,7 @@ class AuthSessionExpiredError(AuthError):
 
     error_code: str = "session_expired"
     message: str = "Your session has expired. Sign in again."
+    status_code = 401
 
 
 class AuthSessionInvalidError(AuthError):
@@ -127,6 +139,7 @@ class AuthSessionInvalidError(AuthError):
 
     error_code: str = "session_invalid"
     message: str = "Your session is no longer valid. Sign in again."
+    status_code = 401
 
 
 class AuthConfigurationError(AuthError):
@@ -142,6 +155,7 @@ class AuthConfigurationError(AuthError):
         "Sign-in is misconfigured on the NOA side. Your credentials are fine — "
         "contact an administrator."
     )
+    status_code = 500
 
 
 class LdapUnavailableError(AuthError):
@@ -149,6 +163,7 @@ class LdapUnavailableError(AuthError):
 
     error_code: str = "ldap_unavailable"
     message: str = "Cannot reach the company directory right now. Try again in a few moments."
+    status_code = 503
 
 
 class AuthRateLimitedError(RetryAfterMixin, AuthError):
@@ -164,6 +179,7 @@ class AuthRateLimitedError(RetryAfterMixin, AuthError):
 
     error_code: str = "login_rate_limited"
     message: str = "Too many sign-in attempts. Wait a few minutes and try again."
+    status_code = 429
 
     def __init__(self, retry_after_seconds: int, detail: str | None = None) -> None:
         # Floored at 1: a block with under a second left truncates to 0, and

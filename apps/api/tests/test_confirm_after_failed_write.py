@@ -58,8 +58,7 @@ from noa_api.mcp_tools.change_target import (
     WriteFailure,
     confirmed_verification,
 )
-from noa_api.mcp_tools.proxmox_nic_runner import ERROR_TASK_TIMEOUT as NIC_TASK_TIMEOUT
-from noa_api.mcp_tools.proxmox_password_runner import ERROR_TASK_TIMEOUT as PASSWORD_TASK_TIMEOUT
+from noa_api.mcp_tools.proxmox_task import ERROR_TASK_TIMEOUT
 from noa_api.mcp_tools.results import ERROR_TIMEOUT
 from noa_api.mcp_tools.whm_account_change import (
     EVIDENCE_ACCOUNT,
@@ -500,8 +499,7 @@ def test_every_task_deadline_the_runners_own_reads_as_a_non_answer() -> None:
     spelling, reddens here rather than silently reclassifying a write NOA stopped waiting on as
     one the remote refused.
     """
-    assert NIC_TASK_TIMEOUT in NON_ANSWER_ERROR_CODES
-    assert PASSWORD_TASK_TIMEOUT in NON_ANSWER_ERROR_CODES
+    assert ERROR_TASK_TIMEOUT in NON_ANSWER_ERROR_CODES
 
 
 @pytest.mark.parametrize("failure", [httpx.TimeoutException, httpx.ConnectError])

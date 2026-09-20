@@ -14,7 +14,7 @@ one exists because something in the fastmcp/SDK stack does not do it:
    which cannot tell "you forgot the header" from "this token belongs to someone else's LibreChat
    account" — the two cases the named 401 bodies separate, each with its own client-visible string.
    So the refusal is stashed on the ASGI scope and this middleware renders it through the same
-   `status_for`/`error_body`/`error_headers` the FastAPI handler uses.
+   `error.status_code`/`error_body`/`error_headers` the FastAPI handler uses.
 
 3. **`current_mcp_identity` — identity for tools.** Tools read
    `get_access_token().claims`, never the bearer again. The claim keys are constants here
@@ -88,7 +88,7 @@ from core.auth.mcp_token_repository import SQLMcpIdentityRepository
 from core.auth.mcp_token_service import hash_mcp_token
 from core.config import Settings
 from core.errors import NoaError
-from noa_api.api.errors import error_body, error_headers, status_for
+from noa_api.api.errors import error_body, error_headers
 from noa_api.api.request_context import REQUEST_ID_HEADER, request_id_for
 
 # One structured event for every refusal, so a query on this name shows the whole denial
@@ -472,7 +472,7 @@ class McpAuthErrorMiddleware:
         """Write the envelope the FastAPI handler would have written.
 
         Raw ASGI because the mounted MCP app is a Starlette app with no NOA exception
-        handler on it; `status_for`/`error_body`/`error_headers` are shared with
+        handler on it; `error.status_code`/`error_body`/`error_headers` are shared with
         `noa_api.api.errors` so the two surfaces cannot drift. `detail` stays out of the
         body, and `request_id` is in it for the same reason it is in every other error
         body: it is what an operator quotes, and it names the log line this refusal wrote.
@@ -482,7 +482,7 @@ class McpAuthErrorMiddleware:
         that promises the envelope, and a promise that depends on a middleware two apps up
         is one that a future standalone mount breaks silently.
         """
-        status_code = status_for(error)
+        status_code = error.status_code
         body = json.dumps(error_body(error, request_id=request_id)).encode()
 
         headers: list[tuple[bytes, bytes]] = [
