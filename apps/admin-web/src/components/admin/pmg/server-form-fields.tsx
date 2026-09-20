@@ -1,127 +1,30 @@
 'use client'
 
-import { useForm, type UseFormReturn } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import {
-  Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  FormField,
-  Input,
-  RadioGroup,
-  RadioItem,
-  Textarea,
-  bigsuToast,
-} from '@gio/bigsu-ui'
+import type { UseFormReturn } from 'react-hook-form'
+import { FormField, Input, RadioGroup, RadioItem, Textarea } from '@gio/bigsu-ui'
 
-import type { MutationResult } from '@/lib/admin/pmg/use-pmg-servers'
 import type { PmgServer } from '@/lib/admin/pmg/types'
-import {
-  EMPTY_PMG_FORM,
-  buildPmgCreatePayload,
-  buildPmgUpdatePayload,
-  pmgFormStateFromServer,
-  type PmgServerFormState,
-} from '@/lib/admin/pmg/pmg-form'
-import { buildPmgServerFormSchema } from '@/lib/admin/pmg/pmg-schema'
-import { submitOnEnter } from '@/lib/forms/submit-on-enter'
+import type { PmgServerFormState } from '@/lib/admin/pmg/pmg-form'
 
-export type ServerFormDialogProps = {
-  open: boolean
+// The PMG half of the create/edit server dialog (issue #110) — the field
+// sections that genuinely differ between verticals. The shell around them
+// (dialog, resolver, submit, toasts) is components/admin/servers.
+// PMG is SSH-only, so SSH credentials are mandatory — there is no "enable SSH"
+// toggle — and the host-key fingerprint is an editable field here.
+
+type FieldsProps = {
+  form: UseFormReturn<PmgServerFormState>
   mode: 'create' | 'update'
   existingServer: PmgServer | null
-  onOpenChangeAction: (open: boolean) => void
-  onSubmitAction: (body: Record<string, unknown>) => Promise<MutationResult>
+  busy: boolean
 }
 
-// Create/edit PMG server dialog (issue #110). BIGSU form stack: react-hook-form
-// + zodResolver, every field wrapped in FormField with a visible label and error
-// wiring. The form is keyed by `open`+server id at the parent so each opening
-// re-seeds from the server and every secret field starts blank. Secrets are
-// write-only: never seeded, cleared on unmount by the re-key, and never retained
-// after submit (the dialog closes on success; on failure the non-secret input is
-// preserved and the stable backend detail is surfaced). PMG is SSH-only, so SSH
-// credentials are mandatory — there is no "enable SSH" toggle.
-export function ServerFormDialog({ open, mode, existingServer, ...rest }: ServerFormDialogProps) {
+export function PmgServerFields({ form, mode, existingServer, busy }: FieldsProps) {
   return (
-    <Dialog open={open} onOpenChange={rest.onOpenChangeAction}>
-      {open ? (
-        <ServerForm
-          key={`${mode}:${existingServer?.id ?? 'new'}`}
-          mode={mode}
-          existingServer={existingServer}
-          {...rest}
-        />
-      ) : null}
-    </Dialog>
-  )
-}
-
-function ServerForm({
-  mode,
-  existingServer,
-  onOpenChangeAction,
-  onSubmitAction,
-}: Omit<ServerFormDialogProps, 'open'>) {
-  const form = useForm<PmgServerFormState>({
-    resolver: zodResolver(buildPmgServerFormSchema(mode, existingServer)),
-    defaultValues: existingServer ? pmgFormStateFromServer(existingServer) : EMPTY_PMG_FORM,
-  })
-  const isCreate = mode === 'create'
-
-  const submit = form.handleSubmit(async (values) => {
-    const body =
-      isCreate || !existingServer
-        ? buildPmgCreatePayload(values)
-        : buildPmgUpdatePayload(values, existingServer)
-    const result = await onSubmitAction(body)
-    if (result.ok) {
-      bigsuToast.success(isCreate ? 'PMG server added' : 'PMG server saved', {
-        description: values.name.trim(),
-      })
-      onOpenChangeAction(false)
-      return
-    }
-    if (result.message) {
-      form.setError('name', { type: 'server', message: result.message })
-      bigsuToast.danger(isCreate ? 'Could not add server' : 'Could not save server', {
-        description: result.message,
-      })
-    }
-  })
-
-  const busy = form.formState.isSubmitting
-
-  return (
-    <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
-      <DialogHeader>
-        <DialogTitle>{isCreate ? 'Add PMG server' : 'Edit PMG server'}</DialogTitle>
-        <DialogDescription>
-          {isCreate
-            ? 'PMG SSH credentials are stored encrypted and never displayed again. PMG validation and whitelist tools use the SSH path.'
-            : 'Stored secrets can be replaced, but they are never shown again. Leave a secret blank to keep the stored value.'}
-        </DialogDescription>
-      </DialogHeader>
-
-      <form onSubmit={submit} onKeyDown={submitOnEnter(submit)} className="flex flex-col gap-5">
-        <ServerHostFields form={form} busy={busy} />
-        <ServerSshFields form={form} mode={mode} existingServer={existingServer} busy={busy} />
-      </form>
-
-      <DialogFooter>
-        <Button variant="outline" onClick={() => onOpenChangeAction(false)} disabled={busy}>
-          Cancel
-        </Button>
-        {/* Click handler, not a submit button — sandbox-inheriting tabs refuse form submission. */}
-        <Button type="button" onClick={() => void submit()} loading={busy}>
-          {isCreate ? 'Save' : 'Save changes'}
-        </Button>
-      </DialogFooter>
-    </DialogContent>
+    <>
+      <ServerHostFields form={form} busy={busy} />
+      <ServerSshFields form={form} mode={mode} existingServer={existingServer} busy={busy} />
+    </>
   )
 }
 

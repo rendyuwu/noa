@@ -27,6 +27,18 @@ describe('formatRelativeTime', () => {
     expect(formatRelativeTime({})).toBe('Never')
   })
 
+  it('says the em dash instead when a caller asks for it, and only then', () => {
+    // The server verticals (WHM/PMG/Proxmox) render `—` for an absent
+    // updated_at where the Users/Tokens tables render `Never`. Both words are
+    // load-bearing, so this is the one place they are pinned together: the
+    // default above must stay `Never` for these two lines to mean anything.
+    expect(formatRelativeTime(undefined, '—')).toBe('—')
+    expect(formatRelativeTime('not-a-date', '—')).toBe('—')
+    expect(formatRelativeTime(new Date(Date.now() - 7_200_000).toISOString(), '—')).toBe(
+      '2 hours ago',
+    )
+  })
+
   it('treats sub-minute and future timestamps as Just now', () => {
     expect(formatRelativeTime(new Date(Date.now() - 5_000).toISOString())).toBe('Just now')
     expect(formatRelativeTime(new Date(Date.now() + 60_000).toISOString())).toBe('Just now')

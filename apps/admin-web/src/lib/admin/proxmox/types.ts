@@ -25,11 +25,3 @@ export type ValidateProxmoxServerResponse = {
   error_code?: string | null
   message: string
 }
-
-export type ListProxmoxServersResponse = {
-  servers: ProxmoxServer[]
-}
-
-export type ProxmoxServerResponse = {
-  server: ProxmoxServer
-}

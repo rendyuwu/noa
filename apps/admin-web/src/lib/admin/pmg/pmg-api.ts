@@ -1,56 +1,15 @@
-import { fetchWithAuth, jsonOrThrow } from '@/lib/auth/fetch-helper'
+import { makeServersApi } from '@/lib/admin/shared/servers-api'
 
-import type {
-  ListPmgServersResponse,
-  PmgServer,
-  PmgServerResponse,
-  ValidatePmgServerResponse,
-} from './types'
+import type { PmgServer, ValidatePmgServerResponse } from './types'
 
-// Transport for the admin PMG vertical (issue #110). Every call goes through the
-// shared fetchWithAuth + jsonOrThrow helpers, so a 401 triggers the session-
-// expiry flow and any non-OK response throws a typed ApiError that preserves the
-// backend's stable detail / error_code / request_id. Callers surface that detail
-// verbatim — the FastAPI guards (PMG_SERVER_NAME_EXISTS, PMG_SERVER_NOT_FOUND)
-// stay authoritative. Secrets are only ever in request bodies, never in responses.
+// Transport for the admin PMG vertical (issue #110), bound to the shared
+// servers transport. The FastAPI guards (PMG_SERVER_NAME_EXISTS,
+// PMG_SERVER_NOT_FOUND) stay authoritative; this layer only names the base path.
 
-export async function fetchPmgServers(): Promise<PmgServer[]> {
-  const response = await fetchWithAuth('/admin/pmg/servers')
-  const payload = await jsonOrThrow<ListPmgServersResponse>(response)
-  return Array.isArray(payload.servers) ? payload.servers : []
-}
+const api = makeServersApi<PmgServer, ValidatePmgServerResponse>('/admin/pmg/servers')
 
-export async function createPmgServer(body: Record<string, unknown>): Promise<PmgServer> {
-  const response = await fetchWithAuth('/admin/pmg/servers', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  const payload = await jsonOrThrow<PmgServerResponse>(response)
-  return payload.server
-}
-
-export async function updatePmgServer(
-  serverId: string,
-  body: Record<string, unknown>,
-): Promise<PmgServer> {
-  const response = await fetchWithAuth(`/admin/pmg/servers/${serverId}`, {
-    method: 'PATCH',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  const payload = await jsonOrThrow<PmgServerResponse>(response)
-  return payload.server
-}
-
-export async function deletePmgServer(serverId: string): Promise<void> {
-  const response = await fetchWithAuth(`/admin/pmg/servers/${serverId}`, { method: 'DELETE' })
-  await jsonOrThrow(response)
-}
-
-export async function validatePmgServer(serverId: string): Promise<ValidatePmgServerResponse> {
-  const response = await fetchWithAuth(`/admin/pmg/servers/${serverId}/validate`, {
-    method: 'POST',
-  })
-  return jsonOrThrow<ValidatePmgServerResponse>(response)
-}
+export const fetchPmgServers = api.fetchServers
+export const createPmgServer = api.createServer
+export const updatePmgServer = api.updateServer
+export const deletePmgServer = api.deleteServer
+export const validatePmgServer = api.validateServer

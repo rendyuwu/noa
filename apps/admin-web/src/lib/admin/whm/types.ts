@@ -43,12 +43,4 @@ export type ValidateWhmServerResponse = {
   message: string
 }
 
-export type ListWhmServersResponse = {
-  servers: WhmServer[]
-}
-
-export type WhmServerResponse = {
-  server: WhmServer
-}
-
 export type SshAuthMode = 'private_key' | 'password'

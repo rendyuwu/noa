@@ -29,12 +29,4 @@ export type ValidatePmgServerResponse = {
   message: string
 }
 
-export type ListPmgServersResponse = {
-  servers: PmgServer[]
-}
-
-export type PmgServerResponse = {
-  server: PmgServer
-}
-
 export type SshAuthMode = 'private_key' | 'password'

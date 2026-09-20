@@ -1,157 +1,115 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import { PageHeader } from '@gio/bigsu-app-shell'
-import { Button, DataTable, FilterBar } from '@gio/bigsu-ui'
-import { BigsuIcon } from '@gio/bigsu-icons'
+import { Badge, StatusChip } from '@gio/bigsu-ui'
 
+import { ServersPage } from '@/components/admin/servers/servers-page'
+import type { ServerVertical } from '@/components/admin/servers/types'
+import {
+  EMPTY_PMG_FORM,
+  buildPmgCreatePayload,
+  buildPmgUpdatePayload,
+  pmgFormStateFromServer,
+  validatePmgServerForm,
+  type PmgServerFormState,
+} from '@/lib/admin/pmg/pmg-form'
+import type { PmgServer, ValidatePmgServerResponse } from '@/lib/admin/pmg/types'
 import { usePmgServers } from '@/lib/admin/pmg/use-pmg-servers'
+import { formatRelativeTime } from '@/lib/admin/shared/relative-time'
+import {
+  deriveSshStatus,
+  getFingerprintBadge,
+  getSshAuthLabel,
+} from '@/lib/admin/shared/server-status'
 
-import { buildServerColumns } from './server-columns'
-import { ServerDetailDrawer } from './server-detail-drawer'
-import { ServerFormDialog } from './server-form-dialog'
+import { PmgServerFields } from './server-form-fields'
 
-// The PMG servers administration page (issue #110), built on the proven Users/
-// Roles/WHM/Proxmox composition: PageHeader, FilterBar, DataTable, with the detail
-// Drawer and create/edit dialog hosted alongside. Filtering is client-side over
-// the loaded list (small, admin-only dataset); the table ships loading, empty,
-// error/retry, sort, row actions, full monospace identifiers, and standard status
-// vocabulary. The controller owns every race guard. No secret is ever rendered.
+// The PMG servers administration page (issue #110), expressed as a config over
+// the shared admin servers UI (components/admin/servers). Everything structural
+// — header, filter, table, drawer, dialog, race guards — is there; what is here
+// is only what PMG does differently.
+const PMG_VERTICAL: ServerVertical<PmgServer, ValidatePmgServerResponse, PmgServerFormState> = {
+  useServers: usePmgServers,
+
+  title: 'PMG servers',
+  description:
+    'Manage PMG SSH credentials, validation, and the pinned host key. PMG validation and whitelist tools run over SSH, and secrets are stored encrypted and never displayed after save.',
+  searchPlaceholder: 'Search by name, host, or ID',
+  emptyTitle: 'No PMG servers yet',
+  emptyDescription: 'Add a PMG server to manage mail gateway infrastructure.',
+  searchFields: (server) => [server.ssh_host],
+
+  rowSubtitle: (server) => server.ssh_host,
+  // PMG is SSH-only, so the pinned host key is its transport-security signal
+  // and there is no TLS column to show.
+  extraColumns: [
+    {
+      id: 'ssh',
+      header: 'SSH',
+      cell: ({ row }) => <StatusChip status={deriveSshStatus(row.original)} />,
+    },
+    {
+      id: 'fingerprint',
+      header: 'Host key',
+      cell: ({ row }) => {
+        const fingerprint = getFingerprintBadge(row.original)
+        return <Badge variant={fingerprint.variant}>{fingerprint.label}</Badge>
+      },
+    },
+  ],
+
+  detail: (server, validateResult) => ({
+    subtitle: server.ssh_host,
+    badges: [getFingerprintBadge(server)],
+    rows: [
+      { label: 'SSH host/IP', value: server.ssh_host },
+      { label: 'Updated', value: formatRelativeTime(server.updated_at, '—') },
+      {
+        label: 'Latest validation',
+        value: validateResult
+          ? validateResult.message
+          : 'Validate connects over SSH, runs PMG probes, and pins the SSH host key.',
+      },
+    ],
+    sections: [
+      {
+        title: 'SSH access',
+        status: deriveSshStatus(server),
+        badges: [getFingerprintBadge(server)],
+        rows: [
+          { label: 'SSH user', value: server.ssh_username || 'root (default)' },
+          { label: 'SSH port', value: server.ssh_port ?? 22 },
+          { label: 'Authentication', value: getSshAuthLabel(server) },
+          {
+            label: 'Host key fingerprint',
+            value: (
+              <span className="font-mono text-xs">
+                {server.ssh_host_key_fingerprint ?? 'Not validated yet'}
+              </span>
+            ),
+          },
+        ],
+      },
+    ],
+    deleteDescription: `This permanently deletes the ${server.name} server configuration from NOA, including its stored SSH credentials. This cannot be undone.`,
+  }),
+
+  noun: 'PMG server',
+  formDescription: (mode) =>
+    mode === 'create'
+      ? 'PMG SSH credentials are stored encrypted and never displayed again. PMG validation and whitelist tools use the SSH path.'
+      : 'Stored secrets can be replaced, but they are never shown again. Leave a secret blank to keep the stored value.',
+  formDefaults: (_mode, existingServer) =>
+    existingServer ? pmgFormStateFromServer(existingServer) : EMPTY_PMG_FORM,
+  validateForm: validatePmgServerForm,
+  buildPayload: (values, mode, existingServer) =>
+    mode === 'create' || !existingServer
+      ? buildPmgCreatePayload(values)
+      : buildPmgUpdatePayload(values, existingServer),
+  renderFields: ({ form, mode, existingServer, busy }) => (
+    <PmgServerFields form={form} mode={mode} existingServer={existingServer} busy={busy} />
+  ),
+}
+
 export function PmgServersPage() {
-  const {
-    servers,
-    loading,
-    loadError,
-    reload,
-    selectedServer,
-    selectServer,
-    validateResultById,
-    validateBusyId,
-    deleteBusyId,
-    createServer,
-    updateServer,
-    deleteServer,
-    validateServer,
-  } = usePmgServers()
-
-  const [search, setSearch] = useState('')
-  const [createOpen, setCreateOpen] = useState(false)
-  const [editOpen, setEditOpen] = useState(false)
-
-  const columns = useMemo(() => buildServerColumns(validateResultById), [validateResultById])
-
-  const rows = useMemo(() => {
-    const needle = search.trim().toLowerCase()
-    if (!needle) return servers
-    return servers.filter(
-      (server) =>
-        server.name.toLowerCase().includes(needle) ||
-        server.ssh_host.toLowerCase().includes(needle) ||
-        server.id.toLowerCase().includes(needle),
-    )
-  }, [servers, search])
-
-  const hasFilters = search.trim() !== ''
-  const clearFilters = () => setSearch('')
-
-  return (
-    <>
-      <PageHeader
-        breadcrumb={[{ label: 'Administration', href: '/admin' }, { label: 'PMG servers' }]}
-        title="PMG servers"
-        description="Manage PMG SSH credentials, validation, and the pinned host key. PMG validation and whitelist tools run over SSH, and secrets are stored encrypted and never displayed after save."
-      />
-
-      <div className="mt-6 flex flex-col gap-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <FilterBar
-            className="min-w-0 flex-1"
-            search={{
-              value: search,
-              onChange: setSearch,
-              placeholder: 'Search by name, host, or ID',
-            }}
-            onClear={hasFilters ? clearFilters : undefined}
-          />
-          <Button variant="secondary" onClick={() => void reload()} disabled={loading}>
-            <BigsuIcon name="refresh" size="sm" aria-hidden />
-            Refresh
-          </Button>
-          <Button onClick={() => setCreateOpen(true)}>
-            <BigsuIcon name="create" size="sm" aria-hidden />
-            Add server
-          </Button>
-        </div>
-
-        <DataTable
-          columns={columns}
-          data={rows}
-          getRowId={(server) => server.id}
-          loading={loading}
-          error={loadError ? { message: loadError, onRetry: () => void reload() } : undefined}
-          onRowClick={(server) => selectServer(server.id)}
-          rowActions={(server) => [
-            {
-              label: 'View details',
-              icon: 'externalLink',
-              onSelect: () => selectServer(server.id),
-            },
-          ]}
-          pagination={{ pageSize: 10 }}
-          emptyState={
-            hasFilters
-              ? {
-                  title: 'No matching servers',
-                  description: 'Adjust the search to see more results.',
-                  action: (
-                    <Button size="sm" variant="outline" onClick={clearFilters}>
-                      Clear filters
-                    </Button>
-                  ),
-                }
-              : {
-                  title: 'No PMG servers yet',
-                  description: 'Add a PMG server to manage mail gateway infrastructure.',
-                  action: (
-                    <Button size="sm" onClick={() => setCreateOpen(true)}>
-                      Add server
-                    </Button>
-                  ),
-                }
-          }
-        />
-      </div>
-
-      <ServerFormDialog
-        open={createOpen}
-        mode="create"
-        existingServer={null}
-        onOpenChangeAction={setCreateOpen}
-        onSubmitAction={createServer}
-      />
-
-      <ServerFormDialog
-        open={editOpen}
-        mode="update"
-        existingServer={selectedServer}
-        onOpenChangeAction={setEditOpen}
-        onSubmitAction={(body) =>
-          selectedServer
-            ? updateServer(selectedServer.id, body)
-            : Promise.resolve({ ok: false as const, message: 'No server selected', current: false })
-        }
-      />
-
-      <ServerDetailDrawer
-        server={selectedServer}
-        validateResult={selectedServer ? validateResultById[selectedServer.id] : undefined}
-        validateBusy={selectedServer ? validateBusyId === selectedServer.id : false}
-        deleteBusy={selectedServer ? deleteBusyId === selectedServer.id : false}
-        onCloseAction={() => selectServer(null)}
-        onEditAction={() => setEditOpen(true)}
-        onValidateAction={validateServer}
-        onDeleteAction={deleteServer}
-      />
-    </>
-  )
+  return <ServersPage vertical={PMG_VERTICAL} />
 }
