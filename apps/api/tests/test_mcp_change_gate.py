@@ -61,7 +61,6 @@ from noa_api.mcp_tools.change_gate import (
     build_approval_context,
     open_change_request,
 )
-from support.action_requests import FakeActionRequestRepository
 from support.database import MUTATED_TABLES, migrated_database, truncate
 from support.mcp_identity import (
     DISPLAY_NAME,
@@ -70,7 +69,12 @@ from support.mcp_identity import (
     authenticated_caller,
     http_request_context,
 )
-from support.servers import PENDING_TTL_SECONDS, ToolFixture, build_tool_context
+from support.servers import (
+    PENDING_TTL_SECONDS,
+    FakeActionRequestRepository,
+    ToolFixture,
+    build_tool_context,
+)
 
 SCRATCH_DB = "noa_change_gate_test"
 
