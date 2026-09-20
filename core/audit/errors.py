@@ -30,8 +30,7 @@ class ToolRunAuditError(NoaError):
 
     error_code: str = "tool_run_audit_failed"
     message: str = "That audit record could not be read."
-    # Bare `ToolRunAuditError`: a request problem, not "the audit trail is down". Same
-    # subclass-tree test as above guards this from becoming the default for a later class.
+    # 400: a request problem, not "the audit trail is down".
     status_code = 400
 
 
@@ -42,8 +41,7 @@ class ToolRunNotFoundError(ToolRunAuditError):
     message: str = "No tool run with that id."
     # 404 for a run that does not exist *and* for an id that is not a UUID: this surface is
     # admin-only, so the reason is not secrecy — a 422 for a malformed id would describe
-    # what the validator accepts rather than what exists (`core.audit.errors`, the
-    # action-result tool's own rule).
+    # what the validator accepts rather than what exists.
     status_code = 404
 
 

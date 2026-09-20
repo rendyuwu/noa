@@ -422,8 +422,8 @@ def test_command_output_text_is_the_shared_helper() -> None:
 # --- One taxonomy, one handler, mapped status ---
 
 
-def test_pmgsh_error_tree_is_mapped_in_status_by_error() -> None:
-    """Every subclass, walked — a class added later without an entry fails here rather than
+def test_pmgsh_error_tree_declares_one_status() -> None:
+    """Every subclass, walked — a class added later without its own status fails here rather than
     silently answering the 503 unclassified fallback."""
     seen: list[type[PMGSHCLIError]] = []
 
@@ -435,9 +435,6 @@ def test_pmgsh_error_tree_is_mapped_in_status_by_error() -> None:
     walk(PMGSHCLIError)
 
     assert seen == [PMGSHCLIError]
-    error = PMGSHCLIError(code="probe", message="probe")
-    assert error.status_code == status.HTTP_502_BAD_GATEWAY
-    assert error.status_code != NoaError.status_code
     assert PMGSHCLIError.status_code == status.HTTP_502_BAD_GATEWAY
 
 

@@ -43,7 +43,6 @@ from core.approvals.execution import build_receipt
 from core.audit.summaries import result_summary, status_for_payload
 from core.db.lifecycle import ToolRunStatus
 from core.integrations.pmg.pmgsh_cli import MYNETWORKS_PATH
-from noa_api.mcp_tools.change_runners import build_change_runners
 from noa_api.mcp_tools.change_target import (
     ERROR_EVIDENCE_UNUSABLE,
     STATUS_CHANGED,
@@ -54,7 +53,6 @@ from noa_api.mcp_tools.pmg_whitelist import (
     ACTION_ADD,
     ACTION_REMOVE,
     ERROR_SERVER_UNAVAILABLE,
-    TOOL_PMG_WHITELIST,
 )
 from noa_api.mcp_tools.pmg_whitelist_runner import (
     ERROR_POSTFLIGHT_FAILED,
@@ -840,15 +838,6 @@ async def test_a_successful_run_classifies_as_completed(monkeypatch: pytest.Monk
     payload = await build_runner(fixture)(execution_request(server_id=server_id(fixture)))
 
     assert status_for_payload(payload) is ToolRunStatus.COMPLETED
-
-
-async def test_the_runner_map_is_keyed_by_the_tool_name(monkeypatch: pytest.MonkeyPatch) -> None:
-    """What `change_runners` merges and what `registry` checks coverage against."""
-    fixture, _ = whitelist_change_context(monkeypatch)
-
-    runners = build_change_runners(context=fixture.context)
-
-    assert TOOL_PMG_WHITELIST in runners
 
 
 # --- Internals of this file ---

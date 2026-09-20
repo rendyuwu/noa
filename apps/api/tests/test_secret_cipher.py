@@ -146,7 +146,6 @@ def test_secret_errors_have_an_explicit_status_mapping(
     error: NoaError, expected_status: int
 ) -> None:
     """No secret error may take the 503 fallback — that reads as "NOA is down"."""
-    assert error.status_code != NoaError.status_code
     assert error.status_code == expected_status
 
 

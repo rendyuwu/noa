@@ -252,8 +252,8 @@ async def test_run_converts_an_ssh_failure_into_the_backend_error_tree(
 # --- One taxonomy, one handler, mapped status ---
 
 
-def test_firewall_error_tree_is_mapped_in_status_by_error() -> None:
-    """Every subclass, walked — a class added later without an entry fails here rather than
+def test_firewall_error_tree_declares_one_status() -> None:
+    """Every subclass, walked — a class added later without its own status fails here rather than
     silently answering the 503 unclassified fallback."""
     seen: list[type[WHMFirewallCLIError]] = []
 
@@ -268,8 +268,6 @@ def test_firewall_error_tree_is_mapped_in_status_by_error() -> None:
     for klass in seen:
         error = klass(code="probe", message="probe")
         assert error.status_code == status.HTTP_502_BAD_GATEWAY
-        assert error.status_code != NoaError.status_code
-    assert WHMFirewallCLIError.status_code == status.HTTP_502_BAD_GATEWAY
 
 
 def test_firewall_errors_are_noa_errors_and_shape_a_clean_body() -> None:

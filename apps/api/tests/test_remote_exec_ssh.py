@@ -33,7 +33,6 @@ import asyncssh
 import pytest
 
 import core.remote_exec.ssh as ssh_mod
-from core.errors import NoaError
 from core.remote_exec.errors import SSHExecutionError
 from core.remote_exec.ssh import (
     command_from_argv,
@@ -493,7 +492,6 @@ def test_ssh_execution_error_is_a_noa_error_with_mapped_status() -> None:
     error = SSHExecutionError(code="ssh_timeout", message="SSH connection timed out")
 
     assert error.status_code == 502
-    assert error.status_code != NoaError.status_code
     assert error_body(error) == {
         "error_code": "ssh_timeout",
         "message": "SSH connection timed out",

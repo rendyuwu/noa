@@ -248,10 +248,6 @@ def build_authorization_service(
     emits, and there is no write here to emit one. Handing the real notifier in anyway would
     put the emit within reach of the bearer-token side of the app, which is the boundary the
     cookie/CSRF design draws for the decision path and worth respecting here for free.
-
-    The three writer factories on the context — `tool_run_repository_factory`,
-    `action_request_repository_factory`, `result_table_writer_factory` — are called at their use
-    sites rather than wrapped here, for the first reason: each holds the session it was given.
     """
     return AuthorizationService(
         repository=context.authorization_repository_factory(session),

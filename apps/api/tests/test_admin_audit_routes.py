@@ -28,7 +28,6 @@ import pytest
 from core.audit.errors import ToolRunAuditError
 from core.audit.tool_run_reads import MAX_PAGE_SIZE
 from core.db.lifecycle import ToolRisk, ToolRunStatus
-from core.errors import NoaError
 from noa_api.api.request_context import REQUEST_ID_HEADER
 from noa_api.api.routes.admin_audit import router as admin_audit_router
 from support.admin import (
@@ -382,5 +381,4 @@ def test_every_audit_error_subclass_is_mapped(harness: AdminHarness) -> None:
 
     for klass in error_subclasses(ToolRunAuditError):
         assert "status_code" in klass.__dict__, f"{klass.__name__} has no explicit status"
-        assert klass.status_code != NoaError.status_code, klass
         assert klass.status_code in {400, 404}, klass

@@ -58,9 +58,7 @@ class ChangeGateError(NoaError):
 
     error_code: str = "change_gate_failed"
     message: str = "This change could not be submitted for approval. Nothing was changed."
-    # Bare `ChangeGateError`: still "the change was not submitted and did not run", so 503
-    # rather than the fallback by accident. A subclass-tree test asserts every member above
-    # is mapped, so reaching this line means a new class arrived without a decision.
+    # 503: the change was not submitted and did not run, so not the fallback by accident.
     status_code = 503
 
 
@@ -186,10 +184,6 @@ class ActionRequestNotFoundError(ActionDecisionError):
 
     error_code: str = "action_request_not_found"
     message: str = "That approval request does not exist, or it is not yours to decide."
-    # 404 for absent *and* for another operator's, which is the requester-match rule's whole
-    # point: a 403 would
-    # confirm the request exists. `ActionDecisionError` sits at the end of this group, so
-    # note the pairing — these two answer with different statuses and must not collapse.
     status_code = 404
 
 
@@ -209,12 +203,6 @@ class ActionReceiptNotFoundError(ActionDecisionError):
 
     error_code: str = "action_receipt_not_found"
     message: str = "That approval request has no receipt: no run was started for it."
-    # 404 for a request that is real and carries no receipt (the admin API's contract). Its own
-    # class rather
-    # than the one above, because the two say different things to an administrator: "no such
-    # request" is a dead link, "that decision started no run" is the answer for every deny and
-    # every expiry. Not a 204 — the panel reaches this address from a `hasReceipt` bit that may
-    # have gone stale, and an empty body would render as a blank page rather than as a fact.
     status_code = 404
 
 

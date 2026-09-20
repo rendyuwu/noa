@@ -53,10 +53,10 @@ class WHMFirewallCLIError(NoaError):
 
     error_code: str = "firewall_command_failed"
     message: str = "The firewall command could not be executed."
-    # 502, same reading as `SSHExecutionError`: NOA works, csf or imunify360-agent on the
-    # remote did not answer usably. One entry for the tree — `CSFCLIError` and
-    # `ImunifyCLIError` inherit this attribute, and which backend failed is already in
-    # `error_code`. The admin validate route answers 200 with `ok:false` instead (see above).
+    # 502: NOA works, csf or imunify360-agent on the remote did not answer usably. One status for
+    # the tree — `CSFCLIError` and `ImunifyCLIError` inherit it, and which backend failed is in
+    # `error_code`. The admin validate route answers 200 with `ok:false` instead
+    # (`noa_api.api.routes.admin_servers`).
     status_code = 502
 
     def __init__(self, *, code: str, message: str) -> None:

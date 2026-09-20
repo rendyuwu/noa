@@ -44,22 +44,12 @@ class SSHExecutionError(NoaError):
 
     error_code: str = "ssh_execution_failed"
     message: str = "The remote command could not be executed."
-    # 502: a host NOA depends on refused, timed out, or presented an unexpected host key.
-    # Declared so it does not take `NoaError`'s 503, which reads as "authentication is
-    # unclassified and NOA may be down", which is the wrong answer for a working NOA and a
-    # broken remote. One entry for the whole SSH surface because `SSHExecutionError` carries
-    # the specific `error_code`.
-    #
-    # The admin validate route does **not** refine this per code, contrary to what this
-    # comment predicted when `core/remote_exec/` was ported.
-    # Its validate route catches the whole tree and answers **200** with
-    # `{ok:false, error_code, message}`: an operator pressing Validate asked "does this server
-    # answer?", and "no, `ssh_timeout`" is that question's *answer*, not a failure of the
-    # request. The panel reads `result.ok` for exactly that reason
-    # (`apps/admin-web/.../whm-status.ts::deriveWhmValidationStatus`), so a 502 there would
-    # throw at the transport and render as an unhandled error instead of a red status chip.
-    # This 502 therefore covers the *tool* paths only, where the tools sanitise raw exceptions
-    # to a code.
+    # 502: a host NOA depends on refused, timed out, or presented an unexpected host key —
+    # a working NOA and a broken remote, which is not what 503 says. This covers the *tool*
+    # paths. The admin validate route catches the whole tree and answers 200 with
+    # `{ok:false, error_code, message}`, because the panel branches on `result.ok`
+    # (`apps/admin-web/src/lib/admin/whm/whm-status.ts::deriveWhmValidationStatus`) and a 502
+    # would render as an unhandled error instead of a red status chip.
     status_code = 502
 
     def __init__(self, *, code: str, message: str) -> None:
