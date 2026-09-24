@@ -108,6 +108,10 @@ async function ticks(count: number, ms: number): Promise<void> {
   for (let index = 0; index < count; index += 1) await tick(ms)
 }
 
+function copyButton(): HTMLElement {
+  return screen.getByRole('button', { name: /copy summary/i })
+}
+
 describe('CardView', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -132,12 +136,14 @@ describe('CardView', () => {
     // for: a run still in flight, and a run that finished having recorded nothing. Printing the
     // second over the first tells a reader there is nothing more to wait for while there is.
     expect(screen.getByText('Approved · running', CARD_ONLY)).toBeTruthy()
+    expect(copyButton().hasAttribute('disabled')).toBe(true)
     expect(polls.calls).toBe(0)
 
     await tick(POLL_INTERVAL_RUN_MS)
 
     expect(polls.calls).toBe(1)
     expect(screen.getByText('Approved · nothing recorded', CARD_ONLY)).toBeTruthy()
+    expect(copyButton().hasAttribute('disabled')).toBe(false)
     // The envelope the poll carried is on the row and off the card: `result_summary` is a JSON dump
     // of the payload, and what an operator reads instead is the sentence the runner composed. The
     // fixture still sends it, so this is the value arriving and not being printed.
@@ -165,6 +171,7 @@ describe('CardView', () => {
     // not asked yet.
     const polls = stubPolls(() => Response.json(cardBody()))
     renderCardView(load(cardBody()))
+    expect(copyButton().hasAttribute('disabled')).toBe(false)
 
     await tick(POLL_INTERVAL_RUN_MS)
     expect(polls.calls).toBe(0)
@@ -344,18 +351,23 @@ describe('CardView', () => {
     expect(screen.queryByText('ssh_sudo_required', CARD_ONLY)).toBeNull()
   })
 
-  it('stops watching a run that never moves, and says so', async () => {
+  it.each([
+    ['a run that never moves', () => Response.json(approvedBody({ status: 'STARTED' }))],
+    ['a run NOA cannot be reached about', () => new Response('', { status: 503 })],
+  ] as const)('stops watching %s, and says so', async (_, answer) => {
     // A run whose executor died moves only when the reaper next runs, which is not a timescale
     // anyone watches a frame for. Without the cap this loop would run for as long as the frame is
     // open. Giving up is not reported as a failure — NOA has no evidence of one, only of not having
-    // been told.
-    const polls = stubPolls(() => Response.json(approvedBody({ status: 'STARTED' })))
+    // been told. An outage mid-run counts toward the same cap: a count that reset on every failed
+    // poll would never stall while one lasted.
+    const polls = stubPolls(answer)
     renderCardView(load(approvedBody()))
 
     await ticks(RUN_POLL_LIMIT, POLL_INTERVAL_RUN_MS)
 
     expect(polls.calls).toBe(RUN_POLL_LIMIT)
     expect(screen.getByText(/still running this change/i)).toBeTruthy()
+    expect(copyButton().hasAttribute('disabled')).toBe(false)
 
     await ticks(5, POLL_INTERVAL_RUN_MS)
     expect(polls.calls).toBe(RUN_POLL_LIMIT)
