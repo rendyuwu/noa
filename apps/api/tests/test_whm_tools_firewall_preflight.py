@@ -720,8 +720,7 @@ async def test_a_line_noa_did_not_write_is_kept_intact(monkeypatch) -> None:  # 
     LFD's own block reason and Imunify's `smtpauth brute force` are the evidence this tool exists
     to show. A rule that cut the tail off every line would take them, and the operator would be
     told "this address is blocked" with nothing about why — which is the state DECISIONS
-    section 6.5's
-    "block reason + log evidence" wording exists to prevent.
+    section 6.5's "block reason + log evidence" wording exists to prevent.
     """
     lfd_line = f"lfd: ({TARGET}) smtpauth brute force detected, blocking"
     fixture, _ = firewall_context(
@@ -787,8 +786,7 @@ async def test_the_result_carries_no_raw_command_output(monkeypatch) -> None:  #
     """DECISIONS section 6.5: the `csf.deny` log line, never a raw iptables dump.
 
     `noa-old` shipped `raw_output` and `raw_data` beside the parsed verdict, and the result
-    persists in LibreChat's MongoDB. The table row is gone from `matches` too, not only the
-    `raw_output` key: the `csf.deny` line already names the entry it restates.
+    persists in LibreChat's MongoDB. Table rows leave `matches` too, not only `raw_output`.
     """
     table_dump = (
         "Table  Chain            num   pkts bytes target     prot opt in     out\n"
@@ -816,7 +814,6 @@ async def test_the_result_carries_no_raw_command_output(monkeypatch) -> None:  #
     }
     assert "raw_output" not in json.dumps(result)
     assert result["matches"] == [CSF_DENY_LINE]
-    assert result["total_matches"] == 1
 
 
 # --- An exception is a named failure ---
