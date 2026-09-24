@@ -272,8 +272,20 @@ Counting it reported two entries for an address csf had just said it held nothin
 line per table, v4 and v6 — and one entry plus the other table's negative as two (measured
 2026-09-14). A clean address answers `not_found` with `total_matches: 0` and no lines.
 
+csf's iptables table rows (`filter DENYIN …`, `filter ALLOWOUT …`; any
+`filter|nat|mangle|raw <chain> <num>` row) are read for the verdict and `allow_entry` too, and
+then **left out of the evidence** when a `csf.deny` / `csf.allow` / `Temporary …` line already
+names the entry: the evidence is that line, never the table (DECISIONS section 6.5). The rows
+leave only when the lines left still carry every block and allow fact the rows carried, so every
+row stays for a deny csf shows only in the table beside an allow line, for an allow shown only in
+the table beside a deny line (advanced-syntax entries such as `tcp|in|d=22|s=IP` print no
+`csf.allow:` line), and for a reading that is nothing but rows. The comparison is per fact, not
+per entry: a port-specific entry csf prints only as a table row hides behind a plain line of the
+same kind.
+
 Matches are bounded at 20 lines, because the result heads for an LLM context — and
-`CSFGrepParsed.total_matches` reports how many there were before the cut.
+`CSFGrepParsed.total_matches` reports how many evidence lines there were before the cut (table
+rows another line explains are not counted).
 Twenty lines with nothing beside them read as "there are twenty entries". The kept lines are
 csf's own order rather than a sort: `csf -g` renders the current tables and files, so identical
 calls against unchanged state yield an identical prefix, and sorting would scramble the

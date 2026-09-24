@@ -787,7 +787,8 @@ async def test_the_result_carries_no_raw_command_output(monkeypatch) -> None:  #
     """DECISIONS section 6.5: the `csf.deny` log line, never a raw iptables dump.
 
     `noa-old` shipped `raw_output` and `raw_data` beside the parsed verdict, and the result
-    persists in LibreChat's MongoDB.
+    persists in LibreChat's MongoDB. The table row is gone from `matches` too, not only the
+    `raw_output` key: the `csf.deny` line already names the entry it restates.
     """
     table_dump = (
         "Table  Chain            num   pkts bytes target     prot opt in     out\n"
@@ -814,6 +815,8 @@ async def test_the_result_carries_no_raw_command_output(monkeypatch) -> None:  #
         "imunify",
     }
     assert "raw_output" not in json.dumps(result)
+    assert result["matches"] == [CSF_DENY_LINE]
+    assert result["total_matches"] == 1
 
 
 # --- An exception is a named failure ---

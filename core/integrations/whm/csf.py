@@ -87,8 +87,9 @@ CSFGrepVerdict = Literal["blocked", "allowlisted", "not_found", "unknown"]
 class CSFGrepParsed:
     """Verdict, the bounded evidence lines it was read from, and how many there were.
 
-    `total_matches` counts the lines *before* `max_matches` cut them, so a caller can say the
-    list is short rather than letting it read as complete.
+    `total_matches` counts the evidence lines, meaning table rows another line explains are not
+    counted, *before* `max_matches` cut them, so a caller can say the list is short rather than
+    letting it read as complete.
 
     `allow_entry` is a second fact rather than a re-reading of the first, and it exists because
     the verdict deliberately loses it: block beats allow, so an address in both `csf.deny` and
@@ -141,6 +142,9 @@ def parse_csf_target(raw: str) -> CSFTarget:
 
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _HOSTNAME_LABEL_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
+# csf's `dogrep` prints each iptables/ip6tables hit as `<table> <chain> <--line-numbers row>`, e.g.
+# `filter DENYIN           643  11044  587K DROP  all  --  ens32  *  1.2.3.4  0.0.0.0/0`.
+_IPTABLES_RULE_RE = re.compile(r"^(?:filter|nat|mangle|raw)\s+\S+\s+\d+\s")
 
 
 def _is_valid_hostname(value: str) -> bool:
@@ -219,15 +223,15 @@ def _parse_csf_grep_lines(lines: list[str], *, target: str, max_matches: int = 2
     # measured against a live `csf -g` on 2026-09-14, where a real hit plus the ip6tables
     # negative reported 2 entries for 1.
     matches = [line for line in hits if not _is_not_found_match(line)]
-    bounded = matches[: max_matches if max_matches > 0 else 0]
 
     # Read off every match, not off the verdict below, which is about to discard it when a block
-    # outranks it. Taken from the full list rather than from `bounded`, for `total_matches`'
-    # reason: the cut shortens the evidence, it does not change what csf holds.
+    # outranks it. Taken from every match, table rows included: leaving a row out of the evidence
+    # shortens what is shown, it does not change what csf holds.
     allow_entry = any(_is_allow_match(line) for line in matches)
+    block_entry = any(_is_block_match(line) for line in matches)
 
     # Block beats allow: an IP present in both is, operationally, still blocked.
-    if any(_is_block_match(line) for line in matches):
+    if block_entry:
         verdict: CSFGrepVerdict = "blocked"
     elif allow_entry:
         verdict = "allowlisted"
@@ -239,10 +243,29 @@ def _parse_csf_grep_lines(lines: list[str], *, target: str, max_matches: int = 2
     else:
         verdict = "unknown"
 
+    # csf's table rows restate an entry a `csf.deny` / `csf.allow` / `Temporary …` line already
+    # names, and DECISIONS section 6.5 says the evidence is that line, never the table. The rows
+    # leave only when the lines left still carry every block and allow fact the rows carried.
+    # Every row stays when a deny csf shows only in the table sits beside an allow line, when an
+    # allow shown only in the table sits beside a deny line (advanced-syntax entries such as
+    # `tcp|in|d=22|s=IP` print no `csf.allow:` line), and when the reading is nothing but rows.
+    # The verdict and `allow_entry` above still read every row.
+    # ponytail: compares block/allow facts, not entries — a port-specific entry csf prints only
+    # as a table row hides behind a plain line of the same kind; pair rows to lines per entry if
+    # an operator hits it.
+    entries = [line for line in matches if _IPTABLES_RULE_RE.match(line) is None]
+    explained = (
+        bool(entries)
+        and any(_is_block_match(line) for line in entries) == block_entry
+        and any(_is_allow_match(line) for line in entries) == allow_entry
+    )
+    evidence = entries if explained else matches
+    bounded = evidence[: max_matches if max_matches > 0 else 0]
+
     return CSFGrepParsed(
         verdict=verdict,
         matches=bounded,
-        total_matches=len(matches),
+        total_matches=len(evidence),
         allow_entry=allow_entry,
     )
 
