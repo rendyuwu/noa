@@ -86,7 +86,9 @@ Temporary Allows: IP:203.0.113.10 Port: Dir:inout TTL:600 (NOA ttl allow test)
     parsed = parse_csf_grep_output(output, target="203.0.113.10")
 
     assert parsed.verdict == "allowlisted"
-    assert any("Temporary Allows:" in match for match in parsed.matches)
+    assert parsed.matches == [
+        "Temporary Allows: IP:203.0.113.10 Port: Dir:inout TTL:600 (NOA ttl allow test)"
+    ]
 
 
 def test_parse_csf_grep_output_detects_temporary_block() -> None:
@@ -107,7 +109,73 @@ Temporary Blocks: IP:203.0.113.10 Port: Dir:in TTL:600 (NOA ttl deny test)
     parsed = parse_csf_grep_output(output, target="203.0.113.10")
 
     assert parsed.verdict == "blocked"
-    assert any("Temporary Blocks:" in match for match in parsed.matches)
+    assert parsed.matches == [
+        "Temporary Blocks: IP:203.0.113.10 Port: Dir:in TTL:600 (NOA ttl deny test)"
+    ]
+
+
+def test_iptables_rows_leave_the_evidence_when_the_csf_deny_line_explains_them() -> None:
+    """The live shape, sanitized. DECISIONS section 6.5: the evidence is the `csf.deny` line,
+    never csf's iptables table, which only restates the entry that line already names."""
+    deny_line = (
+        "csf.deny: 203.0.113.10 # lfd: (cpanel) Failed cPanel login from 203.0.113.10 "
+        "(XX/Example/host.example.net): 5 in the last 3600 secs - Tue Sep 22 08:24:42 2026"
+    )
+    output = f"""
+Table  Chain            num   pkts bytes target     prot opt in     out     source               destination
+
+filter DENYIN           643  11044  587K DROP       all  --  ens32  *       203.0.113.10         0.0.0.0/0
+filter DENYOUT          643     11   704 LOGDROPOUT  all  --  *      ens32   0.0.0.0/0            203.0.113.10
+
+
+ip6tables:
+
+Table  Chain            num   pkts bytes target     prot opt in     out     source               destination
+No matches found for 203.0.113.10 in ip6tables
+
+{deny_line}
+"""
+
+    parsed = parse_csf_grep_output(output, target="203.0.113.10")
+
+    assert parsed.matches == [deny_line]
+    assert parsed.total_matches == 1
+    assert parsed.verdict == "blocked"
+    assert parsed.allow_entry is False
+
+
+@pytest.mark.parametrize(
+    "lines",
+    [
+        pytest.param(
+            [
+                "filter DENYIN           69       0     0 DROP       all  --  ens192 *       "
+                "203.0.113.10         0.0.0.0/0",
+                "csf.allow: 203.0.113.10 # office",
+            ],
+            id="deny-only-in-table",
+        ),
+        pytest.param(
+            [
+                "filter ALLOWIN          3        0     0 ACCEPT     tcp  --  ens192 *       "
+                "203.0.113.10         0.0.0.0/0            tcp dpt:22",
+                "csf.deny: 203.0.113.10 # lfd: too many login failures",
+            ],
+            id="allow-only-in-table",
+        ),
+    ],
+)
+def test_a_fact_seen_only_in_the_table_keeps_its_rows(lines: list[str]) -> None:
+    """The negative control: a row leaves only when a line left behind says what it said.
+    A deny csf shows only as a table row beside an allow line (or the reverse, as with
+    advanced-syntax allows that print no `csf.allow:` line) would otherwise vanish from the
+    evidence while still deciding the verdict."""
+    parsed = parse_csf_grep_output("\n".join(lines), target="203.0.113.10")
+
+    assert parsed.matches == lines
+    assert parsed.total_matches == 2
+    assert parsed.verdict == "blocked"
+    assert parsed.allow_entry is True
 
 
 def test_parse_csf_grep_output_detects_not_found() -> None:
