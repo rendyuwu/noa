@@ -64,7 +64,13 @@ export const COPY_BLOCK_IGNORE =
  * On failure the block comes on-screen so the operator can select it by hand — the escape hatch
  * ships beside the door, it is not the door's error message.
  */
-export function CopySummary({ summary }: { summary: Summary }): JSX.Element {
+export function CopySummary({
+  summary,
+  disabled = false,
+}: {
+  summary: Summary
+  disabled?: boolean
+}): JSX.Element {
   const block = useRef<HTMLDivElement>(null)
   const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
 
@@ -74,6 +80,7 @@ export function CopySummary({ summary }: { summary: Summary }): JSX.Element {
         <button
           type="button"
           className={shared.button}
+          disabled={disabled}
           onClick={() => setState(copyBothFlavours(block.current, summary) ? 'copied' : 'failed')}
         >
           Copy summary

@@ -39,9 +39,9 @@ import styles from './card.module.css'
  * frame answers 401, and that renders the 401 card's explicit "cannot authenticate here" rather
  * than leaving a live Approve button standing on a card nobody may decide any more — with the
  * escape hatch's way out of it beside it (`sign-in-notice.tsx`), which is a link-out and a retry
- * and never a form in the frame. A transient failure is the one answer that changes nothing: the
- * card stays, the loop stays,
- * because "NOA could not be reached just now" is not "there is nothing more to wait for".
+ * and never a form in the frame. A transient failure changes nothing on screen: the card stays and
+ * the loop stays, because "NOA could not be reached just now" is not "there is nothing more to wait
+ * for" — but while a run is in flight it counts toward the run cap, so an outage stalls the card.
  *
  * **It asks the host for a frame it fits in** (`components/frame-sizer.tsx`). The box LibreChat
  * opens with is small and fixed, and this card has to be worth one screenshot: one shot, no
@@ -60,7 +60,10 @@ import styles from './card.module.css'
 /** What the loop carries between ticks: the last answer, and how long a run has been watched. */
 type LiveCard = {
   load: ApprovalCardLoad
-  /** Consecutive polls that found a run still in flight. Reset the moment one does not. */
+  /**
+   * Consecutive polls that left a running card on screen, including polls that could not reach
+   * NOA. Reset the moment one does not.
+   */
   runPolls: number
 }
 
@@ -142,7 +145,11 @@ function Card({
                 Proxmox it is on. Absent where the gate named none rather than guessed at. */}
             {body.server === null ? null : <p className={styles.status}>{body.server}</p>}
           </div>
-          <CopySummary summary={buildSummary(card)} />
+          {/* Held while the run is in flight: a summary copied then is a record the next poll
+              replaces. Handed back once the run is terminal, and also once the card has stalled
+              (stopped polling) — nothing on this frame re-enables it after that, and the operator
+              escalating a stuck run is the one who needs the record. */}
+          <CopySummary summary={buildSummary(card)} disabled={isRunning(card) && !stalled} />
         </header>
 
         {/* What the runner said, or what was asked until a run has said anything. Nothing predicted
@@ -233,12 +240,18 @@ export function CardView({
         // The cleanup already ran: this answer belongs to a card that is no longer on screen.
         if (!active) return
 
-        setLive((previous) => ({
+        setLive((previous) => {
           // A transient failure leaves the card exactly as it was and keeps the loop alive; a 401
           // or a 404 replaces it, because those are states an operator has to be shown.
-          load: next.kind === 'unavailable' ? previous.load : next,
-          runPolls: next.kind === 'card' && isRunning(next.card) ? previous.runPolls + 1 : 0,
-        }))
+          const load = next.kind === 'unavailable' ? previous.load : next
+          // Counted off the card left on screen, not off the answer: a failed poll on a running
+          // card counts toward the cap, or an outage mid-run would keep the card polling (and Copy
+          // held) until it ended.
+          return {
+            load,
+            runPolls: load.kind === 'card' && isRunning(load.card) ? previous.runPolls + 1 : 0,
+          }
+        })
       })
     }, pollIntervalMs(card))
 
